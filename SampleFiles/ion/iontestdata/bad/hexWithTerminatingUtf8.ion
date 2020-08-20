@@ -1,0 +1,4 @@
+// Numbers can't be terminated by non-ASCII characters.
+
+// This number is terminated by the cents-sign, U+00A2
+0x3¢

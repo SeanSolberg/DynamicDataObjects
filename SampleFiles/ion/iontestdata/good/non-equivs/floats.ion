@@ -1,0 +1,65 @@
+// different whole number digits
+[
+    123.0e1,
+    124.0e1,
+    125.0e1,
+]
+
+// different decimal number digits
+[
+    123.0e1,
+    123.1e1,
+    123.2e1,
+    123.3e1,
+]
+
+// different exponents
+[
+    123e-2,
+    123e-1,
+    123e0,
+    123e1,
+    123e2,
+]
+
+// different signums
+[
+    123.1e-1,
+    123.1e+1,
+]
+[
+    123.1e-1,
+    123.1e1,
+]
+[
+    123.1e0007,
+    123.1e-0007,
+]
+
+// positive inf vs negative inf
+[
+    +inf,
+    -inf,
+    0x7ff0000000000000, // +inf 64-bit IEEE-754 bit-pattern (this is an Int)
+    0xfff0000000000000, // -inf 64-bit IEEE-754 bit-pattern (this is an Int)
+]
+
+// nan
+[
+    nan,
+    0x7ff8000000000000, // nan 64-bit IEEE-754 bit-pattern (this is an Int)
+]
+
+// positive zero and negative zero (with same precision)
+[
+    0e0,
+    -0e0,
+]
+[
+    0E0,
+    -0E0,
+]
+[
+    0.e0,
+    -0.e0,
+]

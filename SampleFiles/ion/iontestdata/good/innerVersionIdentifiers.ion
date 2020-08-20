@@ -1,0 +1,24 @@
+// These are neither version markers nor errors, just symbols.
+
+($ion_1_0
+  $ion_2300_34
+  foo::$ion_1_0
+  $ion_1_0::$ion_1_0
+  ($ion_1_0))
+
+[ $ion_1_0,
+  $ion_2300_34,
+  foo::$ion_1_0,
+  $ion_1_0::$ion_1_0,
+  [$ion_1_0]]
+
+{
+  a: $ion_1_0,
+  b: $ion_2300_34,
+  c: foo::$ion_1_0,
+  d: $ion_1_0::$ion_1_0,
+  e:
+  {
+    f: $ion_1_0,
+  }
+}

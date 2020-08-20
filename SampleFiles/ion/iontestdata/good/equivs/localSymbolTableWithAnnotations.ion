@@ -1,0 +1,30 @@
+// Local symbol table structs may have additional annotations as long as the $ion_symbol_table annotation comes first.
+// Additionally, values within the local symbols struct may be annotated.
+// See also: good/nonequivs/localSymbolTableWithAnnotations.ion
+
+embedded_documents::[
+    '''
+    $ion_1_0
+    $ion_symbol_table::{
+        symbols:["foo", "bar"]
+    }
+    $10 $11
+    ''',
+
+    '''
+    $ion_1_0
+    $ion_symbol_table::annotated::{
+        symbols:["foo", "bar"]
+    }
+    $10 $11
+    ''',
+
+    '''
+    $ion_1_0
+    $ion_symbol_table::annotated::{
+        symbols:abc::["foo", def::"bar"]
+    }
+    $10 $11
+    '''
+]
+

@@ -1,0 +1,10 @@
+// WARNING: this file uses CR-LF newline pairs.
+
+'''short1\
+'''
+
+'''\
+multi-line string
+with embedded\nnew line
+characters\
+'''

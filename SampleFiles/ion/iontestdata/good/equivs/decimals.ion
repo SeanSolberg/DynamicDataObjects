@@ -1,0 +1,18 @@
+// Different exponents of zero magnitude
+(
+    123.777d0
+    123.777d00
+    123.777d000
+)
+
+// Explicit vs Implicit positive exponent
+(
+    123.777d+1
+    123.777d1
+)
+
+// Lowercase 'd' vs Uppercase 'D'
+(
+    123.777d777
+    123.777D777
+)

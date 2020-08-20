@@ -1,0 +1,25 @@
+// The sibling binary-encoded file has been hand-massaged to illustrate
+// multiple equivalent representations of the fractional subfields.
+
+
+(                           // ce a5                      Sexp, L=37
+    0001-01-01T00:00:00Z    // 67 80 818181 808080         0d0 shortest
+    0001-01-01T00:00:00Z    // 68 80 818181 808080 80      0d0 w/exponent
+    0001-01-01T00:00:00Z    // 69 80 818181 808080 8000    0d0 w/significand
+    0001-01-01T00:00:00Z    // 69 80 818181 808080 8080   -0d0
+
+    // TODO ION-347 -0 exponent?
+)
+
+
+(                           // ce 9d                      Sexp, L=29
+    0001-01-01T00:00:00.0Z  // 68 80 818181 808080 c1      0d-1 shortest
+    0001-01-01T00:00:00.0Z  // 69 80 818181 808080 c100    0d-1 w/significand
+    0001-01-01T00:00:00.0Z  // 69 80 818181 808080 c180   -0d-1
+)
+
+
+(                           // ce 94                      Sexp, L=20
+    0001-01-01T00:00:00.1Z  // 69 80 818181 808080 c101    1d-1
+    0001-01-01T00:00:00.1Z  // 69 80 818181 808080 c181   -1d-1
+)

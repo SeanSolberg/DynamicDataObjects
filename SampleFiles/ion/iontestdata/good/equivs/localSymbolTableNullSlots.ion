@@ -1,0 +1,23 @@
+// Verifies that null elements in the symbols list declare unknown symbol text (“gaps”) for its SID within the sequence,
+// and that any element of the list that is not a string must be interpreted as if it were null.
+
+embedded_documents::[
+    "s1 s2 s3",
+
+    '''$ion_symbol_table::{'''
+    '''    symbols:["s1", "s2", null.string, "s3"]'''
+    '''}'''
+    '''$10 $11 $13''',
+
+    '''$ion_symbol_table::{'''
+    '''    symbols:[42, "s1", "s2", "s3"]'''
+    '''}'''
+    '''$11 $12 $13''',
+
+    '''$ion_symbol_table::{'''
+    '''    symbols:["s1", $3, "s2", null, "s3", 123.4e5],'''
+    '''    imports:[ {name: "foo", version: 1, max_id: 10} ]'''
+    '''}'''
+    '''$20 $22 $24'''
+
+]

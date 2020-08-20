@@ -1,0 +1,13 @@
+$ion_1_0
+$ion_symbol_table::
+{
+  imports:[ { name: "fred",
+              version: 1,
+              max_id: 0 },
+  ],
+  imports:[ { name: "george",
+                version: 1,
+                max_id: 2 },
+    ],
+}
+a

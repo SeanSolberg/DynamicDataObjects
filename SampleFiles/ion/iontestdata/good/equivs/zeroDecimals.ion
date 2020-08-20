@@ -1,0 +1,29 @@
+// These are all positive zero to zero decimal-point precision.
+(
+  0.
+  0d0
+  0.0d1
+)
+
+// These are all positive zero to one decimal-point precision.
+(
+  0.0
+  0.0d0
+  0.00d1
+  0d-1
+)
+
+// These are all negative zero to zero decimal-point precision.
+(
+  -0.
+  -0d0
+  -0.0d1
+)
+
+// These are all negative zero to one decimal-point precision.
+(
+  -0.0
+  -0.0d0
+  -0.00d1
+  -0d-1
+)

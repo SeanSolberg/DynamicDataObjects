@@ -1,0 +1,11 @@
+// Field names (symbol tokens) in its different representations within Structs
+(
+    { a  : 1}  // no quotes
+    {'a' : 1}  // single-quoted
+    {"a" : 1}  // double-quoted (JSON compat.)
+)
+(
+    { a : b , c :42, d :{ e : f }, g :3}   // no quotes
+    {'a':'b','c':42,'d':{'e':'f'},'g':3}   // single-quoted
+    {"a":'b',"c":42,"d":{"e":'f'},"g":3}   // double-quoted (JSON compat.)
+)

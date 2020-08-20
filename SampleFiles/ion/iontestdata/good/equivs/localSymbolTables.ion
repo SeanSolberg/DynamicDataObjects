@@ -1,0 +1,64 @@
+// Local symbol tables with different symbol declarations
+embedded_documents::[
+    '''
+    $ion_1_0
+    $ion_symbol_table::{
+        symbols:[ "foo", "bar", "baz", "qux" ]
+    }
+    ''',
+    '''
+    $ion_1_0
+    $ion_symbol_table::{
+        symbols:[ "another", "local", "symbol", "table" ]
+    }
+    ''',
+    '''
+    $ion_1_0
+    $ion_symbol_table::{
+        symbols:[ "blah", "bleh" ]
+    }
+    ''',
+]
+
+// Symbols that contain the same text
+embedded_documents::[
+    '''
+    $ion_1_0
+    $ion_symbol_table::{
+        symbols:[ "foo", "bar", "baz", "qux" ]
+    }
+    $10
+    $11
+    $12
+    $13
+    ''',
+    '''
+    $ion_1_0
+    foo
+    bar
+    baz
+    qux
+    ''',
+]
+
+// Symbols that contain the same text
+embedded_documents::[
+    '''
+    $ion_1_0
+    $ion_symbol_table::{
+        symbols:[ "filler1", "foo", "filler2", "bar", "filler3", "baz", "filler4" ]
+    }
+    $11
+    $13
+    $15
+    ''',
+    '''
+    $ion_1_0
+    $ion_symbol_table::{
+        symbols:[ "foo", "bar", "baz" ]
+    }
+    $10
+    $11
+    $12
+    ''',
+]

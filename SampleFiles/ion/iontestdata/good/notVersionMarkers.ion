@@ -1,0 +1,8 @@
+// These are neither version markers nor errors, just annotated symbols.
+// ION-123
+
+a1::$ion_1_0
+a2::$ion_1234_1
+$ion_1_0::$ion_1_0
+a3::$ion_1234_2::$ion_1_0
+$3::$ion_1_0

@@ -1,0 +1,115 @@
+// System sid literals as symbol
+(
+  $1
+  $ion
+)
+(
+  // When roundtripped as top-level values, these are no longer equivalent, as $ion_1_0 is an IVM while $2 is not.
+  // Putting these in containers solves that problem; there are no IVMs below the top level.
+  ($2)
+  ($ion_1_0)
+)
+(
+  $3
+  $ion_symbol_table
+)
+(
+  $4
+  name
+)
+(
+  $5
+  version
+)
+(
+  $6
+  imports
+)
+(
+  $7
+  symbols
+)
+(
+  $8
+  max_id
+)
+(
+  $9
+  $ion_shared_symbol_table
+)
+
+// System sid literals as symbol tokens (field names)
+(
+  { $1  :null }
+  { $ion:null }
+)
+(
+  { $2      :null }
+  { $ion_1_0:null }
+)
+(
+  { $3               :null }
+  { $ion_symbol_table:null }
+)
+(
+  { $4  :null }
+  { name:null }
+)
+(
+  { $5     :null }
+  { version:null }
+)
+(
+  { $6     :null }
+  { imports:null }
+)
+(
+  { $7     :null }
+  { symbols:null }
+)
+(
+  { $8    :null }
+  { max_id:null }
+)
+(
+  { $9                      :null }
+  { $ion_shared_symbol_table:null }
+)
+
+// System sid literals as symbol tokens (annotations)
+(
+  $1  ::null
+  $ion::null
+)
+(
+  $2      ::null
+  $ion_1_0::null
+)
+(
+  $3               ::null
+  $ion_symbol_table::null
+)
+(
+  $4  ::null
+  name::null
+)
+(
+  $5     ::null
+  version::null
+)
+(
+  $6     ::null
+  imports::null
+)
+(
+  $7     ::null
+  symbols::null
+)
+(
+  $8    ::null
+  max_id::null
+)
+(
+  $9                      ::null
+  $ion_shared_symbol_table::null
+)

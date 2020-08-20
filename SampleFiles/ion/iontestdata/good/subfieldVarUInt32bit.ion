@@ -1,0 +1,20 @@
+$ion_1_0
+
+// 5 bytes
+// 31 bits
+// hex: 0x7fffffff
+// dec: 2147483647
+$ion_1_0
+$ion_symbol_table::{
+    imports:[ { name: "com.amazon.blah.blah.blah",
+                version: 1,
+                max_id: 2147483636 // 2147483646 - 1 - 9 (system symbols)
+              } ],
+    symbols:[ "boundary-1",
+              "boundary",
+              "boundary+1"
+            ]
+}
+'boundary-1'::1         // $2147483646
+'boundary'  ::1         // $2147483647 2^31 - 1
+'boundary+1'::1         // $2147483648

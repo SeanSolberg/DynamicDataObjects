@@ -1,0 +1,41 @@
+[
+    { a:1, b:2 },
+    { b:2 },
+    {},
+]
+
+// different field names
+[
+    { a:{} },
+    { b:{} },
+]
+
+// different values
+[
+    { a:1 },
+    { a:2 },
+]
+
+// different values
+[
+    { a:1, b:1 },
+    { a:2, b:2 },
+]
+
+// different number of field/value pairs
+[
+    { a:1, a:1, a:1 },
+    { a:1, a:1 },
+]
+
+// different field/value pairs
+[
+    { a:4, a:4, b:6 },
+    { a:4, b:6, b:6 },
+]
+
+// annotated vs not annotated
+[
+    { a:4, a:a::4 },
+    { a:4, a:4 },
+]

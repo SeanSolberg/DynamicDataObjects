@@ -1,0 +1,4 @@
+/* WARNING: This file uses CRLF (DOS) end-of-lines! */
+[
+  // Bad endline logic will miss this EOL and lose the closing bracket below.
+]

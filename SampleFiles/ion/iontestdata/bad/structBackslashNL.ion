@@ -1,0 +1,7 @@
+// Backslash-escape sequences are only valid with string/symbol/clob
+
+{
+  f:1,
+  \
+  h:3
+}

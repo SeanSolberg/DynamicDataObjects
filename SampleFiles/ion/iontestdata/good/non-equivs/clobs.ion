@@ -1,0 +1,60 @@
+[
+    {{'''hello'''}},
+    {{'''Hello'''}},
+]
+[
+    {{'''hello'''}},
+    {{'''hello '''}},
+    {{''' hello'''}},
+    {{''' hello '''}},
+    {{
+      '''
+         hello
+      '''
+    }},
+]
+[
+    {{"hello"}},
+    {{"hello "}},
+    {{" hello"}},
+    {{" hello "}},
+]
+[
+    {{"hello"}},
+    {{"\ahello"}},
+    {{"\bhello"}},
+    {{"\thello"}},
+    {{"\nhello"}},
+    {{"\fhello"}},
+    {{"\rhello"}},
+    {{"\vhello"}},
+    {{"\"hello"}},
+    {{"\'hello"}},
+    {{"\?hello"}},
+    {{"\\hello"}},
+    {{"\/hello"}},
+    {{"\0hello"}},
+    {{"hello\a"}},
+    {{"hello\b"}},
+    {{"hello\t"}},
+    {{"hello\n"}},
+    {{"hello\f"}},
+    {{"hello\r"}},
+    {{"hello\v"}},
+    {{"hello\""}},
+    {{"hello\'"}},
+    {{"hello\?"}},
+    {{"hello\\"}},
+    {{"hello\/"}},
+    {{"hello\0"}},
+]
+
+[
+// Non-escaped newline
+{{'''single-line string
+'''}},
+
+// Escaped newline
+{{'''single-line string\
+'''}},
+]

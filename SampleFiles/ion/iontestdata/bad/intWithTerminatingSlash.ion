@@ -1,0 +1,3 @@
+// Numbers can't be terminated by slash.
+// This case is called-out since comment is okay here.
+( 1247/bc )

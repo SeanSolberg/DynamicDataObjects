@@ -1,0 +1,50 @@
+(
+    { // some comment
+        a:1
+    }
+    {
+        a:1 // some comment
+    }
+    {
+        a: // some comment
+        1
+    }
+    {
+        a:
+        1 // some comment
+    }
+)
+(
+    { /* some comment */
+        a:1
+    }
+
+    {
+        a:1 /* some comment */
+    }
+
+    {
+        /* some comment */ a:
+        1
+    }
+
+    {
+        a /* some comment */:
+        1
+    }
+
+    {
+        a: /* some comment */
+        1
+    }
+
+    {
+        a:
+        /* some comment */ 1
+    }
+
+    {
+        a:
+        1 /* some comment */
+    }
+)

@@ -1,0 +1,55 @@
+(
+    [ // some comment
+        a,
+        b,
+        c,
+    ]
+    [
+        a, // some comment
+        b,
+        c,
+    ]
+    [
+        a,
+        b, // some comment
+        c,
+    ]
+    [
+        a,
+        b,
+        c, // some comment
+    ]
+)
+
+(
+    [ /* some comment */
+        a,
+        b,
+        c,
+    ]
+    [
+        /* some comment */ a,
+        b,
+        c,
+    ]
+    [
+        a, /* some comment */
+        b,
+        c,
+    ]
+    [
+        a,
+        /* some comment */ b,
+        c,
+    ]
+    [
+        a,
+        b, /* some comment */
+        c,
+    ]
+    [
+        a,
+        b,
+        c,
+    /* some comment */ ]
+)

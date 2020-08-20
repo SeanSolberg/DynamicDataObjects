@@ -1,0 +1,23 @@
+// Unannotated top-level symbols with text equivalent to the IVM but without IVM semantics are no-ops.
+
+embedded_documents::[
+    "",
+    "'$ion_1_0'",
+    "$2",
+    "$ion_symbol_table::{symbols:['''$ion_1_0''']} $10"
+]
+
+embedded_documents::[
+    "abc",
+    "'$ion_1_0' abc",
+    "$ion_symbol_table::{symbols:['''$ion_1_0''', '''abc''']} $10 $11",
+    "$ion_symbol_table::{symbols:['''$ion_1_0''']} $10 abc"
+]
+
+embedded_documents::[
+    "name",
+    "'$ion_1_0' name",
+    "$4",
+    "$ion_symbol_table::{symbols:['''$ion_1_0''']} $10 $4",
+    "$ion_symbol_table::{symbols:['''$ion_1_0''']} $10 name"
+]

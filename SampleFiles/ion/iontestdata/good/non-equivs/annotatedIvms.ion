@@ -1,0 +1,24 @@
+// Annotated IVMs are Ion Version Identifiers -- NOT a version marker
+embedded_documents::
+[
+    '''some_annotation::$ion_1_0''',
+    '''$ion_1_0''',
+]
+
+embedded_documents::
+[
+    '''$3::$ion_1_0''',
+    '''$ion_1_0''',
+]
+
+embedded_documents::
+[
+    '''$ion_1_0::$ion_1_0''',
+    '''$ion_1_0''',
+]
+
+embedded_documents::
+[
+    '''$2::$ion_1_0''',
+    '''$ion_1_0''',
+]

@@ -1,0 +1,3 @@
+// Ints cannot have leading positive sign
+// The array wrapper ensures we don't use sexp tokenization ( + 1 )
+[ +1 ]

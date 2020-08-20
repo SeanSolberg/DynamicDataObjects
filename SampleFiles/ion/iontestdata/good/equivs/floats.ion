@@ -1,0 +1,25 @@
+// Different precisions of zero decimal number digits
+(
+    123.e7
+    123.0e7
+    123.00e7
+)
+
+// Different exponents of zero magnitude
+(
+    123.777e0
+    123.777e00
+    123.777e000
+)
+
+// Explicit vs Implicit positive exponent
+(
+    123.777e+1
+    123.777e1
+)
+
+// Lowercase 'e' vs Uppercase 'E'
+(
+    123.777e777
+    123.777E777
+)

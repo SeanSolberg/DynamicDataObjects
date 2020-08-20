@@ -1,0 +1,80 @@
+// Tests several uses of appending symbols to the current local symbol table context.
+
+embedded_documents::[
+    "s1 s2 s1 s2 s3 s4 s5",
+
+    // The basic case.
+
+    '''$ion_symbol_table::{'''
+    '''    symbols:["s1", "s2"]'''
+    '''}'''
+    '''$10 $11 '''
+    '''$ion_symbol_table::{'''
+    '''    imports:$ion_symbol_table,'''
+    '''    symbols:["s3", "s4", "s5"]'''
+    '''}'''
+    '''$10 $11 $12 $13 $14''',
+
+    // Appending symbols can occur multiple times in the same stream. The 'symbols' and 'imports' fields can come in
+    // any order.
+
+    '''$ion_symbol_table::{'''
+    '''    symbols:["s1"]'''
+    '''}'''
+    '''$10 '''
+    '''$ion_symbol_table::{'''
+    '''    imports:$ion_symbol_table,'''
+    '''    symbols:["s2"]'''
+    '''}'''
+    '''$11 '''
+    '''$ion_symbol_table::{'''
+    '''    imports:$3,'''
+    '''    symbols:["s3", "s4"]'''
+    '''}'''
+    '''$10 $11 $12 '''
+    '''$ion_symbol_table::{'''
+    '''    symbols:["s5"],'''
+    '''    imports:$ion_symbol_table,'''
+    '''}'''
+    '''$13 $14''',
+
+    // Appending zero symbols is legal.
+
+    '''$ion_symbol_table::{'''
+    '''    symbols:["s1", "s2", "s3", "s4", "s5"]'''
+    '''}'''
+    '''$10 $11 '''
+    '''$ion_symbol_table::{'''
+    '''    imports:$ion_symbol_table,'''
+    '''    symbols:[]'''
+    '''}'''
+    '''$10 $11 $12 $13 $14''',
+
+    // Appending symbols must incorporate symbols that were previously imported. Null slots need to be treated as SID
+    // gaps, as usual.
+
+    '''$ion_symbol_table::{'''
+    '''    imports: [ { name: "foo", version: 1, max_id: 10}],'''
+    '''    symbols: ["s1"]'''
+    '''}'''
+    '''$20 '''
+    '''$ion_symbol_table::{'''
+    '''    imports:$ion_symbol_table,'''
+    '''    symbols:["s2", null.string, "s3", "s4", "s5"]'''
+    '''}'''
+    '''$21 $20 $21 $23 '''
+    '''$ion_symbol_table::{'''
+    '''    symbols:["s3", "s4", "s5"]'''
+    '''}'''
+    '''$11 $12''',
+
+    // When the current symbol table is the system symbol table and the value of the imports field is the symbol
+    // $ion_symbol_table, processing is identical to having no imports field value.
+
+    '''$ion_symbol_table::{'''
+    '''    imports: $ion_symbol_table,'''
+    '''    symbols: ["s1", "s2", "s3", "s4", "s5"]'''
+    '''}'''
+    '''$10 $11 $10 $11 $12 $13 $14'''
+
+]

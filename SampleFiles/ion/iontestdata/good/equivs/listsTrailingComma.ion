@@ -1,0 +1,5 @@
+// Lists with last value with/without trailing comma
+(
+    [a, b, c,]     // with trailing comma
+    [a, b, c ]     // without trailing comma
+)

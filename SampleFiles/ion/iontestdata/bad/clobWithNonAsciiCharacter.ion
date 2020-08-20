@@ -1,0 +1,2 @@
+// This contains the byte (0x80). Raw bytes above 0x7F are illegal in clobs.
+{{"€"}}

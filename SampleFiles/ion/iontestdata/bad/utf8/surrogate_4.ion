@@ -1,0 +1,2 @@
+// malformed utf-16 surrogate - 2nd code unit is out of surrogate range
+"\ud800\uabcd"

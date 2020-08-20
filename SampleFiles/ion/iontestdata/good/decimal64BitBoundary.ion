@@ -1,0 +1,9 @@
+// Verifies that implementations do not assume that decimal coefficients can fit in a 64 bit unsigned int.
+
+// Max value of an unsigned 64 bit integer (0xFFFFFFFFFFFFFFFF)
+18446744073709551615.
+-18446744073709551615. // Note: most big decimal implementations are sign + magnitude.
+
+// Max value of an unsigned 64 bit integer + 1 (0x10000000000000000)
+18446744073709551616.
+-18446744073709551616.

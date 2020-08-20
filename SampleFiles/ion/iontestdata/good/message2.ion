@@ -1,0 +1,24 @@
+contribution::{
+  submission_id:99999,
+  customer_id:1234,
+  sku:"XXX",
+  version:1,
+  marketplace_ids:[1],
+  offer_listings:[
+    {marketplace_id:1},
+  ],
+  product:{
+    one:[
+      {value:"A"},
+    ],
+    two:[
+      {value:"A"},
+      {value:"B"},
+    ],
+    three:[
+      {value:"A"},
+      {value:"B"},
+      {value:"C"},
+    ],
+  },
+}

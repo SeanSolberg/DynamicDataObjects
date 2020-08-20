@@ -1,0 +1,7 @@
+// Timestamps can be terminated by EOF.
+
+// --------> WARNING <--------
+// This file must not have a terminating newline, we want the EOF immediately
+// following the digits!
+
+2009-01-22T00:25Z

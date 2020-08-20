@@ -1,0 +1,5 @@
+// WARNING: this file uses CRLF newline sequences.
+
+// Here the CRLF pair is escaped-away leaving an empty symbol.
+'\
+'

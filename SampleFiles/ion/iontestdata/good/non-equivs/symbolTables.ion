@@ -1,0 +1,21 @@
+// different declared local symbols
+embedded_documents::[
+    '''
+    $ion_1_0
+    $ion_symbol_table::{
+        symbols:[ "rock", "paper", "scissors" ]
+    }
+    $10
+    $11
+    $12
+    ''',
+    '''
+    $ion_1_0
+    $ion_symbol_table::{
+        symbols:[ "foo", "bar", "baz" ]
+    }
+    $10
+    $11
+    $12
+    ''',
+]

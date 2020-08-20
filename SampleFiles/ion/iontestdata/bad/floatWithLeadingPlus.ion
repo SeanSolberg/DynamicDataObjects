@@ -1,0 +1,3 @@
+// Numerics cannot have leading positive sign
+// The array wrapper ensures we don't use sexp tokenization ( + 123e0 )
+[ +123e0 ]

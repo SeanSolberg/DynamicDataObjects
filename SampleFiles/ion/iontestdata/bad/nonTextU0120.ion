@@ -1,0 +1,6 @@
+// Non-ASCII characters outside of text literals are always syntax error.
+
+// Here we have a character which could be mis-parsed as whitespace.
+// U+0120     Ġ   Latin Capital Letter G with dot above
+
+123 Ġ 456

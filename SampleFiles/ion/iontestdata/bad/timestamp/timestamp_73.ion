@@ -1,0 +1,10 @@
+2010-11-17T12:34:56.Z
+
+/*
+Missing digits after decimal point, as required by W3C format:
+
+  An adopting standard that permits fractions of a second must specify both
+  the minimum number of digits (a number greater than or equal to one) and
+  the maximum number of digits (the maximum may be stated to be "unlimited").
+    -- http://www.w3.org/TR/NOTE-datetime
+*/

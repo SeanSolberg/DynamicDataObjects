@@ -1,0 +1,7 @@
+// --------> WARNING <--------
+// This file must not have a terminating newline, we want the EOF immediately
+// following the comment!
+// This is a trap for IONCPP-59
+
+abc
+// some comment

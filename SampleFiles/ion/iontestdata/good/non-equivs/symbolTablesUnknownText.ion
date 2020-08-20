@@ -1,0 +1,25 @@
+// import declaration, with max_id > 0
+embedded_documents::[
+    '''
+    $ion_1_0
+    $ion_symbol_table::{
+        symbols:[ "foo", "bar", "baz" ]
+    }
+    $10
+    $11
+    $12
+    ''',
+    '''
+    $ion_1_0
+    $ion_symbol_table::{
+        imports:[ { name: "com.amazon.ion.tests",
+                    version: 1,
+                    max_id: 1 }
+        ],
+        symbols:[ "foo", "bar", "baz" ]
+    }
+    $10
+    $11
+    $12
+    ''',
+]

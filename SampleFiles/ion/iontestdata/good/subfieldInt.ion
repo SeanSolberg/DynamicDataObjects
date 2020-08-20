@@ -1,0 +1,150 @@
+$ion_1_0
+
+// This test file contains boundary values of the basic field (binary sub-field)
+// Int. These values covers the different boundary conditions of calculation
+// of the amount of bytes needed to encode the single binary sub-field on the
+// wire.
+//
+// 1st byte encoded:    1 sign-bit + 7 content-bits
+// 2nd+ byte encoded:                8 content-bits
+//
+// The Ion decimal's mantissa is written as both positive and negative
+// representations of Int, depending on the signum of the mantissa.
+
+/**
+ * ================================== FORMAT ==================================
+ * Each group of test datum in this file follows the format specified below:
+ *
+ *    // <number of byte(s) representing the binary sub-field Int>
+ *    // <number of bits (1s) representing the boundary value>
+ *    // hex: <hexadecimal representation of the boundary value>
+ *    // dec: <decimal representation of the boundary value>
+ *    <datum that tests on the boundary value - 1>
+ *    <datum that tests on the boundary value>
+ *    <datum that tests on the boundary value + 1>
+ *    ...
+ *
+ * NOTE: The boundary value is essentially the number of 1s in binary format.
+ *       For example: 7 bits = 0x7f (hex) = 127 (dec) = 1111111 (bin)
+ */
+
+// 1 byte
+// 7 bits
+// hex: 0x7f
+// dec: 127
+126d0
+127d0
+128d0
+-126d0
+-127d0
+-128d0
+
+// 2 bytes
+// 15 bits
+// hex: 0x7fff
+// dec: 32767
+32766d0
+32767d0
+32768d0
+-32766d0
+-32767d0
+-32768d0
+
+// 3 bytes
+// 23 bits
+// hex: 0x7fffff
+// dec: 8388607
+8388606d0
+8388607d0
+8388608d0
+-8388606d0
+-8388607d0
+-8388608d0
+
+// 4 bytes
+// 31 bits
+// hex: 0x7fffffff
+// dec: 2147483647
+2147483646d0
+2147483647d0                    // 32-bit signed twos-complement int max value
+2147483648d0                    // 64-bit signed twos-complement long
+-2147483646d0
+-2147483647d0
+-2147483648d0                   // 32-bit signed twos-complement int min value
+
+// 5 bytes
+// 39 bits
+// hex: 0x7fffffffff
+// dec: 549755813887
+549755813886d0
+549755813887d0
+549755813888d0
+-549755813886d0
+-549755813887d0
+-549755813888d0
+
+// 6 bytes
+// 47 bits
+// hex: 0x7fffffffffff
+// dec: 140737488355327
+140737488355326d0
+140737488355327d0
+140737488355328d0
+-140737488355326d0
+-140737488355327d0
+-140737488355328d0
+
+// 7 bytes
+// 55 bits
+// hex: 0x7fffffffffffff
+// dec: 36028797018963967
+36028797018963966d0
+36028797018963967d0
+36028797018963968d0
+-36028797018963966d0
+-36028797018963967d0
+-36028797018963968d0
+
+// 8 bytes
+// 63 bits
+// hex: 0x7fffffffffffffff
+// dec: 9223372036854775807
+9223372036854775806d0
+9223372036854775807d0           // 64-bit signed twos-complement long max value
+9223372036854775808d0           // java arbitrary-bit BigInteger
+-9223372036854775806d0
+-9223372036854775807d0
+-9223372036854775808d0          // 64-bit signed twos-complement long min value
+
+// 9 bytes
+// 64 bits
+// hex: 0xfffffffffffffff
+// dec: 18446744073709551615
+18446744073709551614d0
+18446744073709551615d0
+18446744073709551616d0
+-18446744073709551614d0
+-18446744073709551615d0
+-18446744073709551616d0
+
+// 9 bytes
+// 71 bits
+// hex: 0x7fffffffffffffffff
+// dec: 2361183241434822606847
+2361183241434822606846d0
+2361183241434822606847d0
+2361183241434822606848d0
+-2361183241434822606846d0
+-2361183241434822606847d0
+-2361183241434822606848d0
+
+// 10 bytes
+// 79 bits used
+// hex: 0x7fffffffffffffffffff
+// dec: 604462909807314587353087
+604462909807314587353086d0
+604462909807314587353087d0
+604462909807314587353088d0
+-604462909807314587353086d0
+-604462909807314587353087d0
+-604462909807314587353088d0

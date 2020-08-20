@@ -1,0 +1,65 @@
+// Tests that the keyword lexer does not simply match keyword prefixes and that any lookahead logic works correctly.
+(
+    {falsehood: ""}
+    {'falsehood': ""}
+)
+(
+    {truer: 123}
+    {'truer': 123}
+)
+(
+    {nancy: abc}
+    {'nancy': abc}
+)
+(
+    {nullable: 3.14}
+    {'nullable': 3.14}
+)
+(
+    falsehood::""
+    'falsehood'::""
+)
+(
+    truer::123
+    'truer'::123
+)
+(
+    nancy::abc
+    'nancy'::abc
+)
+(
+    nullable::3.14
+    'nullable'::3.14
+)
+(
+    falsehood
+    'falsehood'
+)
+(
+    truer
+    'truer'
+)
+(
+    nancy
+    'nancy'
+)
+(
+    nullable
+    'nullable'
+)
+embedded_documents::(
+    "falsehood"
+    "'falsehood'"
+)
+embedded_documents::(
+    "truer"
+    "'truer'"
+)
+embedded_documents::(
+    "nancy"
+    "'nancy'"
+)
+embedded_documents::(
+    "nullable"
+    "'nullable'"
+)

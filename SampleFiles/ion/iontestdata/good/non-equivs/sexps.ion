@@ -1,0 +1,43 @@
+[
+    (),
+    (()),
+    ((())),
+    (((()))),
+]
+
+// equality depends on order
+[
+    (3 2 1),
+    (1 2 3),
+]
+
+[
+    (1 2 3),
+    (1 2 a::3),
+]
+[
+    ((1) 2 3),
+    ( 1  2 3),
+]
+[
+    ann::(1),
+    (1),
+]
+
+// The - sign is parsed as part of the Float, NOT as an operator.
+[
+    (-inf),
+    ('-' 'inf'),
+]
+
+// The + sign is parsed as part of the Float, NOT as an operator.
+[
+    (+inf),
+    ('+' 'inf'),
+]
+
+// The - sign is parsed as part of the Int, NOT as an operator.
+[
+    (-1),
+    ('-' 1),
+]

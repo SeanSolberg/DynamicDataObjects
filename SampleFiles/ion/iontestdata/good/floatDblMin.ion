@@ -1,0 +1,21 @@
+/*
+Trap for a float-parsing bug that's appeared in Java and PHP (at least).
+ION-162
+
+http://www.exploringbinary.com/java-hangs-when-converting-2-2250738585072012e-308/
+  "Java — both its runtime and compiler — go into an infinite loop when
+  converting the decimal number 2.2250738585072012e-308 to double-precision
+  binary floating-point. This number is supposed to convert to 0x1p-1022,
+  which is DBL_MIN; instead, Java gets stuck, oscillating between 0x1p-1022
+  and 0x0.fffffffffffffp-1022, the largest subnormal double-precision
+  floating-point number.
+
+Values below are taken from that same page.
+*/
+
+2.2250738585072012e-308
+0.00022250738585072012e-304          // decimal point placement
+//00000000002.2250738585072012e-308  // leading zeros not allowed in Ion
+2.225073858507201200000e-308         // trailing zeros
+2.2250738585072012e-00308            // leading zeros in the exponent
+2.2250738585072012997800001e-308     // superfluous digits beyond digit 17

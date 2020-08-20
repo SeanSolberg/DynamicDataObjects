@@ -1,0 +1,145 @@
+
+// diff. precisions, unknown local offsets
+(
+    2007T                                // years precision
+    2007-01T                             // months precision
+    2007-01-01T                          // days precision
+    2007-01-01                           // same value as above, diff. syntax
+    2007-01-01T00:00-00:00               // minutes precision
+    2007-01-01T00:00:00-00:00            // seconds precision
+    2007-01-01T00:00:00.0-00:00          // frac. seconds precision
+    2007-01-01T00:00:00.00-00:00         // frac. seconds precision
+    2007-01-01T00:00:00.0000000000-00:00 // frac. seconds precision
+)
+
+// minutes precision, diff. local offsets
+(
+    2007-01-02T00:00Z         // UTC, NB: this val. is repeated in the next sexp
+    
+    // offset's minutes
+    2007-01-02T00:59+00:59
+    2007-01-02T00:02+00:02
+    2007-01-02T00:01+00:01
+    2007-01-01T23:59-00:01
+    2007-01-01T23:58-00:02
+    2007-01-01T23:01-00:59
+    
+    // offset's hours
+    2007-01-02T23:00+23:00
+    2007-01-02T02:00+02:00
+    2007-01-02T01:00+01:00
+    2007-01-01T23:00-01:00
+    2007-01-01T22:00-02:00
+    2007-01-01T01:00-23:00
+    
+    // offset's hours and minutes
+    2007-01-02T01:25+01:25
+    2007-01-01T22:35-01:25
+)
+
+// diff. precisions, diff. local offsets
+(
+    // minutes precise
+    2007-01-02T00:00Z         // UTC, NB: this val. is repeated in the prev sexp
+    2007-01-02T00:00+00:00    // explicit local offset
+    2007-01-02T00:00-00:00    // unknown local offset
+    
+    // seconds precise
+    2007-01-02T00:00:00Z             // UTC
+    2007-01-02T00:00:00+00:00        // explicit local offset
+    2007-01-02T00:00:00-00:00        // unknown local offset
+    
+    // frac. seconds precise
+    2007-01-02T00:00:00.000Z         // UTC
+    2007-01-02T00:00:00.000+00:00    // explicit local offset
+    2007-01-02T00:00:00.000-00:00    // unknown local offset
+)
+
+// diff. frac. seconds digits, diff. local offsets
+(
+    // unknown local offsets
+    2007-01-01T00:00:00.0-00:00
+    2007-01-01T00:00:00.00-00:00
+    2007-01-01T00:00:00.0000000000-00:00
+    
+    // UTC
+    2007-01-01T00:00:00.0+00:00
+    2007-01-01T00:00:00.00+00:00
+    2007-01-01T00:00:00.0000000000+00:00
+    
+    // UTC
+    2007-01-01T00:00:00.0Z
+    2007-01-01T00:00:00.00Z
+    2007-01-01T00:00:00.0000000000Z
+)
+
+// Roll local offset forward and back over some boundaries
+
+// end of a leap day
+(
+    2008-02-29T23:59-00:01
+    2008-03-01T00:00+00:00
+)
+
+(
+    2008-03-01T00:00+00:01
+    2008-02-29T23:59-00:00
+)
+
+// end of a non-leap day
+(
+    2009-02-28T23:59-00:01
+    2009-03-01T00:00+00:00
+)
+
+(
+    2009-03-01T00:00+00:01
+    2009-02-28T23:59+00:00
+)
+
+// end of month
+(
+    2009-09-30T23:59-00:01
+    2009-10-01T00:00+00:00
+)
+
+(
+    2009-10-01T00:00+00:01
+    2009-09-30T23:59+00:00
+)
+
+// end of year
+
+(
+    2009-12-31T23:59-00:01
+    2010-01-01T00:00+00:00
+)
+
+(
+    2010-01-01T00:00+00:01
+    2009-12-31T23:59+00:00
+)
+
+// end of year, seconds precision
+
+(
+    2009-12-31T23:59:59-00:01
+    2010-01-01T00:00:59+00:00
+)
+
+(
+    2010-01-01T00:00:59+00:01
+    2009-12-31T23:59:59+00:00
+)
+
+// end of year, fractional precision
+
+(
+    2009-12-31T23:59:59.999-00:01
+    2010-01-01T00:00:59.999+00:00
+)
+
+(
+    2010-01-01T00:00:59.999+00:01
+    2009-12-31T23:59:59.999+00:00
+)

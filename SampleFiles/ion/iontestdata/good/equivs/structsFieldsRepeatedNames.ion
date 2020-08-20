@@ -1,0 +1,32 @@
+// Struct fields with repeated names
+(
+    {
+        a:1,
+        a:2,
+        a:3,
+    }
+    {
+        a:1,
+        a:3,
+        a:2,
+    }
+    {
+        a:3,
+        a:2,
+        a:1,
+    }
+)
+(
+    {
+        a:{bb:11, bb:22},
+        a:{bb:11, bb:22},
+    }
+    {
+        a:{bb:11, bb:22},
+        a:{bb:22, bb:11},
+    }
+    {
+        a:{bb:22, bb:11},
+        a:{bb:11, bb:22},
+    }
+)

@@ -1,0 +1,127 @@
+// Structs with fields in different order
+(
+    {
+        a:1,
+        b:2,
+        c:3,
+    }
+    {
+        a:1,
+        c:3,
+        b:2,
+    }
+    {
+        c:3,
+        b:2,
+        a:1,
+    }
+)
+(
+    {
+        a:{aa:11, bb:22},
+        b:{aa:11, bb:22},
+    }
+    {
+        a:{bb:22, aa:11},
+        b:{bb:22, aa:11},
+    }
+    {
+        a:{aa:11, bb:22},
+        b:{bb:22, aa:11},
+    }
+    {
+        a:{bb:22, aa:11},
+        b:{aa:11, bb:22},
+    }
+
+    {
+        b:{aa:11, bb:22},
+        a:{aa:11, bb:22},
+    }
+    {
+        b:{bb:22, aa:11},
+        a:{bb:22, aa:11},
+    }
+    {
+        b:{bb:22, aa:11},
+        a:{aa:11, bb:22},
+    }
+    {
+        b:{aa:11, bb:22},
+        a:{bb:22, aa:11},
+    }
+)
+
+// Nested Structs (with fields in different order) within a List (ordered sequence)
+(
+    [{
+        a:{aa:11, bb:22},
+        b:{aa:11, bb:22},
+    }]
+    [{
+        a:{bb:22, aa:11},
+        b:{bb:22, aa:11},
+    }]
+    [{
+        a:{aa:11, bb:22},
+        b:{bb:22, aa:11},
+    }]
+    [{
+        a:{bb:22, aa:11},
+        b:{aa:11, bb:22},
+    }]
+
+    [{
+        b:{aa:11, bb:22},
+        a:{aa:11, bb:22},
+    }]
+    [{
+        b:{bb:22, aa:11},
+        a:{bb:22, aa:11},
+    }]
+    [{
+        b:{bb:22, aa:11},
+        a:{aa:11, bb:22},
+    }]
+    [{
+        b:{aa:11, bb:22},
+        a:{bb:22, aa:11},
+    }]
+)
+
+// Nested Structs (with fields in different order) within a Sexp (ordered sequence)
+(
+    ({
+        a:{aa:11, bb:22},
+        b:{aa:11, bb:22},
+    })
+    ({
+        a:{bb:22, aa:11},
+        b:{bb:22, aa:11},
+    })
+    ({
+        a:{aa:11, bb:22},
+        b:{bb:22, aa:11},
+    })
+    ({
+        a:{bb:22, aa:11},
+        b:{aa:11, bb:22},
+    })
+
+    ({
+        b:{aa:11, bb:22},
+        a:{aa:11, bb:22},
+    })
+    ({
+        b:{bb:22, aa:11},
+        a:{bb:22, aa:11},
+    })
+    ({
+        b:{bb:22, aa:11},
+        a:{aa:11, bb:22},
+    })
+    ({
+        b:{aa:11, bb:22},
+        a:{bb:22, aa:11},
+    })
+)

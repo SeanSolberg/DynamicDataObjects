@@ -1,0 +1,21 @@
+// If local symbol table structs have additional annotations, $ion_symbol_table must be the first. Otherwise, the struct
+// is treated as a user value.
+// See also: good/equivs/localSymbolTableWithAnnotations.ion
+
+embedded_documents::[
+    '''
+    $ion_1_0
+    $ion_symbol_table::{
+        symbols:["foo", "bar"]
+    }
+    foo bar
+    ''',
+
+    '''
+    $ion_1_0
+    annotated::$ion_symbol_table::{
+        symbols:["foo", "bar"]
+    }
+    foo bar
+    '''
+]

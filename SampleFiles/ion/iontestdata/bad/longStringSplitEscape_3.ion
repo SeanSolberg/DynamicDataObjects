@@ -1,0 +1,2 @@
+// Malformed long string - common escapes cannot be split
+'''\''' '''n'''

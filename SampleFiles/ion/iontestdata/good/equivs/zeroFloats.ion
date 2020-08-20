@@ -1,0 +1,69 @@
+// Positive zeroes with different exponents
+(
+    0e0
+    0e1
+    0e7
+)
+
+(
+    0e0
+    0e00
+    0e000
+
+    0e-0
+    0e-00
+    0e-000
+
+    0e+0
+    0e+00
+    0e+000
+)
+
+(
+    0e1
+    0e11
+    0e111
+
+    0e-1
+    0e-11
+    0e-111
+
+    0e+1
+    0e+11
+    0e+111
+)
+
+// Negative zeroes with different exponents
+(
+    -0e0
+    -0e1
+    -0e7
+)
+
+(
+    -0e0
+    -0e00
+    -0e000
+
+    -0e-0
+    -0e-00
+    -0e-000
+
+    -0e+0
+    -0e+00
+    -0e+000
+)
+
+(
+    -0e1
+    -0e11
+    -0e111
+
+    -0e-1
+    -0e-11
+    -0e-111
+
+    -0e+1
+    -0e+11
+    -0e+111
+)

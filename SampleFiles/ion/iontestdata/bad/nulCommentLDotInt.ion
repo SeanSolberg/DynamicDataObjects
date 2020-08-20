@@ -1,0 +1,2 @@
+// Nulls must be a single token.
+[ nul/* */l.int ]

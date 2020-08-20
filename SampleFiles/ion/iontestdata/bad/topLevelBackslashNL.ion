@@ -1,0 +1,5 @@
+// Backslash-escape sequences are only valid with string/symbol/clob
+
+1
+\
+3

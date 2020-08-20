@@ -1,0 +1,4 @@
+// if null has a dot after it then it's a typed null and the type
+// must be valid so that if new types ever get added the semantic
+// of existing values won't change
+( null. )

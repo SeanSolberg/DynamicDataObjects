@@ -1,0 +1,74 @@
+// different whole number digits
+[
+    123.0,
+    124.0,
+    125.0,
+]
+
+// different decimal digits
+[
+    123.0,
+    123.1,
+    123.2,
+    123.3,
+]
+
+// different exponents
+[
+    123d-3,
+    123d-2,
+    123d-1,
+    123d0,
+    123d1,
+    123d2,
+    123d3,
+]
+
+// different precisions
+[
+    123.,
+    123.0,
+    123.00,
+]
+
+// different precisions (positive zeroes)
+[
+    0.,
+    0.0,
+    0.00,
+    0.000000,
+]
+
+// different precisions (negative zeroes)
+[
+    -0.,
+    -0.0,
+    -0.00,
+    -0.000000,
+]
+
+// positive zero and negative zero (with same precision)
+[
+    0.,
+    -0.,
+]
+
+// different precisions
+[
+    0.0,
+    0d0,
+]
+[
+    0.0,
+    0D0,
+]
+
+// different precisions
+[
+    -0.0,
+    -0d0,
+]
+[
+    -0.0,
+    -0D0,
+]

@@ -1,0 +1,14 @@
+[
+    null,         // identical to null.null
+    null.bool,
+    null.int,
+    null.float,
+    null.decimal,
+    null.timestamp,
+    null.string,
+    null.symbol,
+    null.blob,
+    null.clob,
+    null.struct,
+    null.list,
+]

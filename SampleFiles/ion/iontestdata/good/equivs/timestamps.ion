@@ -1,0 +1,26 @@
+// timestamps representing the same points in time, precisions and local offsets
+
+// days precise, unknown local offset
+(
+    2007-02-23
+    2007-02-23T
+)
+
+// minutes precise, UTC
+(
+    2007-02-23T12:14Z
+    2007-02-23T12:14+00:00
+)
+
+// seconds precise, UTC
+(
+    2007-02-23T12:14:33Z
+    2007-02-23T12:14:33+00:00
+)
+
+// frac. seconds precise, UTC
+(
+    2007-02-23T12:14:33.079Z
+    2007-02-23T12:14:33.079+00:00
+)
+

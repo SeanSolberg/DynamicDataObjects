@@ -1,0 +1,33 @@
+"a b c d e f g h i j k l m n o p q r s t u v w x y z"
+"A B C D E F G H I J K L M N O P Q R S T U V W X Y Z"
+"1 2 3 4 5 6 7 8 9 0"
+", . ; / [ ' ] \\ = - 0 9 8 7 6 5 4 3 2 1 ` ~ ! @ # $ % ^ & * ( ) _ + | : < > ?"
+"\0 \a \b \t \n \f \r \v \" \' \? \\\\ \/ \0\a\b\t\n\f\r\v\"\'\?\\\\\/"
+"\uabcd \uffff \u1234 \u4e6a \ud37b\uf4c2\u0000\x00\xff"  // removed \udeff
+"\uABCD \ucFFF \u1234 \u4E6A \uD37B\uF4C2\u0000\x00\xff"
+"\uaBcD \ucffF \u1234 \u4E6a \ud37B\uF4c2\u0000\x00\xff"
+"\uF987\uF987\uF987\uF987\uF987\uF987\uF987\uF987\uF987\uF987\uF987\uF987\uF987\uF987\uF987\uF987\uF987"  // make sure there's a bunch of unicode (beyond the magic 14 char/byte limit
+".\uF987\uF987\uF987\uF987\uF987\uF987\uF987\uF987\uF987\uF987\uF987\uF987\uF987\uF987\uF987\uF987\uF987"  // with all "alignements" of the utf-8-ness
+"..\uF987\uF987\uF987\uF987\uF987\uF987\uF987\uF987\uF987\uF987\uF987\uF987\uF987\uF987\uF987\uF987\uF987"  // with all "alignements" of the utf-8-ness
+"...\uF987\uF987\uF987\uF987\uF987\uF987\uF987\uF987\uF987\uF987\uF987\uF987\uF987\uF987\uF987\uF987\uF987"  // with all "alignements" of the utf-8-ness
+'''Stuff to write on '''
+'''multiple lines '''
+'''if you want to'''
+""
+''''''
+""
+'''concatenated'''  ''' from '''   '''a single line'''
+""
+'''a b c d e f g h i j k l m n o p q r s t u v w x y z '''
+'''A B C D E F G H I J K L M N O P Q R S T U V W X Y Z '''
+''', . ; / [ ' ] \\ = - 0 9 8 7 6 5 4 3 2 1 ` ~ ! @ # $ % ^ & * ( ) _ + | : < > ? '''
+'''\0 \a \b \t \n \f \r \v \" \' \? \\\\ \/ \0\a\b\t\n\f\r\v\"\'\?\\\\\/'''
+'''\uabcd \ucfff \u1234 \u4e6a \ud37b\uf4c2\u0000\x00\xff''' // removed \udeff
+'''\uABCD \uCFFF \u1234 \u4E6A \uD37B\uF4C2\u0000\x00\xFF'''
+'''\uaBcD \uCffF \u1234 \u4E6a \ud37B\uF4c2\u0000\x00\xfF'''
+""
+'''\
+multi-line string
+with embedded\nnew line
+characters\
+'''

@@ -1,0 +1,17 @@
+{"Sample": "Hello World",
+ "number": 12,
+ "number2": 1234,
+ "number3": 12345678,
+ "false": false,
+ "true": true,
+ "isNil": null,
+ "List": [{"Firstname": "sean",
+        "LastName": "Solberg",
+        "Age": 47,
+        "height": 72.5},
+        {"Firstname": "Bobn",
+        "LastName": "Johnson",
+        "Age": 12,
+        "height": null}
+     ]
+}

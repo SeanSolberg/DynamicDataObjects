@@ -1,0 +1,58 @@
+(
+// null.timestamps is invalid
+//  ( null.timestamps )
+//  ( null. timestamps )
+//  ( null .timestamps )
+//  ( null . timestamps )
+  ( null '.' 'timestamps' )
+  ( null '.' timestamps )
+)
+
+(
+  ( a--1 )
+  ( 'a' '--' 1 )
+)
+
+(
+  ( a-1 )
+  ( 'a' -1 )
+)
+
+(
+  ( 2 --1 )
+  ( 2 '--' 1 )
+)
+
+(
+  ( a--1. )
+  ( 'a' '--' 1. )
+)
+
+(
+  ( a--1e0 )
+  ( 'a' '--' 1e0 )
+)
+
+(
+  ( abc/* rem */def )
+  ( abc def )
+)
+
+( '\
+a'
+  '\
+\
+\
+a'
+  'a'
+)
+
+( 'a\
+b'
+  'ab'
+)
+
+( 'a\\\
+b'
+  'a\\b'
+)

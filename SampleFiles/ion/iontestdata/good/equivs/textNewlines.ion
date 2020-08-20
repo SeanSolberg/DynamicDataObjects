@@ -1,0 +1,131 @@
+// WARNING! This file has inconsistent newlines!
+// Some lines have CR LF, some have LF.
+// Ion parsers must normalize newlines in string/symbol to LF.
+
+
+// These strings are empty: the linefeeds are escaped.
+[
+"",
+
+// This has LF escaped-away
+"\
+",
+
+// This has CR LF escaped-away
+"\
+",
+
+// This has CR escaped-away
+"\",
+
+// This has LF escaped-away
+'''\
+''',
+
+// This has CR LF escaped-away
+'''\
+''',
+
+// This has CR escaped-away
+'''\''',
+]
+
+
+// These strings include the newline codepoint.
+[
+"\n",
+'''\n''',
+"\x0a",
+"\x0A",
+"\u000a",
+"\u000A",
+
+// This has LF
+'''
+''',
+
+// This has CR LF
+'''
+''',
+
+// This has CR
+'''''',
+]
+
+
+// These strings include two newline codepoints.
+[
+"\n\n",
+
+// This has LF
+'''\n
+''',
+
+// This has CR LF
+'''\n
+''',
+
+// This has LF CR
+'''
+''',
+
+// This has CR
+'''\n''',
+
+// This has CR CR
+'''''',
+
+// This has CR CR LF
+'''
+''',
+]
+
+
+[
+x,
+
+// This has LF escaped-away
+'x\
+',
+
+// This has CR LF escaped-away
+'x\
+',
+
+// This has CR escaped-away
+'x\',
+]
+
+
+// Now we need to be careful with escapes.
+[
+"\r\n",
+
+// This has LF
+'''\r
+''',
+
+// This has CR LF
+'''\r
+''',
+
+// This has CR
+'''\r''',
+]
+
+
+// Now we need to be careful with escapes.
+[
+'\r\n',
+
+// This has LF
+'\r\
+\n',
+
+// This has CR LF
+'\r\
+\n',
+
+// This has CR
+'\r\\n',
+]

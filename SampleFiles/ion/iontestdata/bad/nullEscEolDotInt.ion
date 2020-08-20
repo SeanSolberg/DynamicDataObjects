@@ -1,0 +1,3 @@
+// Nulls must be a single token.
+[ null\
+.int ]

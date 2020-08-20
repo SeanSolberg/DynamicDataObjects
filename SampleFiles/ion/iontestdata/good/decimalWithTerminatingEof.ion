@@ -1,0 +1,7 @@
+// Numbers can be terminated by EOF.
+
+// --------> WARNING <--------
+// This file must not have a terminating newline, we want the EOF immediately
+// following the digits!
+
+1.23

@@ -1,0 +1,67 @@
+// Clobs with double-quoted and triple-quoted legal 7-bit ASCIIs
+(
+    {{"a b c d e f g h i j k l m n o p q r s t u v w x y z A B C D E F G H I J K L M N O P Q R S T U V W X Y Z"}}
+    {{'''a b c d e f g h i j k l m n o p q r s t u v w x y z A B C D E F G H I J K L M N O P Q R S T U V W X Y Z'''}}
+)
+(
+    {{", . ; / [ ' ] \\ = - 0 9 8 7 6 5 4 3 2 1 ` ~ ! @ # $ % ^ & * ( ) _ + | : < > ?\0 \a \b \t \n \f \r \v \" \' \? \/"}}
+    {{''', . ; / [ ' ] \\ = - 0 9 8 7 6 5 4 3 2 1 ` ~ ! @ # $ % ^ & * ( ) _ + | : < > ?\0 \a \b \t \n \f \r \v \" \' \? \/'''}}
+)
+
+// Clobs with/without whitespaces between brace(s) and content
+(
+    {{"clob content"}}
+    {{"clob content" }}
+    {{ "clob content"}}
+    {{ "clob content" }}
+
+    {{"clob content"
+    }}
+
+    {{
+        "clob content"}}
+
+    {{
+        "clob content"
+    }}
+)
+
+// Clobs with concatenated triple-quoted single-line content
+(
+    {{'''concatenated single-line clob content'''}}
+    {{'''concatenated single-line clob content''' ''''''}}
+    {{'''''' '''concatenated single-line clob content'''}}
+    {{'''concatenated ''' '''single-line clob content'''}}
+    {{'''concatenated single-line ''' '''clob content'''}}
+)
+
+// Clobs with empty strings
+(
+    {{""}}
+    {{''''''}}
+)
+
+
+
+// Clobs with escaped newline vs no newline
+(
+    // Escaped newline
+    {{'''single-line \
+string'''}}
+
+    // Escaped newline
+    {{'''single-line string\
+'''}}
+
+    // No newline
+    {{'''single-line string'''}}
+)
+
+
+
+// Clobs with double-quote as content
+(
+    {{'''\"'''}}
+    {{'''"'''}}
+    {{"\""}}
+)

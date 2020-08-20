@@ -1,0 +1,5 @@
+// Structs with last field with/without trailing comma
+(
+    {a:1, b:2,}     // with trailing comma
+    {a:1, b:2 }     // without trailing comma
+)

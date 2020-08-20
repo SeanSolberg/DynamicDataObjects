@@ -1,0 +1,120 @@
+$ion_1_0
+
+// This test file contains boundary values of the basic field (binary sub-field)
+// UInt. These values covers the different boundary conditions of calculation
+// of the amount of bytes needed to encode the single binary sub-field on the
+// wire.
+//
+// Each byte encoded:    8 content-bits
+
+/**
+ * ================================== FORMAT ==================================
+ * Each group of test datum in this file follows the format specified below:
+ *
+ *    // <number of byte(s) representing the binary sub-field UInt>
+ *    // <number of bits (1s) representing the boundary value>
+ *    // hex: <hexadecimal representation of the boundary value>
+ *    // dec: <decimal representation of the boundary value>
+ *    <datum that tests on the boundary value - 1>
+ *    <datum that tests on the boundary value>
+ *    <datum that tests on the boundary value + 1>
+ *
+ * NOTE: The boundary value is essentially the number of 1s in binary format.
+ *       For example: 7 bits = 0x7f (hex) = 127 (dec) = 1111111 (bin)
+ */
+
+// 1 byte
+// 8 bits
+// hex: 0xff
+// dec: 255
+254
+255
+256
+
+// 2 bytes
+// 16 bits
+// hex: 0xffff
+// dec: 65535
+65534
+65535
+65536
+
+// 3 bytes
+// 24 bits
+// hex: 0xffffff
+// dec: 16777215
+16777214
+16777215
+16777216
+
+// 4 bytes
+// 31 bits
+// hex: 0x7fffffff
+// dec: 2147483647
+2147483646
+2147483647                      // 32-bit signed twos-complement int max value
+2147483648                      // 64-bit signed twos-complement long
+
+// 4 bytes
+// 32 bits
+// hex: 0xffffffff
+// dec: 4294967295
+4294967294
+4294967295
+4294967296
+
+// 5 bytes
+// 40 bits
+// hex: 0xffffffffff
+// dec: 1099511627775
+1099511627774
+1099511627775
+1099511627776
+
+// 6 bytes
+// 48 bits
+// hex: 0xffffffffffff
+// dec: 281474976710655
+281474976710654
+281474976710655
+281474976710656
+
+// 7 bytes
+// 56 bits
+// hex: 0xffffffffffffff
+// dec: 72057594037927935
+72057594037927934
+72057594037927935
+72057594037927936
+
+// 8 bytes
+// 63 bits
+// hex: 0x7fffffffffffffff
+// dec: 9223372036854775807
+9223372036854775806
+9223372036854775807             // 64-bit signed twos-complement long max value
+9223372036854775808             // java arbitrary-bit BigInteger
+
+// 8 bytes
+// 64 bits
+// hex: 0xffffffffffffffff
+// dec: 18446744073709551615
+18446744073709551614
+18446744073709551615
+18446744073709551616
+
+// 9 bytes
+// 72 bits
+// hex: 0xffffffffffffffffff
+// dec: 4722366482869645213695
+4722366482869645213694
+4722366482869645213695
+4722366482869645213696
+
+// 10 bytes
+// 80 bits
+// hex: 0xffffffffffffffffffff
+// dec: 1208925819614629174706175
+1208925819614629174706174
+1208925819614629174706175
+1208925819614629174706176

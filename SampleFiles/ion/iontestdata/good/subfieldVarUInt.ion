@@ -1,0 +1,94 @@
+$ion_1_0
+
+// This test file contains boundary values of the basic field (binary sub-field)
+// VarUInt. These values covers the different boundary conditions of calculation
+// of the amount of bytes needed to encode the single binary sub-field on the
+// wire.
+//
+// Each byte encoded:    1 end-flag-bit + 7 content-bits
+
+/**
+ * ================================== FORMAT ==================================
+ * Each group of test datum in this file follows the format specified below:
+ *
+ *    // <number of byte(s) representing the binary sub-field VarUInt>
+ *    // <number of bits (1s) representing the boundary value>
+ *    // hex: <hexadecimal representation of the boundary value>
+ *    // dec: <decimal representation of the boundary value>
+ *    <ion version marker>
+ *    <local symbol table with import declaration>
+ *    <datum that tests on the boundary value - 1>
+ *    <datum that tests on the boundary value>
+ *    <datum that tests on the boundary value + 1>
+ *
+ * NOTE: The boundary value is essentially the number of 1s in binary format.
+ *       For example: 7 bits = 0x7f (hex) = 127 (dec) = 1111111 (bin)
+ *
+ * NOTE: We declare an IVM and local symbol table (with import declaration
+ *       specifying a max_id) before each group of test datum so we can set
+ *       SIDs that will be known.
+ */
+
+// 1 byte
+// 7 bits
+// hex: 0x7f
+// dec: 127
+$ion_1_0
+$ion_symbol_table::{
+    imports:[ { name: "com.amazon.blah.blah.blah",
+                version: 1,
+                max_id: 116 // 126 - 1 - 9 (system symbols)
+              } ],
+    symbols:[ "boundary-1", "boundary", "boundary+1" ]
+}
+'boundary-1'::1         // $126
+'boundary'  ::1         // $127
+'boundary+1'::1         // $128
+
+// 2 bytes
+// 14 bits
+// hex: 0x3fff
+// dec: 16383
+$ion_1_0
+$ion_symbol_table::{
+    imports:[ { name: "com.amazon.blah.blah.blah",
+                version: 1,
+                max_id: 16372 // 16382 - 1 - 9 (system symbols)
+              } ],
+    symbols:[ "boundary-1", "boundary", "boundary+1" ]
+}
+'boundary-1'::1         // $16382
+'boundary'  ::1         // $16383
+'boundary+1'::1         // $16384
+
+// 3 bytes
+// 21 bits
+// hex: 0x1fffff
+// dec: 2097151
+$ion_1_0
+$ion_symbol_table::{
+    imports:[ { name: "com.amazon.blah.blah.blah",
+                version: 1,
+                max_id: 2097140 // 2097150 - 1 - 9 (system symbols)
+              } ],
+    symbols:[ "boundary-1", "boundary", "boundary+1" ]
+}
+'boundary-1'::1         // $2097150
+'boundary'  ::1         // $2097151
+'boundary+1'::1         // $2097152
+
+// 4 bytes
+// 28 bits
+// hex: 0xfffffff
+// dec: 268435455
+$ion_1_0
+$ion_symbol_table::{
+    imports:[ { name: "com.amazon.blah.blah.blah",
+                version: 1,
+                max_id: 268435444 // 268435454 - 1 - 9 (system symbols)
+              } ],
+    symbols:[ "boundary-1", "boundary", "boundary+1" ]
+}
+'boundary-1'::1         // $268435454
+'boundary'  ::1         // $268435455
+'boundary+1'::1         // $268435456

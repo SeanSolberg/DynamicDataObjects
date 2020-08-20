@@ -1,0 +1,3 @@
+// This traps an off-by-one bug in binary length calculation.
+
+-128

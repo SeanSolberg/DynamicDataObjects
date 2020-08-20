@@ -1,0 +1,50 @@
+// $2 == $ion_1_0
+// In addition, annotated IVMs are Ion Version Identifiers, NOT version markers
+
+embedded_documents::
+[
+    '''$2::$ion_1_0''',
+    '''$ion_1_0::$ion_1_0''',
+]
+
+embedded_documents::
+[
+    '''$ion_1_0::$2::$ion_1_0''',
+    '''$2::$ion_1_0::$ion_1_0''',
+]
+
+embedded_documents::
+[
+    ''' $2 :: '$ion_1_0' ''',
+    ''' '$ion_1_0' :: '$ion_1_0' ''',
+]
+
+embedded_documents::
+[
+    ''' '$ion_1_0' :: $2 :: '$ion_1_0' ''',
+    ''' $2 :: '$ion_1_0' :: '$ion_1_0' ''',
+]
+
+embedded_documents::
+[
+    '''[ $2::$ion_1_0 ]''',
+    '''[ $ion_1_0::$ion_1_0 ]''',
+]
+
+embedded_documents::
+[
+    '''( $ion_1_0::$2::$ion_1_0 )''',
+    '''( $2::$ion_1_0::$ion_1_0 )''',
+]
+
+embedded_documents::
+[
+    '''[ $2:: '$ion_1_0' ]''',
+    '''[ '$ion_1_0'::'$ion_1_0' ]''',
+]
+
+embedded_documents::
+[
+    '''( '$ion_1_0'::$2::'$ion_1_0' )''',
+    '''( $2::'$ion_1_0'::'$ion_1_0' )''',
+]
