@@ -4,7 +4,7 @@ interface
 
 // FINISH - This whole unit needs to be finished,  just the basic framework has been put in here.
 
-uses classes, DataObjects2, DataObjectsStreamers, SysUtils, RTTI, TypInfo, DataObjectsUtils;
+uses classes, DataObjects2, DataObjects2Streamers, SysUtils, RTTI, TypInfo, DataObjects2Utils;
 
 type
 
@@ -19,6 +19,7 @@ type
     class function IsFileExtension(aStr: string): boolean; override;
     class function ClipboardPriority: cardinal; override;
 
+    function Clone: TDataObjStreamerBase;
     procedure Decode(aDataObj: TDataObj); override;
     procedure Encode(aDataObj: TDataObj); override;
   end;
@@ -360,6 +361,11 @@ end;
 class function TMsgPackStreamer.ClipboardPriority: cardinal;
 begin
   result := 30;
+end;
+
+function TMsgPackStreamer.Clone: TDataObjStreamerBase;
+begin
+  result := TMsgPackStreamer.Create(nil);   // no properties to copy yet
 end;
 
 procedure TMsgPackStreamer.Decode(aDataObj: TDataObj);

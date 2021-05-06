@@ -6,7 +6,7 @@ interface
 // See https://matroska.org/technical/specs/index.html for information about this format
 // NOTE:
 
-uses classes, DataObjects2, DataObjectsStreamers, SysUtils, RTTI, TypInfo, DataObjectsUtils, IOUtils;
+uses classes, DataObjects2, DataObjects2Streamers, SysUtils, RTTI, TypInfo, DataObjects2Utils, IOUtils;
 
 type
   TEBMLStreamer = class(TDataObjStreamerBase)

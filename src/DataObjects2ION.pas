@@ -4,7 +4,7 @@ interface
 
 // FINISH - This whole unit needs to be finished,  just the basic framework has been put in here.
 
-uses classes, DataObjects2, DataObjectsStreamers, SysUtils, RTTI, TypInfo, DataObjectsUtils, VarInt;
+uses classes, DataObjects2, DataObjects2Streamers, SysUtils, RTTI, TypInfo, DataObjects2Utils, VarInt;
 
 type
   TIonStreamer = class(TDataObjStreamerBase)
@@ -14,6 +14,7 @@ type
 
   public
     function Clone: TDataObjStreamerBase; override;
+    class function FileExtension: string; override;
     class function GetFileFilter: string; override;
     class function IsFileExtension(aStr: string): boolean; override;
     class function ClipboardPriority: cardinal; override;
@@ -81,6 +82,11 @@ begin
 end;
 
 
+
+class function TIonStreamer.FileExtension: string;
+begin
+  result := 'ion';
+end;
 
 procedure TIonStreamer.InternalEncode(aDataObj: TDataObj);
 type

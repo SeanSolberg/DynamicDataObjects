@@ -1,19 +1,20 @@
-unit DataObjectsUBJSON;
+unit DataObjects2UBJSON;
 
 interface
 
-uses classes, DataObjects2, DataObjectsStreamers, SysUtils, RTTI, TypInfo, DataObjectsUtils;
+uses classes, DataObjects2, DataObjects2Streamers, SysUtils, RTTI, TypInfo, DataObjects2Utils;
 
 type
 {: This class will decode and encode a UBJSON stream.   See http://ubjson.org/ for details. }
   TUBJSONStreamer = class(TDataObjStreamerBase)
-  private
+  protected
     fNoopCount: integer;
 
     procedure RaiseParsingException(aMessage: string);
     procedure DoRead(var Buffer; Count: LongInt);
-    procedure DecodeType(aType: byte; aDataObj: TDataObj);
+    procedure DecodeType(aType: byte; aDataObj: TDataObj); virtual;
     function ReadTypeByte: byte;
+    function DecodeSize(aType: byte): int64;
   public
     class function FileExtension: string; override;
     class function GetFileFilter: string; override;
@@ -76,6 +77,51 @@ begin
   until result <> byte('N');
 end;
 
+function TUBJSONStreamer.DecodeSize(aType: byte): int64;
+var
+  lShortInt: shortInt;
+  lByte: byte;
+  lSmallInt: smallInt;
+  lInt32: LongInt;
+  lInt64: Int64;
+begin
+  result := 0;
+
+  case aType of
+    byte('i'): begin   // signed int8
+      DoRead(lShortInt, 1);
+      result := lShortInt;
+    end;
+
+    byte('U'): begin   // Unsigned byte
+      DoRead(lByte, 1);
+     result := lByte;
+    end;
+
+    byte('I'): begin   // int16
+      DoRead(lSmallInt, 2);
+      result := lSmallInt;
+    end;
+
+    byte('l'): begin   // Signed in32
+      DoRead(lInt32, 4);
+      result := lInt32;
+    end;
+
+    byte('L'): begin   // Signed int64
+      DoRead(lInt64, 8);
+      result := lInt64;
+    end;
+
+    else
+    begin
+      // we can only expect to see a number so anything else is an error condition
+      RaiseParsingException('Read an invalid type code of $'+IntToHex(aType,2)+' but only number types are allowed when reading a size.');
+    end;
+  end;
+end;
+
+
 procedure TUBJSONStreamer.DecodeType(aType: byte; aDataObj: TDataObj);
 var
   lTempType: Byte;
@@ -94,43 +140,6 @@ var
   lUTF8String: UTF8String;
   i: Integer;
 
-  function DecodeSize(aType: byte): int64;
-  begin
-    result := 0;
-
-    case aType of
-      byte('i'): begin   // signed int8
-        DoRead(lShortInt, 1);
-        result := lShortInt;
-      end;
-
-      byte('U'): begin   // Unsigned byte
-        DoRead(lByte, 1);
-       result := lByte;
-      end;
-
-      byte('I'): begin   // int16
-        DoRead(lSmallInt, 2);
-        result := lSmallInt;
-      end;
-
-      byte('l'): begin   // Signed in32
-        DoRead(lInt32, 4);
-        result := lInt32;
-      end;
-
-      byte('L'): begin   // Signed int64
-        DoRead(lInt64, 8);
-        result := lInt64;
-      end;
-
-      else
-      begin
-        // we can only expect to see a number so anything else is an error condition
-        RaiseParsingException('Read an invalid type code of $'+IntToHex(aType,2)+' but only number types are allowed when reading a size.');
-      end;
-    end;
-  end;
 
   function ReadStringWithSizeType(aType: byte): string;
   var

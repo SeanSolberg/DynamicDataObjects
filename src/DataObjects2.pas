@@ -7,7 +7,7 @@ unit DataObjects2;
 
   Design principles:
     No geometry - maybe someday I will implement WellKnownBinary geometry but for now there is none as I will probably never have the need.  Maybe model as binary with geometry flags.
-    Do not want any extra stuff hacked in there to support COM or the Prism compiler for DotNet, etc.  If someone else needs that, please be my guess to edit the code to add that.
+    Do not want any extra stuff hacked in there to support COM or the Prism compiler for DotNet, etc.  If someone else needs that, please be my guest to edit the code to add that.
     I do want to support firemonkey and the VCL so that means care in variant data storage.  Need to keep consistent data sizing, etc.
     I do want to be mindful of being able to implement this stuff enrirely in any another language.  I'm sure I won't get this perfect, but I'll try to be mindful.
     I want the searching of slots by name to be faster.  This is a trade-off as some techniques are good for low slot counts (loop) and some are good for high slot counts (TDictionary)
@@ -37,7 +37,7 @@ unit DataObjects2;
 
      BSON makes an array be the same as a frame except that it uses a string representation of the index for each item.  That is absolutely JANK and I refuse to do that.
      Real array's don't need a "slotname" identifier as their identifier is basically their index into the array.  However,  I have found the need to have
-     somethink like a frame but with integers as the "slotname".  Basically, an array with some of the items in the array missing and taking an item out of the
+     something like a frame but with integers as the "slotname".  Basically, an array with some of the items in the array missing and taking an item out of the
      array doesn't shift latter items down an index.  This is the SparseArray.
 
      It's tempting to separate WireTypes from DataTypes (see google protocol buffers for what this means) to keep from using up the possible dataTypes ( I have a 5 bit limit) (IE: booleans, the Object type's dataType isn't ever serialized, etc.)
@@ -50,8 +50,8 @@ unit DataObjects2;
      by old code anyway.
 
      Note about Data Conversions.  When calling a getAsXXXXXXXX function, that function will return a value under four distinct situations:
-       1.  The dataType of the TDataObj is the same and can be returned as is.
-       2.  The dataType of the TDataObj is different, but the value being asked for can easily be directly converted to, so the TDataObj contents are not changed at all
+       1.  The dataType of the TDataObj is the same as what is being asked for and so it can be returned as is.
+       2.  The dataType of the TDataObj is different than what is being asked for, but the value being asked for can easily be directly converted to, so the TDataObj contents are not changed at all
            and the appropriate conversion is done and the value is returned.  IE).  if the value is an Int32 and you call getAsString, then the string representation of
            this value is returned without changing the dataType of the data object over to a string.
        3.  The dataType of the TDataObj is different and the existing value can be converted to the data type asked for but in order to return the type of data being asked for,
@@ -84,20 +84,63 @@ unit DataObjects2;
     DataObj - binary
     CBOR - binary
     JSON - text
+    DDO - First will be without geometry, then later add geometry.
 
     BSON - binary
     UBJSON - binary
+    Binary JData (derived from UBJSON)
     Smile - binary
+    Messagepack
     ION - binary and text (json superset)
+
     YAML - text (json superset) }
 
+    { Planned Internal Improvements
+      Finish all the details around the sparse array.
+      Simplify the internal DataType-Code mechanism.  It was done for memory compactness but we can expand memory a bit to get simplification and a tiny perfomance increase.
+      Internal support for the WKB Geometry data type so that DDO can be fully serialized.
+      Internal support for the Half Float (Float16)
+      Internal support for the Extended Float
+      Internal support for the full unsigned set of integers (UInt16, UInt32, Uint64) and the signed byte.
+      Either get the concept of "Attributes" working correctly or remove it entirely.
+    }
 
 
 interface
 
-uses SysUtils, DateUtils, Generics.collections, Classes, VarInt, StreamCache;
+uses SysUtils, DateUtils, Generics.collections, Classes, VarInt, StreamCache, Rtti, typInfo,
+     windows {for outputdebugString};
+
+// If you enable cMakeMoreCompatibleWithOldDataObjects then it makes this code more compatible with the old dataObjects library I used to use.
+{$Define cMakeMoreCompatibleWithOldDataObjects}
+
+
+type
+  TOnHandleExceptionProc = procedure(Sender: TObject; aException: Exception);
+  TMemberVisibilities = set of TMemberVisibility;      // used for RTTI assigning
+  TDataObjAssignContext = class
+  private
+    fSerializedObjects: TList;    // reference list of objects that have already been serialized.  This is to prevent an infinite object ref-to-object circular serialization.  EG)  Object that has a Parent property that refers to the parent object.
+    fOnHandleException: TOnHandleExceptionProc;
+  public
+    MemberVisibilities: TMemberVisibilities;
+    DoNotSerializeDefaultValues: boolean;   // if set to true, then we won't serialize out to a frame those properties that contain a value that is the default value.  EG) an integer that has the value zero.
+    SerializeEnumerationsAsIntegers: boolean; // if set to true, then we serialize enumeration values out as a number.  If the enumeration has a small set of values, it will be a byte.  If it has a lot, it will be an integer.
+                                              // by default, the enumeration value is serialized as a symbol text.
+    constructor Create;
+    destructor Destroy; override;
+    function IsAlreadySerialized(aObject: TObject): boolean;
+    procedure AddObject(aObject: TObject);
+    procedure ReportException(aException: Exception);    // when assignment is happening, if there is an exception, it can be reported to here.  Maybe the caller will want to handle it.
+
+    property OnHandleException: TOnHandleExceptionProc read fOnHandleException write fOnHandleException;
+  end;
+
 
 const
+  cPublishedMembers = [TMemberVisibility.mvPublished];
+  cPublicMembers = [TMemberVisibility.mvPublished, TMemberVisibility.mvPublic];
+ 
  // data Type used for defining the type of data held by a TDataObj
  // The bottom 5 bits in this byte are used to determine the type of data held by a TDataObj as listed below
  // if the top MSB bit is set to 1, then that flag means this data has a set of attributes that precede the data.  These attributes
@@ -128,6 +171,7 @@ const
  //                                     code = 1: currency
 
 type
+
   EDataObj = class(Exception);
 
   TDataTypeCode = (
@@ -458,6 +502,37 @@ type
 
   PTDataStore = ^TDataStore;
 
+  TDataObj = class;
+
+  // This is the base class that all streamers must descend from.  It just defines the core abstract behavior for encoding and decoding to a descendant streamer's format.
+  TDataObjStreamerBase = class
+  private
+    fOwnsStream: boolean;
+  protected
+    fStream: TStream;   // reference only in most situations.   However, if you set OwnsStream to true, then when this object is freed, then fStream will be freed.
+  public
+    constructor Create(aStream: TStream); virtual;
+    destructor Destroy; override;
+
+    function Clone: TDataObjStreamerBase; virtual; abstract;
+
+    class function FileExtension: string; virtual; abstract;
+    class function GetFileFilter: string; virtual; abstract;
+    class function IsFileExtension(aStr: string): boolean; virtual;
+    class function ClipboardPriority: cardinal; virtual; abstract;
+
+    class function GetClipboardFormatStr: string; virtual;
+
+    procedure Decode(aDataObj: TDataObj); virtual; abstract;
+    procedure Encode(aDataobj: TDataObj); virtual; abstract;
+    procedure ApplyOptionalParameters(aParams: TStrings); overload; virtual;
+    procedure ApplyOptionalParameters(aParams: String); overload;
+
+    property Stream: TStream read fStream write fStream;
+    property OwnsStream: boolean read fOwnsStream write fOwnsStream;
+  end;
+  TDataObjStreamerClass = class of TDataObjStreamerBase;
+
 
 
   TDataObj = class
@@ -543,6 +618,11 @@ type
     // Read the contents of this data object from aStream using the given aStreamerClass.  If aStreamerClass is left as undefined, then the default streamer class is used.
     procedure ReadFromStream(aStream: TStream; aStreamerClass: TClass = nil);
 
+    procedure AssignTo(aObj: TObject; aMemberVisibilities: TMemberVisibilities = [mvPublished]);
+
+    procedure AssignFrom(aObj: TObject; aMemberVisibilities: TMemberVisibilities = [mvPublished];
+                         aDoNotSerializeDefaultValues: boolean = false; aSerializeEnumerationsAsIntegers: boolean = false);
+
 //    procedure WriteToStream(aStreamer: TDataObjStreamerBase); overload;
 //    procedure ReadFromStream(aStreamer: TDataObjStreamerBase); overload;
 
@@ -552,6 +632,9 @@ type
     property AsByte: Byte read getAsByte write setAsByte;
     property AsInt32: integer read getAsInt32 write setAsInt32;         // used when you want to explicitly serialize as a 32bit integer
     property AsInt64: Int64 read getAsInt64 write setAsInt64;           // used when you want to explicitly serialize as a 64bit integer
+{$ifdef cMakeMoreCompatibleWithOldDataObjects}
+    property AsInteger: integer read getAsInt32 write setAsInt32;       // This property is a duplicate of asInt32.  It is here for code backwards compatibility so that I can use this new DataObjects against old code that was making use of the old DataObjects code.
+{$endif}
 //    property AsInteger: Int64 read getAsInteger write setAsInteger;     // normal serialization is as a varInt.  NOTE: one number, "negative zero" / "Largest negative number" can't possibly be serialized using this mode.   It's hexadecimal representation is $8000000000000000.
                                                                         // If you need to serialize this number, then you must use the AsInt64 option.
     property AsSingle: Single read getAsSingle write setAsSingle;
@@ -575,6 +658,9 @@ type
     property AsSparseArray: TDataSparseArray read getAsSparseArray write setAsSparseArray;
 
     property AsBinary: TDataBinary read getAsBinary write setAsBinary;
+{$ifDef cMakeMoreCompatibleWithOldDataObjects}
+    property AsMemStream: TDataBinary read getAsBinary write setAsBinary;
+{$endif}
     property AsObject: TObject read getAsObject write setAsObject;
 
     property AsTag: TDataTag read getAsTag;   // note that a setAsTag is not necessary
@@ -587,13 +673,24 @@ type
 
 
 
-//    property AsOleVariant: OleVariant read getOleVariant write setOleVariant;
+//    property AsOleVariant: OleVariant read getOleVariant write setOleVariant;   maybe implement this someday.
 
     procedure CopyFrom(aSrcDataObj: TDataObj);
 
-    procedure LoadFromFile(aFilename: string);
+    // if aStreamerClass is passed in with a value of nil, then the streamer will be chosen automatically based on the extension of the filename passed in aFileName
+    // if a streamer is chosen based on the filename, then aStreamerClass will be set to the class of the chosen streamer
+    // Will generate exceptions if anything goes wrong.
+    function LoadFromFile(aFilename: string; aStreamer: TDataObjStreamerBase; aOptionalParameters: string=''): TDataObjStreamerBase; overload;
+    procedure LoadFromFile(aFilename: string; aOptionalParams: string=''); overload;
+{$ifDef cMakeMoreCompatibleWithOldDataObjects}
+    procedure ReadFromFile(aFilename: string);
+{$endif}
     procedure WriteToFile(aFilename: string);   //WriteToFile will look a the aFilename extension to choose a streamer class.  by default, it will pick the ".DataObj" default streamer.
   end;
+
+{$ifDef cMakeMoreCompatibleWithOldDataObjects}
+  TDataSlot = TDataObj;       // Just an alias for old code backward compatibility.
+{$endif}
 
   TDataGUID = class
     private
@@ -632,8 +729,11 @@ type
     property Counter: Cardinal read getCounter write setCounter;
   end;
 
-  // We are using our own type here just in case we want to add methods to it in the future.
-  TDataStringList = class(TStringList);
+  // We are using our own type here just in case we want to add methods to it.
+  TDataStringList = class(TStringList)
+  public
+    function GetAsArrayOfStrings: TArray<string>;
+  end;
 
   // Started out using a Dictionary, but found that it is slower for case sensitive lookups when the number of slots is under 15 and
   // slower for case insensitive lookups when the number of slots is under about 50.   So, we just do brute force scanning to find a match.
@@ -658,6 +758,9 @@ type
     function Delete(aIndex: integer): boolean;         // returns true if the slot was found and delted.
     property Slots[aIndex: integer]: TDataObj read getSlot;
     function Slotname(aIndex: integer): string;
+{$ifDef cMakeMoreCompatibleWithOldDataObjects}
+    property SlotNames[aIndex: integer]: string read Slotname;
+{$endif}
     function Count: integer;
     procedure Clear;
     procedure CopyFrom(aSource: TDataFrame);
@@ -670,7 +773,7 @@ type
   TReduceProcedure = reference to procedure(aTotal: TDataObj; aArray: TDataArray; aCurrentValue: TDataObj; aIndex: integer);
   TMapProcedure = reference to procedure(aTargetObj: TDataObj; aCurrentArray: TDataArray; aCurrentValue: TDataObj; aIndex: integer);
 
-  // We are using our own type here so we add methods to it.
+  // We are using our own type here so we can add methods to it.
   TDataArray = class(TObjectList<TDataObj>)
   private
     function getSlot(aIndex: integer): TDataObj;
@@ -744,10 +847,33 @@ type
   end;
 
 
+  // Here are some useful utility functions
+  procedure DataObjConvertStringListToArrayOfStrings(aDataObj: TDataObj);
+  procedure DataObjConvertArrayOfStringsToStringList(aDataObj: TDataObj);
+
+  procedure AssignObjectToDataObj(aDataObj: TDataObj; aObj: TObject; aAssignContext: TDataObjAssignContext);
+  procedure AssignDataObjToObject(aDataObj: TDataObj; aObj: TObject; aAssignContext: TDataObjAssignContext);
 
 implementation
 
-uses DataObjectsStreamers, Variants;
+uses DataObjects2Streamers, Variants;
+
+type
+  TGetObjProc = reference to function: TDataObj;
+
+var
+  gRttiContext: TRttiContext;  // Used for the RTTI assignment to/from DataObjects.  Is created in initialization.
+
+function GetRttiContext: TRttiContext;
+begin
+  Result := gRttiContext;
+end;
+
+procedure DebugMsg(const Msg: String);
+begin
+  OutputDebugString(PChar(Msg))
+end;
+
 
 { TDataStore }
 
@@ -878,9 +1004,590 @@ begin
   fDataObject := Value;
 end;
 
+//*********************************************************************************************************
+//*********************************************************************************************************
+// procedures used to assign an Object to a DataObject
+procedure AssignVariantToDataObj(aDataObj: TDataObj; aVariant: Variant; aAssignContext: TDataObjAssignContext);
+begin
+  //FINISH
+end;
+
+Procedure AssignValueToDataObj(aValue: TValue; aDefault: integer; aAssignContext: TDataObjAssignContext; aGetObjProc: TGetObjProc);
+var
+  i: integer;
+  lObject: TObject;
+  lArray: TDataArray;
+  lByte: Byte;
+  lInteger: Integer;
+  lInt64: int64;
+  lLength: integer;
+  lTypeInfo: PTypeInfo;
+  lRecord: TRttiRecordType;
+  lField: TRttiField;
+  lFrame: TDataFrame;
+type
+  PTGuid = ^TGuid;
+begin
+//  DebugMsg(aRttiProp.Name);
+  try
+    case aValue.Kind of
+      tkInteger: begin
+        if aValue.TypeInfo = System.TypeInfo(Boolean) then
+        begin
+          aGetObjProc.AsBoolean := aValue.AsInteger <> 0;
+        end
+        else
+        begin
+          lInteger := aValue.AsInteger;
+          if (lInteger <> aDefault) or (aAssignContext.DoNotSerializeDefaultValues = false) then  // note that Default values can only be up to 32 bit.
+            aGetObjProc.AsInteger := lInteger;
+        end;
+      end;
+
+      tkChar: begin
+        lInteger := aValue.AsOrdinal;
+        if (lInteger <> aDefault) or (aAssignContext.DoNotSerializeDefaultValues = false) then  // note that Default values can only be up to 32 bit.
+          aGetObjProc.AsByte := lInteger;
+      end;
+
+      tkEnumeration: begin
+        //  We can either serialize emumerations as text symbols or as ordinal values?   Default option is to do symbols(text)
+        if aValue.TypeInfo = System.TypeInfo(Boolean) then
+        begin
+          aGetObjProc.AsBoolean := aValue.AsOrdinal <> 0;  // right now we are not skipping this if DoNotSerializeDefaultValues is true no matter what the value is.
+        end
+        else
+        begin
+          lInt64 := aValue.AsOrdinal;
+          if aAssignContext.SerializeEnumerationsAsIntegers then
+          begin
+            if (lInt64 <> aDefault) or (aAssignContext.DoNotSerializeDefaultValues = false) then  // note that Default values can only be up to 32 bit.
+            begin
+              case aValue.DataSize of
+                1: aGetObjProc.AsByte:=lInt64;
+                2, 4: aGetObjProc.AsInteger:=lInt64;
+                else
+                  aGetObjProc.AsInt64:=lInt64;
+              end;
+            end;
+          end
+          else
+          begin
+            // We serialize an enumeration as a symbol (text) which is the text representation of the enumerated value.
+            lTypeInfo := aValue.TypeInfo;
+            aGetObjProc.AsString := GetEnumName(lTypeInfo, lInt64)
+          end;
+        end;
+      end;
+
+      tkFloat:
+      begin
+        if aValue.Typeinfo = System.TypeInfo(TDateTime) then
+          aGetObjProc.AsDateTime:=aValue.AsExtended
+        else
+          aGetObjProc.AsDouble:=aValue.AsExtended;
+      end;
+
+      tkString, tkLString, tkWString, tkUString:
+      begin
+        if (aValue.AsString <> '') or (aAssignContext.DoNotSerializeDefaultValues = false) then
+        begin
+          aGetObjProc.AsString:=aValue.AsString;
+        end;
+      end;
+
+      tkSet:
+      begin
+        case aValue.DataSize of
+          1: begin
+            lByte := PByte(aValue.GetReferenceToRawData)^;
+            if (lByte <> aDefault) or (aAssignContext.DoNotSerializeDefaultValues=false) then
+              aGetObjProc.AsByte:=lByte;
+          end;
+          2, 4: begin
+            lInteger := PInteger(aValue.GetReferenceToRawData)^;
+            if (lInteger <> aDefault) or (aAssignContext.DoNotSerializeDefaultValues=false) then
+              aGetObjProc.AsInt32:=lInteger;
+          end;
+          // HMMM.  can a set be bigger than 32bit?  The RTTI suggests no, and if you try, you get a compiler error.
+        end;
+      end;
+
+      tkClass:
+      begin
+        lObject:=aValue.AsObject;
+        if Assigned(lObject) then
+        begin
+          if (lObject is TCollection) then   // Collections are the way that Delphi serializes published child items (TPersistent descendants)
+          begin
+            lArray := aGetObjProc().AsArray;   // make this before the loop so we can actually put out an empty array if the collection is empty.
+            for i := 0 to TCollection(lObject).Count - 1 do
+            begin
+              // collections are saved as an array of items
+              if not aAssignContext.IsAlreadySerialized(TCollection(lObject).Items[i]) then  // as long as this object hasn't been serialized already by a parent hierarachially
+              begin
+                AssignObjectToDataObj(lArray.newSlot,TCollection(lObject).Items[i], aAssignContext);
+              end;
+            end;
+          end
+          // FINISH - Are we going to automatically serialize other types of collection items?  TList, TObjectList, TDictionary, etc?
+          else
+          begin
+            // General Object.
+            if not aAssignContext.IsAlreadySerialized(lObject) then  // as long as this object hasn't been serialized already by a parent hierarachially
+            begin
+              AssignObjectToDataObj(aGetObjProc(), lObject, aAssignContext);    // two-function recursion happening here.
+            end;
+          end;
+        end;
+      end;
+
+//      tkMethod: ;
+
+      tkWChar: begin
+        lInteger := aValue.AsOrdinal;
+        if (lInteger <> aDefault) or (aAssignContext.DoNotSerializeDefaultValues = false) then  // note that Default values can only be up to 32 bit.
+          aGetObjProc.AsInteger := lInteger;
+      end;
+
+      tkVariant: begin
+        AssignVariantToDataObj(aGetObjProc, aValue.AsVariant, aAssignContext);
+      end;
+
+      tkArray,tkDynArray: begin
+        lLength := aValue.GetArrayLength;
+        lArray := aGetObjProc.AsArray;
+        for i := 0 to lLength-1 do
+        begin
+          AssignValueToDataObj(aValue.GetArrayElement(i), 0, aAssignContext,
+            function: TDataObj
+            begin
+              result := lArray.NewSlot;
+            end
+          );
+        end;
+      end;
+
+      tkRecord: begin
+        lTypeInfo := aValue.TypeInfo;
+
+        if lTypeInfo = TypeInfo(TGuid) then
+        begin
+          // We need to handle GUID's specifically.
+          aGetObjProc.AsGUID.GUID := PTGUID(aValue.GetReferenceToRawData)^;
+        end
+        else
+        begin
+          lRecord := gRttiContext.GetType(lTypeInfo).AsRecord ;
+          lFrame := aGetObjProc.AsFrame;
+          for lField in lRecord.GetFields do
+          begin
+            // NOTE:  Delphi has a bug where if a record contains a property and that property is an array ( such as an array[0..7] of byte for example )
+            // The array property is not given a TRTTI type by the compiler.  And thus, if you ask for it, it will be nil.
+            // We have no choice but to skip these types of properties.
+            if assigned(lField.FieldType) then
+            begin
+              // I don't think there is any such thing as a defined default value for a record field like there is with object fields cause it really only is applicable to published properties.  However, we still consider zero as our serialization default.
+              AssignValueToDataObj(lField.GetValue(aValue.GetReferenceToRawData), 0, aAssignContext,
+                function: TDataObj
+                begin
+                  result := lFrame.NewSlot(lField.name);
+                end
+              );
+            end;
+          end;
+        end;
+      end;
+
+//      tkInterface: ;  // Is it possible to maybe serialize an interface reference?   Hmmm.
+
+      tkInt64: begin
+        if aValue.TypeInfo = System.TypeInfo(Boolean) then    // can we have a 64 bit Boolean?  Not sure if it is actually possible.
+        begin
+          aGetObjProc.AsBoolean := aValue.AsInt64 <> 0;
+        end
+        else
+        begin
+          lInt64 := aValue.AsInt64;
+          if (lInt64 <> aDefault) or (aAssignContext.DoNotSerializeDefaultValues = false) then  // note that Default values can only be up to 32 bit.
+            aGetObjProc.AsInt64 := lInt64;
+        end;
+      end;
+
+//      tkClassRef: ;
+//      tkPointer: ;
+//      tkProcedure: ;
+    end;
+  except
+    //Just going to trap all errors and move on to the next property.  However, report it to our AssignContext and maybe the caller wants to do something with it.
+    on e: exception do
+    begin
+      aAssignContext.ReportException(e);
+    end;
+  end;
+
+end;
+
+Procedure AssignObjectPropertyToFrame(aFrame: TDataFrame; aObj: TObject; aRttiProp: TRttiProperty; aAssignContext: TDataObjAssignContext);
+var
+  lDefault: integer;
+begin
+  // Note that a Default is only possible on 32 ordinal values in the RTTI.
+  if aRttiProp is TRttiInstanceProperty then
+    lDefault := TRttiInstanceProperty(aRttiProp).Default     // we need this in order to lookup the default value of the property.
+  else
+    lDefault := 0;
+
+  AssignValueToDataObj(aRttiProp.GetValue(aObj), lDefault, aAssignContext,
+    function: TDataObj
+    begin
+      result := aFrame.NewSlot(aRttiProp.Name);
+    end
+  );
+end;
+
+procedure AssignObjectToDataObj(aDataObj: TDataObj; aObj: TObject; aAssignContext: TDataObjAssignContext);
+var
+  lRttiType: TRttiType;
+  lRttiProp: TRttiProperty;
+  lFrame: TDataFrame;
+  lProperties: TArray<TRttiProperty>;
+begin
+  // Now go though the members of the instance and serialize those
+  lRttiType := GetRttiContext.GetType(aObj.ClassType);
+
+  if lRttiType.IsInstance then
+  begin
+    lFrame := aDataObj.AsFrame;
+    aAssignContext.AddObject(aObj);   // important to be here so that child properties can't ultimately refer back to aObj and cause infinite recursion.
+
+    lProperties := lRttiType.GetProperties;
+    for lRttiProp in lProperties do
+    begin
+      if (lRTTIProp.IsReadable) then
+      begin
+        if (lRTTIProp.Visibility in aAssignContext.MemberVisibilities) then
+        begin
+          AssignObjectPropertyToFrame(lFrame, aObj, lRttiProp, aAssignContext);
+        end;
+      end;
+    end;
+  end;
+end;
+
+//*********************************************************************************************************
+//*********************************************************************************************************
+// procedures used to assign a DataObject to an Object
+
+
+// aValue should really have been made prior to calling this procedure according to the property that this value is for so it has the right Kind set.
+// This method will update the value that this aValue holds from associated data in the dataObject.
+function AssignDataObjToValue(aDataObj: TDataObj; var aValue: TValue; aAssignContext: TDataObjAssignContext): boolean;   // returns true if a value was loaded
+var
+  i: Integer;
+  lObject: TObject;
+//  lValueArray: TArray<TValue>;
+  lArray: TDataArray;
+  lTypeInfo: PTypeInfo;
+  lRecord: TRttiRecordType;
+  lFrame: TDataFrame;
+  lField: TRttiField;
+  lValue: TValue;
+type
+  PTGuid = ^TGUID;
+begin
+  result := false;
+  try
+    case aValue.Kind of
+      tkSet:
+      begin
+        case aValue.DataSize of
+          1: begin
+            PByte(aValue.GetReferenceToRawData)^ := aDataObj.AsByte;
+            result := true;
+          end;
+          2, 4: begin
+            PInteger(aValue.GetReferenceToRawData)^ := aDataObj.AsInteger;
+            result := true;
+          end;
+          // HMMM.  can a set be bigger than 32bit?  The RTTI suggests no, and if you try, you get a compiler error.
+        end;
+      end;
+
+      tkEnumeration: begin
+        // Emumerations can either be serialized as text symbols or as ordinal values?   Default option is to do symbols(text).  We need to detect type and do either.
+        case aDataObj.DataType.Code of
+          cDataTypeNull: begin
+            aValue := nil;
+            result := true;
+          end;
+          cDataTypeBoolean: begin
+            aValue := aDataObj.AsBoolean;
+            result := true;
+          end;
+          cDataTypeByte: begin
+            aValue := aDataObj.AsByte;
+            result := true;
+          end;
+          cDataTypeInt32: begin
+            aValue := aDataObj.AsInt32;
+            result := true;
+          end;
+          cDataTypeInt64: begin
+            aValue := aDataObj.AsInt64;
+            result := true;
+          end;
+          cDataTypeString: begin
+            aValue := GetEnumValue(aValue.TypeInfo, aDataObj.AsString);
+//            aRttiProp.SetValue(aObj, TValue.FromOrdinal(lValue.TypeInfo, GetEnumValue(lValue.TypeInfo, aDataObj.AsString)));
+            result := true;
+          end;
+          cDataTypeTag: begin
+            // Look inside the tag to pickup the nested item and get back to this method recursively.
+            AssignDataObjToValue(aDataObj.AsTag.getDataObj, aValue, aAssignContext);
+            result := true;
+          end;
+        end;
+      end;
+
+      tkInteger:
+      begin
+        aValue := aDataObj.AsInt32;
+        result := true;
+      end;
+
+      tkChar, tkWChar:
+      begin
+        aValue := TValue.FromOrdinal(aValue.TypeInfo, aDataObj.AsInt64);
+      end;
+
+      tkInt64:
+      begin
+        aValue := aDataObj.AsInt64;
+        result := true;
+      end;
+
+      tkFloat:
+      begin
+        case aDataObj.DataType.Code of
+          cDataTypeSingle: begin aValue := aDataObj.AsSingle; result := true; end;
+          cDataTypeDouble: begin aValue := aDataObj.AsDouble; result := true; end;
+        end;
+      end;
+
+      tkString, tkLString, tkWString, tkUString:
+      begin
+        aValue := aDataObj.AsString;
+        result := true;
+      end;
+
+      tkClass:
+      begin
+        // if the property is a class, then it is expected that the aDataObj is a frame
+
+        // aValue should contain an object, but is that object created yet or not?  If it is created, then we nest an assignment.
+        // FINISH - If it's not yet created, then we need to create it.  How do we know which object to create?
+        lObject := aValue.AsObject;
+
+        if aDataObj.DataType.Code = cDataTypeFrame then
+        begin
+          if assigned(lObject) then
+          begin
+            AssignDataObjToObject(aDataObj, aValue.AsObject, aAssignContext);
+            result := true;
+          end;
+        end
+        else if aDataObj.DataType.Code = cDataTypeArray then
+        begin
+          // an array can be serialized into a Class only if the class is a TCollection.
+          // Future - maybe we support other collection types of classes in the future.
+          if aValue.AsObject is TCollection then
+          begin
+            // Note:  the TCollection instance knows what class of items (only one) it can contain so
+            lArray := aDataObj.AsArray;
+            for i := 0 to lArray.Count-1 do
+            begin
+              AssignDataObjToObject(lArray.Slots[i], TCollection(aValue.AsObject).Add, aAssignContext);
+            end;
+            result := true;
+          end;
+        end;
+      end;
+
+      tkVariant: begin
+        case aDataObj.DataType.code of
+          cDataTypeNull: aValue := nil;
+          cDataTypeBoolean: begin aValue := aDataObj.AsBoolean; result := true; end;
+          cDataTypeByte: begin aValue := aDataObj.AsByte; result := true; end;
+          cDataTypeInt32: begin aValue := aDataObj.AsInt32; result := true; end;
+          cDataTypeInt64: begin aValue := aDataObj.AsInt64; result := true; end;
+          cDataTypeSingle: begin aValue := aDataObj.AsSingle; result := true; end;
+          cDataTypeDouble: begin aValue := aDataObj.AsDouble; result := true; end;
+//          cDataTypeDecimal128: ;
+          cDataTypeDateTime: begin aValue := aDataObj.AsDateTime; result := true; end;
+          cDataTypeUTCDateTime: begin aValue := aDataObj.AsUTCDateTime; result := true; end;
+          cDataTypeDate: begin aValue := aDataObj.AsDate; result := true; end;
+          cDataTypeTime: begin aValue := aDataObj.AsTime; result := true; end;
+          cDataTypeGUID: begin aValue := aDataObj.AsGUID.AsString; result := true; end;
+          cDataTypeObjectID: begin aValue := aDataObj.AsObjectID.AsString; result := true; end;
+          cDataTypeString: begin aValue := aDataObj.AsString; result := true; end;
+          cDataTypeStringList: begin {FINISH} end;
+          cDataTypeFrame: begin {FINISH} end;
+          cDataTypeArray: begin {FINISH} end;
+          cDataTypeSparseArray: begin {FINISH} end;
+          cDataTypeBinary: begin {FINISH} end;
+          cDataTypeObject: begin {FINISH} end;
+          cDataTypeTag: result := AssignDataObjToValue(aDataObj.AsTag.getDataObj, aValue, aAssignContext);    // recursion here.
+        end;
+      end;
+
+      tkArray,tkDynArray: begin
+(*   FINISH some day
+        if aDataObj.DataType.code = cDataTypeArray then
+        begin
+          lArray := aDataObj.AsArray;
+          SetLength(lValueArray, lArray.Count);
+          for i := 0 to lArray.Count-1 do
+          begin
+            aValue.TypeInfo.Kind
+
+            AssignDataObjToObject(lArray.Slots[i], ??, aAssignContext);
+          end;
+
+          aValue.FromArray(aValue.TypeInfo, lValueArray);
+        end;
+        *)
+      end;
+
+      tkRecord, tkMRecord: begin            // tkMRecord is for a managed record.  It is new.  Not really sure what the implications are.
+        lTypeInfo := aValue.TypeInfo;
+
+        if lTypeInfo = TypeInfo(TGuid) then
+        begin
+          // We need to handle GUID's specifically as a specifically known type of record.
+          case aDataObj.DataType.Code of
+            cDataTypeGUID: PTGUID(aValue.GetReferenceToRawData)^ := aDataObj.AsGUID.GUID;
+            cDataTypeString: begin
+              PTGUID(aValue.GetReferenceToRawData)^ := aDataObj.AsGUID.GUID;
+            end;
+//            cDataTypeFrame:       // possibly could do 4 known slots in a frame;
+//            cDataTypeArray:       // possibly could do 4 numbers in an array;
+//            cDataTypeSparseArray: // possibly could do 4 numbers in a sparsearray;
+            cDataTypeBinary: begin
+              if aDataObj.AsBinary.Size = sizeof(TGUID) then
+              begin
+                PTGUID(aValue.GetReferenceToRawData)^ := PTGUID(aDataObj.AsBinary.Memory)^;   // copy the 16 bytes
+              end;
+            end;
+          end;
+        end
+        else
+        begin
+          lRecord := gRttiContext.GetType(lTypeInfo).AsRecord ;
+          lFrame := aDataObj.AsFrame;
+          for lField in lRecord.GetFields do
+          begin
+            // NOTE:  Delphi has a bug where if a record contains a property and that property is an array ( such as an array[0..7] of byte for example )
+            // The array property is not given a TRTTI type by the compiler.  And thus, if you ask for it, it will be nil.
+            // We have no choice but to skip these types of properties.
+            if assigned(lField.FieldType) then
+            begin
+              // I don't think there is any such thing as a defined default value for a record field like there is with object fields cause it really only is applicable to published properties.  However, we still consider zero as our serialization default.
+              lValue := lField.GetValue(aValue.GetReferenceToRawData);
+              AssignDataObjToValue(lFrame.FindSlot(lField.Name), lValue, aAssignContext);
+            end;
+          end;
+        end;
+      end;
+
+    end;
+  except
+    //Just going to trap all errors and move on to the next property.
+    on e: exception do
+    begin
+      aAssignContext.ReportException(e);
+    end;
+  end;
+
+end;
+
+
+procedure AssignDataObjToObjectProperty(aDataObj: TDataObj; aObj: TObject; aRttiProp: TRttiProperty; aAssignContext: TDataObjAssignContext);
+var
+  lValue: TValue;
+begin
+  if not assigned(aDataObj) then exit;     // aDataObj could be nil which means we have nothing to load.
+
+  lValue := aRttiProp.GetValue(aObj);
+  AssignDataObjToValue(aDataObj, lValue, aAssignContext);
+  aRttiProp.SetValue(aObj, lValue);
+end;
+
+procedure AssignDataObjToObject(aDataObj: TDataObj; aObj: TObject; aAssignContext: TDataObjAssignContext);
+var
+  lRttiType: TRttiType;
+  lRttiProp: TRttiProperty;
+  lFrame: TDataFrame;
+  lProperties: TArray<TRttiProperty>;
+begin
+  // Now go though the members of the instance and try to serialize values into them from the incoming aDataObj if that aDataObj actually has data for each property
+  lRttiType := GetRttiContext.GetType(aObj.ClassType);
+
+  if not (aDataObj.DataType.Code = cDataTypeFrame) then exit;
+
+  if lRttiType.IsInstance then
+  begin
+    lFrame := aDataObj.AsFrame;
+
+    lProperties := lRttiType.GetProperties;
+    for lRttiProp in lProperties do
+    begin
+      if (lRTTIProp.IsReadable) then
+      begin
+        if (lRTTIProp.Visibility in aAssignContext.MemberVisibilities) then
+        begin
+          AssignDataObjToObjectProperty(lFrame.FindSlot(lRTTIProp.Name), aObj, lRttiProp, aAssignContext);
+        end;
+      end;
+    end;
+  end;
+end;
+
+
+
+//*********************************************************************************************************
+//*********************************************************************************************************
 
 
 { TDataObj }
+
+procedure TDataObj.AssignFrom(aObj: TObject; aMemberVisibilities: TMemberVisibilities = [mvPublished]; aDoNotSerializeDefaultValues: boolean = false; aSerializeEnumerationsAsIntegers: boolean = false);
+var
+  lAssignContext: TDataObjAssignContext;
+begin
+  lAssignContext:=TDataObjAssignContext.Create;
+  try
+    lAssignContext.MemberVisibilities := aMemberVisibilities;
+    lAssignContext.DoNotSerializeDefaultValues := aDoNotSerializeDefaultValues;
+    lAssignContext.SerializeEnumerationsAsIntegers := aSerializeEnumerationsAsIntegers;
+    AssignObjectToDataObj(self, aObj, lAssignContext);
+  finally
+    lAssignContext.Free;
+  end;
+end;
+
+procedure TDataObj.AssignTo(aObj: TObject; aMemberVisibilities: TMemberVisibilities = [mvPublished]);
+var
+  lAssignContext: TDataObjAssignContext;
+begin
+  lAssignContext:=TDataObjAssignContext.Create;
+  try
+    lAssignContext.MemberVisibilities := aMemberVisibilities;
+    AssignDataObjToObject(self, aObj, lAssignContext);
+  finally
+    lAssignContext.Free;
+  end;
+end;
 
 procedure TDataObj.Clear;
 begin
@@ -978,44 +1685,6 @@ begin
   end;
 end;
 
-// This function returns a newly created TDataObj.
-// It will also try to load this new TDataObj by reading the file using one of the possible registered streamers.
-// Many different exceptions could be raised here, but if any exception is raised when reading data from a file, the object
-// will be populated with whatever data it was successful loading before the exception.
-// returns true if it was successful.  False Otherwise.
-procedure TDataObj.LoadFromFile(aFilename: string);
-var
-  lStreamerClass: TDataObjStreamerClass;
-  lStreamer: TDataObjStreamerBase;
-  lFS: TFileStream;
-  lRS: TStreamReadCache;
-begin
-  lFS := TFileStream.Create(aFilename, fmOpenRead + fmShareDenyNone);
-  try
-    lRS := TStreamReadCache.Create(lFS);
-    try
-      // First, find the right streamer based on the filename extension.
-      lStreamerClass := gStreamerRegistry.FindStreamerClassByFilename(aFilename);
-
-      if assigned(lStreamerClass) then
-      begin
-        lStreamer := lStreamerClass.Create(lRS);
-        lStreamer.Decode(self);
-      end
-      else
-      begin
-        // FINISH - If nothing concrete was found, then attempt to load from each of the streamers and if one of them doesn't except out, then maybe it was successful loading
-
-        raise(exception.Create(format('%s was not found to be a format that can be loaded into a dataObject.',[aFilename])));
-      end;
-
-    finally
-      lRS.free;
-    end;
-  finally
-    lFS.Free;
-  end;
-end;
 
 destructor TDataObj.Destroy;
 begin
@@ -1027,6 +1696,13 @@ function TDataObj.getAsArray: TDataArray;
 var
   lStore: PTDataStore;
   i: Integer;
+
+  // used for temp moving
+  lDataString: string;
+  lDataObject: TObject;
+  lDataInt64: Int64;
+  lDataType: TDataType;
+  lNewSlot: TDataObj;
 begin
   lStore := getStore;
   case fDataType.Code of
@@ -1059,8 +1735,32 @@ begin
     end;
   else
     // there's no data that can possibly be converted so set as a new empty TDataArray
-    result := TDataArray.Create;
-    setAsArray(result);
+    if fDataType.Code = cDataTypeNull then
+    begin
+      result := TDataArray.Create;
+      setAsArray(result);
+    end
+    else
+    begin
+      // there is some kind of data in this object now, so we are going to wrap this data in an array so that the original data is the first item in the array.
+      // we are going to "detach" the data in the store from the current object and move it over to the first item that is being placed in the array.
+      lDataString := fStore.fDataString;
+      lDataObject := fStore.fDataObject;
+      lDataInt64 := fStore.fDataInt64;
+      lDataType := self.DataType;
+      fStore.fDataObject := nil;   // done so that the .clear call that happens inside the setAsArray will not free the object that we now put into lDataObject as a temporary reference.
+
+      // now switch this object over to being an array which will do a clear on it and make it an empty array
+      result := TDataArray.Create;
+      setAsArray(result);
+
+      // Create the first item in the new array and give it the data its supposed to hold.
+      lNewSlot := Result.NewSlot;
+      lNewSlot.fStore.fDataString := lDataString;
+      lNewSlot.fStore.fDataObject := lDataObject;
+      lNewSlot.fStore.fDataInt64 := lDataInt64;
+      lNewSlot.DataType := lDataType;
+    end;
   end;
 end;
 
@@ -1611,8 +2311,23 @@ begin
     varLongWord, //  Unsigned 32-bit value (type LongWord in Delphi or unsigned long in C++).
     varInt64: //  64-bit signed integer (Int64 in Delphi or __int64 in C++).
     begin
-      // we are given a number so treat this data object as an array and return the Nth item.  If the array doesn't have the Nth item then we return an invalid index exception
-      result := self.AsArray.Slots[aKey];
+      // we are given a number so treat this data object as an array or a frame or a sparseArray.
+      if self.DataType.Code = cDataTypeFrame then
+      begin
+        // this object is already a frame so try to access the "nth" item in the frame.
+        result := self.AsFrame.getSlot(aKey);
+      end
+      else if self.DataType.Code = cDataTypeSparseArray then
+      begin
+        result := self.AsSparseArray.getSlot(aKey);
+      end
+      else
+      begin
+        // we are given a number so treat this data object as an array and return the Nth item.
+        // Note that we could be converting from a different data type here to the Array data type.
+        // f the array doesn't have the Nth item then we raise an invalid index exception
+        result := self.AsArray.Slots[aKey];
+      end;
     end;
 
     varOleStr, //  Reference to a dynamically allocated UNICODE string.
@@ -1649,6 +2364,64 @@ begin
     result := @(fStore.dataAttributeStore.fStore)
   else
     result := @fStore;
+end;
+
+// If you pass in nil for aStreamer then this function will try to find the right streamer class by the filename extension and aStreamer will be populated with that object.
+// NOTE: if this function could potentially return a Streamer object, if so then the caller must free it.  It could return nil
+// This function will try to load this TDataObj by reading the file using one of the possible registered streamers.
+// Many different exceptions could be raised here, but if any exception is raised when reading data from a file, the object
+// will be populated with whatever data it was successful loading before the exception.
+function TDataObj.LoadFromFile(aFilename: string; aStreamer: TDataObjStreamerBase; aOptionalParameters: string=''): TDataObjStreamerBase;
+var
+  lStreamerClass: TDataObjStreamerClass;
+//  lStreamer: TDataObjStreamerBase;
+  lFS: TFileStream;
+  lRS: TStreamReadCache;
+begin
+  lFS := TFileStream.Create(aFilename, fmOpenRead + fmShareDenyNone);
+  try
+    lRS := TStreamReadCache.Create(lFS);
+    try
+      if assigned(aStreamer) then
+      begin
+        result := aStreamer;
+      end
+      else
+      begin
+        // Find the right streamer based on the filename extension if one was not given to us.
+        lStreamerClass := gStreamerRegistry.FindStreamerClassByFilename(aFilename);      // It is possible that this returns nil if one can't be found.
+        if assigned(lStreamerClass) then
+        begin
+          result := lStreamerClass.Create(lRS);
+        end
+        else
+        begin
+          // FINISH - If nothing concrete was found, then attempt to load from each of the streamers and if one of them doesn't except out, then maybe it was successful loading
+          // For now, generate an exception.
+          raise(exception.Create(format('%s is not a format that can be loaded into a dataObject.',[aFilename])));
+        end;
+      end;
+      result.ApplyOptionalParameters(aOptionalParameters);
+      result.Decode(self);
+    finally
+      lRS.free;
+    end;
+  finally
+    lFS.Free;
+  end;
+end;
+
+
+procedure TDataObj.LoadFromFile(aFilename: string; aOptionalParams: string='');
+var
+  lStreamer: TDataObjStreamerBase;
+begin
+  lStreamer := nil;
+  try
+    lStreamer := LoadFromFile(aFileName, nil, aOptionalParams);
+  finally
+    lStreamer.Free;
+  end;
 end;
 
 function TDataObj.PrintToString: string;
@@ -1771,6 +2544,11 @@ begin
       aStringBuilder.AppendLine(lSpaces+')');
     end;
   end;
+end;
+
+procedure TDataObj.ReadFromFile(aFilename: string);
+begin
+  LoadFromFile(aFilename);
 end;
 
 procedure TDataObj.ReadFromStream(aStream: TStream; aStreamerClass: TClass = nil);
@@ -1972,50 +2750,35 @@ end; *)
 
 procedure TDataObj.WriteToFile(aFilename: string);
 var
-  i: Integer;
-  lExtension: string;
-  lStreamerClass: TDataObjStreamerClass;
   lStreamer: TDataObjStreamerBase;
   lFS: TFileStream;
   lWS: TStreamWriteCache;
 begin
-  lFS := TFileStream.Create(aFilename, fmCreate);
-  try
-    lWS := TStreamWriteCache.Create(lFS);
+  // First, find the right streamer based on the filename extension.
+  lStreamer := gStreamerRegistry.CreateStreamerByFilename(aFilename);
+  if assigned(lStreamer) then
+  begin
+    lFS := TFileStream.Create(aFilename, fmCreate);
     try
-      lExtension := ExtractFileExt(aFilename);
-      lStreamerClass := nil;
-
-      // First, find the right streamer based on the filename extension.
-      for i := 0 to gStreamerRegistry.Count-1 do
-      begin
-        if gStreamerRegistry.Items[i].IsFileExtension(lExtension) then
-        begin
-          lStreamerClass := gStreamerRegistry.Items[i];
-          break;
-        end;
-      end;
-
-      if assigned(lStreamerClass) then
-      begin
-        lStreamer := lStreamerClass.Create(lWS);
-      end
-      else
-      begin
-        // If nothing concrete was found, then use the default ".DataObj" streamer.
-        lStreamer := TDataObjStreamer.Create(lWS);
-      end;
+      lWS := TStreamWriteCache.Create(lFS);
       try
-        lStreamer.Encode(self);
+        try
+          lStreamer.Stream := lWS;
+          lStreamer.Encode(self);
+        finally
+          lStreamer.Free;
+        end;
       finally
-        lStreamer.Free;
+        lWS.free;
       end;
-
     finally
-      lWS.free;
+      lFS.Free;
     end;
-  finally
-    lFS.Free;
+  end
+  else
+  begin
+    // If nothing concrete was found, then raise an exception.
+    raise Exception.Create('Unable to create a streamer for file '+aFilename);
   end;
 end;
 
@@ -2065,7 +2828,7 @@ end;
 
 procedure TDataType.setCode(const aValue: TDataTypeCode);
 begin
-  fValue := (ord(fValue) and $E0) or (ord(aValue) and $1F);
+  fValue := (fValue and $E0) or (Byte(ord(aValue)) and $1F);
 end;
 
 procedure TDataType.setHasAttributes(const aValue: boolean);
@@ -2340,6 +3103,7 @@ end;
 function TDataSparseArray.DeleteSlot(aSlotIndex: integer): boolean;
 begin
   //Finish
+  result := false;
 end;
 
 destructor TDataSparseArray.Destroy;
@@ -2399,11 +3163,13 @@ end;
 function TDataSparseArray.SlotByIndex(aSlotIndex: integer): TDataObj;
 begin
   //Finish
+  result := nil;
 end;
 
 function TDataSparseArray.SlotIndex(aIndex: integer): integer;
 begin
   //Finish
+  result := 0;
 end;
 
 { TDataArray }
@@ -2632,6 +3398,135 @@ procedure TDataStore.setDataString(const Value: string);
 begin
   fDataString := Value;
 end;
+
+
+{ TDataObjStreamerBase }
+procedure TDataObjStreamerBase.ApplyOptionalParameters(aParams: TStrings);
+begin
+  // by default, nothing to implement.  descendants will override if they need to do this.
+end;
+
+procedure TDataObjStreamerBase.ApplyOptionalParameters(aParams: String);
+var
+  lStringList: TStringList;
+begin
+  lStringList:=TStringList.Create;
+  try
+    lStringList.Delimiter := ' ';
+    lStringList.DelimitedText := aParams;
+    ApplyOptionalParameters(lStringList);
+  finally
+    lStringList.Free;
+  end;
+end;
+
+constructor TDataObjStreamerBase.Create(aStream: TStream);
+begin
+  inherited Create;
+  fStream := aStream;
+end;
+
+destructor TDataObjStreamerBase.Destroy;
+begin
+  if fOwnsStream then
+    fStream.Free;
+  inherited;
+end;
+
+class function TDataObjStreamerBase.GetClipboardFormatStr: string;
+begin
+  result := 'CF_'+self.ClassName;    // base class implements this pattern for all descendants, but each descendant is free to override and do something else.
+end;
+
+class function TDataObjStreamerBase.IsFileExtension(aStr: string): boolean;
+begin
+  result := SameText(aStr, FileExtension) or SameText(aStr, '.'+FileExtension);
+end;
+
+
+procedure DataObjConvertStringListToArrayOfStrings(aDataObj: TDataObj);
+var
+  i: integer;
+  lDataArray: TDataArray;
+begin
+  if aDataObj.DataType.Code = cDataTypeStringList then
+  begin
+    lDataArray:=TDataArray.create;
+    for i := 0 to aDataObj.AsStringList.Count-1 do
+    begin
+      lDataArray.NewSlot.AsString := aDataObj.AsStringList.Strings[i];
+    end;
+    aDataObj.setAsArray(lDataArray);     // This gets the aDataObj to take over ownership.
+  end;
+end;
+
+procedure DataObjConvertArrayOfStringsToStringList(aDataObj: TDataObj);
+var
+  i: integer;
+  lSL: TDataStringList;
+  lDataArray: TDataArray;
+begin
+  if aDataObj.DataType.Code = cDataTypeArray then
+  begin
+    lDataArray := aDataObj.AsArray;
+    lSL:=TDataStringList.create;
+    try
+      for i := 0 to lDataArray.Count-1 do
+      begin
+        lSL.Add(lDataArray.Slots[i].AsString);
+      end;
+    finally
+      aDataObj.setAsStringList(lSL);     // This gets the aDataObj to take over ownership.
+    end;
+  end;
+end;
+
+{ TDataObjAssignContext }
+
+procedure TDataObjAssignContext.AddObject(aObject: TObject);
+begin
+  fSerializedObjects.Add(aObject);
+end;
+
+constructor TDataObjAssignContext.Create;
+begin
+  inherited Create;
+  fSerializedObjects := TList.Create;
+end;
+
+destructor TDataObjAssignContext.Destroy;
+begin
+  fSerializedObjects.Free;
+  inherited;
+end;
+
+function TDataObjAssignContext.IsAlreadySerialized(aObject: TObject): boolean;
+begin
+  result := fSerializedObjects.IndexOf(aObject) >= 0;
+end;
+
+procedure TDataObjAssignContext.ReportException(aException: Exception);
+begin
+  if assigned(fOnHandleException) then
+    fOnHandleException(self, aException);
+end;
+
+{ TDataStringList }
+
+function TDataStringList.GetAsArrayOfStrings: TArray<string>;
+var
+  i: Integer;
+begin
+  SetLength(result, count);
+  for i := 0 to count-1 do
+    result[i] := self.Strings[i];
+end;
+
+initialization
+  gRttiContext := TRttiContext.Create;   // we make our own RttiContext to use for RTTI assignment.
+
+
+
 
 
 end.

@@ -2,9 +2,12 @@ unit DataObjects2JSON;
 
 (* This unit provides the ability to serialize dataObjects to/from JSON *)
 
+
+// TODO:  check that the Dates, DateTimes, Times are put to JSON in the ISO format?  Or are there options for the format encoding/decoding
+
 interface
 
-uses DataObjects2, DataObjectsStreamers, SysUtils, Classes, DataObjectsUtils;
+uses DataObjects2, DataObjects2Streamers, SysUtils, Classes, DataObjects2Utils;
 
 type
   TObjectBase = TObject;
@@ -37,7 +40,7 @@ type
     fFormatSettings: TFormatSettings;
 
     fJSON: string;
-    fEncodeNonAsciiCharacters: boolean;    // only used when parsing.
+    fEncodeNonAsciiCharacters: boolean;    // only used when streaming out.
 
     fEncoding: TEncoding;
 
@@ -63,6 +66,7 @@ type
 
     procedure Decode(aDataObj: TDataObj); override;
     procedure Encode(aDataObj: TDataObj); override;
+    procedure ApplyOptionalParameters(aParams: TStrings); override;
 
     property Style: TJsonStyle read fStyle write fStyle;
 
@@ -126,11 +130,12 @@ begin
           result := result + copy(aStr, lStart, i-lStart) + '\\';
           lStart := i+1;
         end;
+{     NOTE THAT WE DO NOT NEED TO ESCAPE FORWARD SLASHES.
       '/':
         begin
           result := result + copy(aStr, lStart, i-lStart) + '\/';
           lStart := i+1;
-        end;
+        end;}
       #$8:
         begin
           result := result + copy(aStr, lStart, i-lStart) + '\b';
@@ -434,7 +439,8 @@ begin
     cDataTypeUTCDateTime: fStringBuilder.Append(inttoStr(aDataobj.AsUTCDateTime));
     cDataTypeDate: fStringBuilder.Append('"'+DateToISO8601Str(aDataobj.AsDateTime)+'"');
     cDataTypeTime: fStringBuilder.Append('"'+TimeToISO8601Str(aDataobj.AsDateTime)+'"');
-    cDataTypeGUID, cDataTypeObjectID, cDataTypeString: fStringBuilder.Append('"'+EncodeSpecialJSONCharacters(aDataobj.AsString, fEncodeNonAsciiCharacters)+'"');
+    cDataTypeGUID, cDataTypeObjectID: fStringBuilder.Append('"'+aDataobj.AsString+'"');
+    cDataTypeString: fStringBuilder.Append('"'+EncodeSpecialJSONCharacters(aDataobj.AsString, fEncodeNonAsciiCharacters)+'"');
     cDataTypeStringList: begin
        if fStyle = cJsonHumanReadable then
          fStringBuilder.AppendLine('[')
@@ -617,6 +623,9 @@ procedure TJsonStreamer.parseFromJson(aObj: TDataObj);
       inc(aIndex);
   end;
 
+  // NOTE:  the following code blocks are coded a bit wierdly considering the individual character comparisons.  Turns out, when looking for specific
+  //        strings like this, this logic is faster than doing calls like "sameText", "Pos", etc.  So, this code looks a little goofy but it's all done this way for performance.
+
   // Try to parse the true identifier from fJSON
   function ParseTrue(aIndex: Integer; var oRetIndex: Integer; aDataObj: TDataObj): Boolean;
   begin
@@ -662,6 +671,45 @@ procedure TJsonStreamer.parseFromJson(aObj: TDataObj);
       aDataObj.Clear;   // should already be clear, but let's just be explicit.
     end;
   end;
+
+  function ParseObjectID(aIndex: Integer; var oRetIndex: Integer; aDataObj: TDataObj): Boolean;
+  begin
+    result := false;
+    if ((fJSON[aIndex] = 'o') or (fJSON[aIndex] = 'O')) and
+       ((fJSON[aIndex+1] = 'b') or (fJSON[aIndex+1] = 'B')) and
+       ((fJSON[aIndex+2] = 'j') or (fJSON[aIndex+2] = 'J')) and
+       ((fJSON[aIndex+3] = 'e') or (fJSON[aIndex+3] = 'E')) and
+       ((fJSON[aIndex+4] = 'c') or (fJSON[aIndex+4] = 'C')) and
+       ((fJSON[aIndex+5] = 't') or (fJSON[aIndex+5] = 'T')) and
+       ((fJSON[aIndex+6] = 'i') or (fJSON[aIndex+6] = 'I')) and
+       ((fJSON[aIndex+7] = 'd') or (fJSON[aIndex+7] = 'D')) and
+       (fJSON[aIndex+8] = '(') then
+    begin
+      // we have the start of an objectID so now try and parse out the string representation of the objectID followed by a ")"
+
+
+
+
+      result := true;
+      oRetIndex := aIndex + 4;
+      aDataObj.Clear;   // should already be clear, but let's just be explicit.
+    end;
+  end;
+
+function ParseISODate(aIndex: Integer; var oRetIndex: Integer; aDataObj: TDataObj): Boolean;
+begin
+  //FINISH
+  result := false;
+end;
+
+function NumberInt(aIndex: Integer; var oRetIndex: Integer; aDataObj: TDataObj): Boolean;
+begin
+  //FINISH
+  result := false;
+end;
+
+
+
 
   // Try to parse a number from fJSON
   // This could read and populate an integer(int64, int32, or byte) or a double float.
@@ -752,6 +800,199 @@ procedure TJsonStreamer.parseFromJson(aObj: TDataObj);
     end;
   end;
 
+
+
+  // Try to parse a string from fJSON and along the way, do any special escaping handling such as \uxxxxx, etc.
+  function ParseString(aIndex: Integer; var aRetIndex: Integer; var oString: string): Boolean;
+
+    const cHexDecimalConvert: array[Byte] of Byte = (
+       $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff, {00-$0F}
+       $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff, {10-$1F}
+       $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff, {20-2F}
+       0,    1,    2,    3,    4,    5,    6,    7,    8,    9,    $ff,  $ff,  $ff,  $ff,  $ff,  $ff, {30-3F}
+       $ff,  10,   11,   12,   13,   14,   15,   $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff, {40-4F}
+       $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff, {50-5F}
+       $ff,  10,   11,   12,   13,   14,   15,   $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff, {60-6F}
+       $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff, {70-7F}
+       $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff, {80-8F}
+       $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff, {90-9F}
+       $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff, {A0-AF}
+       $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff, {B0-BF}
+       $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff, {C-CF}
+       $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff, {D0-DF}
+       $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff, {E0-EF}
+       $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff); {F0-FF}
+
+  var
+    lWorkString: String;
+    i: integer;
+    lStartIdx: Integer;
+    lEndIdx: integer;
+    lStartsWithSingleQuote: boolean;
+    lJsonLength: integer;
+    lUnicodeCH1: cardinal;   // should this be a word?
+    lUnicodeCH2: cardinal;   // should this be a word?
+    lUnicodeCH3: cardinal;   // should this be a word?
+    lUnicodeCH4: cardinal;   // should this be a word?
+    lChar: char;
+
+
+    procedure AppendWorkStringWithChar(aNewChar: Char);
+    begin
+      // will move the bytes from the source buffer we are looking through to the WorkString and append aNewChar which came from the escaping.
+      lWorkString := lWorkString + copy(fJSON, lStartIdx, lEndIdx-lStartIdx) + aNewChar;        //FINISH - this subtraction may not be right
+      lStartIdx := i;
+    end;
+
+    procedure FinishWorkString;
+    begin
+      // will move the bytes from the source buffer we are looking through to the WorkString and append aNewChar which came from the escaping.
+      lWorkString := lWorkString + copy(fJSON, lStartIdx, lEndIdx-lStartIdx);
+      lEndIdx := i;
+    end;
+
+  begin
+    lWorkString := '';
+    SkipSpaces(aIndex);
+
+    result := IsNotEnd(aIndex);
+    if not result then exit;
+
+    lStartsWithSingleQuote := false;
+    if (fJSON[aIndex] = '''') then
+    begin
+      //technically speaking, json doesn't really support single quotes for string definitions.  however, we are going to support it.   maybe someday we will have an option to restrict to just explicitly valid json
+      lStartsWithSingleQuote := true;
+    end
+    else if (fJSON[aIndex] <> '"') then
+    begin
+      // didn't begin with a double quote or a single quote so can't be a valid string.
+      result := false;
+      exit;
+    end;
+
+    inc(aIndex);
+    i := aIndex;
+
+    // Go through all the characters looking for the end character (either a double quote or single quote depending on how we started).
+    // along the way, we need to decode any escaping.
+    lStartIdx := aIndex;  // this is the index for the begining character that we need to include.  We are starting off with what has been passed into this procedure.
+    lEndIdx := aIndex;    // this is the index for the last character that we will include from the source string.
+    lJsonLength := length(fJSON);
+
+    while (i<=lJsonLength) do
+    begin
+      if (fJSON[i]='\') then
+      begin
+        // we have the starting of an escaper character so start an escape read.
+        if i < lJsonLength then
+        begin
+          inc(i);
+          case fJSON[i] of
+            '\': begin AppendWorkStringWithChar('\'); inc(i); end;
+            '"': begin AppendWorkStringWithChar('"'); inc(i); end;
+            '/': begin AppendWorkStringWithChar('/'); inc(i); end;
+            'b': begin AppendWorkStringWithChar(#8); inc(i); end;   //backspace
+            'f': begin AppendWorkStringWithChar(#12); inc(i); end;  //Form Feed
+            'n': begin AppendWorkStringWithChar(#10); inc(i); end;  //New Line
+            'r': begin AppendWorkStringWithChar(#13); inc(i); end;  //carriage return
+            't': begin AppendWorkStringWithChar(#9); inc(i); end;   //tab
+            'u':
+              begin
+                inc(i);
+                if i+3 <= lJsonLength then
+                begin
+                  lUnicodeCH1 := cHexDecimalConvert[ord(fJSON[i])];
+                  inc(i);
+                  lUnicodeCH2 := cHexDecimalConvert[ord(fJSON[i])];
+                  inc(i);
+                  lUnicodeCH3 := cHexDecimalConvert[ord(fJSON[i])];
+                  inc(i);
+                  lUnicodeCH4 := cHexDecimalConvert[ord(fJSON[i])];
+                  inc(i);
+                  if (lUnicodeCH1 <= 15) and (lUnicodeCH2 <= 15) and (lUnicodeCH3 <= 15) and (lUnicodeCH4 <= 15)then
+                  begin
+                    lChar := WideChar((lUnicodeCH1 shl 12) or (lUnicodeCH2 shl 8) or (lUnicodeCH3 shl 4) or lUnicodeCH4);  // we have four valid hex characters.
+                    AppendWorkStringWithChar(lChar);
+                  end
+                  else
+                  begin
+                    raise Exception.Create('Invalid character parsing an escape "\uxxxx" sequence.');
+                  end;
+                end
+                else
+                begin
+                  // we started with an /u sequence but there aren't enough characters to pick up 4 more.
+                  raise Exception.Create('Invalid characters parsing an escape "\uxxxx" sequence.');
+                end;
+              end;
+            else
+            begin
+              // This must be an error condition because an invalid character is following the excape '\' character.
+              raise Exception.Create('Invalid character after encountering an escape "\" character.');
+            end;
+          end;
+        end
+        else
+        begin
+          // we are out of characters to pickup in an escape sequence.
+          raise Exception.Create('Invalid character after encountering an escape "\" character.');
+        end;
+      end
+
+      else if fJSON[i] = '"' then   // this should be an end of string marker unless we started with a single quote.
+      begin
+        if lStartsWithSingleQuote then
+        begin
+          // just take this character as a normal character by setting our ending index to accept it.
+          inc(i);
+          lEndIdx := i;
+        end
+        else
+        begin
+           // Finish our string.
+          FinishWorkString;
+          result := true;
+          break;
+        end;
+      end
+
+      else if fJSON[i] = '''' then
+      begin
+        if lStartsWithSingleQuote = false then
+        begin
+          // just take this character as a normal character by setting our ending index to accept it.
+          inc(i);
+          lEndIdx := i;
+        end
+        else
+        begin
+           // Finish our string.
+          FinishWorkString;
+          result := true;
+          break;
+        end;
+      end
+
+      else
+      begin
+        // This is just a normal character so take it by setting our ending index to accept it.
+        inc(i);
+        lEndIdx := i;
+      end;
+    end;
+
+    aRetIndex := lEndIdx+1;
+    // What happens if we get out of this loop without receiving the closing quote.  That's an error condition.
+    if result then
+    begin
+      oString := lWorkString;
+    end;
+  end;
+
+
+
+(*
   // Try to parse a string from fJSON
   function ParseString(aIndex: Integer; var aRetIndex: Integer; var oString: string): Boolean;
 
@@ -869,15 +1110,21 @@ procedure TJsonStreamer.parseFromJson(aObj: TDataObj);
     inc(aIndex);
     lWidx := aIndex;
 
+
+    //NOTE:  THIS REPEAT BLOCK HAS THE POTENTIAL TO BE VERY, VERY, VERY INNEFFICIENT FOR A LONG SEQQUENCE OF ENCODED \Uxxxx SEQUENCES AS IT'S LOOKING TO THE END OF THE STRING AND DOWN BELOW
+    //       IT RESETS UP WHEN IT DOES lWidx:=i+2;
+
+
+
     lFinished:=false;
     repeat
       i := 0;
       j := 0;
       while (lWidx<=length(fJSON)) and (j=0) do
       begin
-        if (i=0) and (fJSON[lWidx]='\') then i:=lWidx;
-        if (j=0) and (fJSON[lWidx]='"') and (lStartsWithSingleQuote = false) then j:=lWidx;
-        if (j=0) and (fJSON[lWidx]='''') and lStartsWithSingleQuote then j:=lWidx;           //technically speaking, json doesn't really support single quotes for string definitions.  however, we are going to support it.
+        if (i=0) and (fJSON[lWidx]='\') then i:=lWidx
+        else if (j=0) and (fJSON[lWidx]='"') and (lStartsWithSingleQuote = false) then j:=lWidx
+        else if (j=0) and (fJSON[lWidx]='''') and lStartsWithSingleQuote then j:=lWidx;           //technically speaking, json doesn't really support single quotes for string definitions.  however, we are going to support it.
 
         inc(lWidx);
       end;
@@ -909,6 +1156,9 @@ procedure TJsonStreamer.parseFromJson(aObj: TDataObj);
 
     aRetIndex := aIndex;
   end;
+
+
+*)
 
   //Try to parse an array from fJSON.  Needs to start with "["
   function ParseArray(aIndex: Integer; var oRetIndex: Integer; aDataObj: TDataObj): Boolean;
@@ -1044,6 +1294,12 @@ procedure TJsonStreamer.parseFromJson(aObj: TDataObj);
     end;
     if not result then result := ParseArray(aIndex, oRetIndex, aDataObj);
     if not result then result := ParseFrame(aIndex, oRetIndex, aDataObj);
+
+    //Extended JSON parsing options such as MongoDB Extended JSON.
+    //Note that parsing these are not following standard JSON, but I've found that there ara other "json" like files such as BSON text format that we can support here.
+    if not result then result := ParseObjectID(aIndex, oRetIndex, aDataObj);
+    if not result then result := ParseISODate(aIndex, oRetIndex, aDataObj);
+    if not result then result := NumberInt(aIndex, oRetIndex, aDataObj);
   end;
 
 var
@@ -1099,6 +1355,47 @@ end;
 class function TJsonStreamer.GetFileFilter: string;
 begin
   result := 'JSON Files (*.json, *.txt)|*.json;*.txt';
+end;
+
+procedure TJsonStreamer.ApplyOptionalParameters(aParams: TStrings);
+var
+  i: Integer;
+  lIndention: integer;
+begin
+  inherited;
+
+  i := 0;
+  while i < aParams.Count do
+  begin
+    if SameText(aParams[i], '-Human') then
+      Style := cJsonHumanReadable
+    else if SameText(aParams[i], '-Indent') and (i < aParams.Count-1) then
+    begin
+      lIndention := StrToIntDef(aParams[i+1],-1);
+      if (lIndention >= 0) and (lIndention <= 20) {resonable limit?} then
+        Indention := lIndention;
+      inc(i);
+    end
+    else if SameText(aParams[i], '-Encoding') and (i < aParams.Count-1) then
+    begin
+      if SameText(aParams[i+1], 'UTF-8') then
+        Encoding := TEncoding.UTF8
+      else if SameText(aParams[i+1], 'UTF-7') then
+        Encoding := TEncoding.UTF7
+      else if SameText(aParams[i+1], 'ASCII') then
+        Encoding := TEncoding.ASCII
+      else if SameText(aParams[i+1], 'UNICODE') then
+        Encoding := TEncoding.Unicode
+      else if SameText(aParams[i+1], 'BIGENDIANUNICODE') then
+        Encoding := TEncoding.BigEndianUnicode;
+      // ANYTHING ELSE IS IGNORED.
+
+      inc(i);
+    end;
+
+    inc(i);
+  end;
+
 end;
 
 class function TJsonStreamer.ClipboardPriority: cardinal;
@@ -1175,7 +1472,7 @@ begin
   // First, get the aDataObj serialized into a JSON string (Full Unicode Delphi string)
   fStringBuilder:=TStringBuilder.Create;                    // This will hold the first copy of the produced json
   try
-    ReadFromDataObjInternal(aDataObj);
+    ReadFromDataObjInternal(aDataObj);                    //FINISH - If we are encoding to ASCII, then we should have the JSON produced escaped characters above $80.
     fJSON := fStringBuilder.ToString;                   // This string now holds the JSON text as a delphi String (unicode string)
   finally
     FreeAndNil(fStringBuilder);
@@ -1185,6 +1482,9 @@ begin
   begin
     // If we have an assigned stream, then move the string to a stream using the chosen text encoding.
     // If it's not assigned, then most likely the caller is just interested in getting the result by reading the fJSON string.
+    lBytes := fEncoding.GetPreamble;
+    fStream.Write(lBytes[0], length(lBytes));
+
     lBytes:=fEncoding.GetBytes(fJSON);                  // perform the encoding step to return the actual bytes that the string should be encoded to.  For example, convert from unicode to UTF8
     fStream.Write(lBytes[0], length(lBytes));
   end;

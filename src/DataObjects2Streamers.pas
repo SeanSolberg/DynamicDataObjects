@@ -1,4 +1,4 @@
-unit DataObjectsStreamers;
+unit DataObjects2Streamers;
 
 interface
 
@@ -9,36 +9,16 @@ type
             Then the dataObject editor could possibly give some hints in the user interface that the users should avoid adding slots of data of certain types
             if the user is editing data that came from a certain file type. *)
 
-  // This is the base class that all streamers must descend from.  It just defines the core abstract behavior for encoding and decoding to a descendant streamer's format.
-
-  TDataObjStreamerBase = class
-  protected
-    fStream: TStream;   // reference only
-  public
-    constructor Create(aStream: TStream); virtual;
-
-    function Clone: TDataObjStreamerBase; virtual; abstract;
-
-    class function FileExtension: string; virtual; abstract;
-    class function GetFileFilter: string; virtual; abstract;
-    class function IsFileExtension(aStr: string): boolean; virtual;
-    class function ClipboardPriority: cardinal; virtual; abstract;
-
-    class function GetClipboardFormatStr: string; virtual;
-
-    procedure Decode(aDataObj: TDataObj); virtual; abstract;
-    procedure Encode(aDataobj: TDataObj); virtual; abstract;
-
-    property Stream: TStream read fStream write fStream;
-  end;
-  TDataObjStreamerClass = class of TDataObjStreamerBase;
 
   // This class registry will hold all registered TDataObjStreamerBase descendants that are added to the host application using this code library.
   // Each streamer included in a project should add itself to this registry (see gStreamerRegistry below) in its initialization section.
   TStreamerRegistry = class(TList<TDataObjStreamerClass>)
   public
     procedure Sort;
+    function FindStreamerClassByFilenameExtension(aExtension: string): TDataObjStreamerClass;
     function FindStreamerClassByFilename(aFilename: string): TDataObjStreamerClass;
+    function CreateStreamerByFilenameExtension(aExtension: string): TDataObjStreamerBase;
+    function CreateStreamerByFilename(aFilename: string): TDataObjStreamerBase;
   end;
 
   TStreamerRegistryComparer = class(TComparer<TDataObjStreamerClass>)
@@ -60,6 +40,7 @@ type
 
     procedure Decode(aDataObj: TDataObj); override;
     procedure Encode(aDataobj: TDataObj); override;
+    function Clone: TDataObjStreamerBase; override;
   end;
 
 var
@@ -69,11 +50,19 @@ procedure RegisterDataObjStreamer(aStreamer: TDataObjStreamerClass);
 
 implementation
 
+//uses LoggerUnit;
+
 { TDataObjStreamer }
 
 class function TDataObjStreamer.ClipboardPriority: cardinal;
 begin
   result := 1;    // highest priority
+end;
+
+function TDataObjStreamer.Clone: TDataObjStreamerBase;
+begin
+  result := TDataObjStreamer.Create(fStream);
+  // no properties to copy
 end;
 
 procedure TDataObjStreamer.Decode(aDataobj: TDataObj);
@@ -304,6 +293,8 @@ begin
   end;
 end;
 
+
+
 class function TDataObjStreamer.getFileFilter: string;
 begin
   result := 'DataObject Files (*.dataObj)|*.dataObj';
@@ -422,7 +413,7 @@ begin
   fStream.Write(lValue, 1);
   case aDataObj.DataType.Code of
     cDataTypeNull: begin end;
-    cDataTypeBoolean: begin {nothing to write because the value is stdored right in the datatype byte with a subcode} end;
+    cDataTypeBoolean: begin {nothing to write because the value is stored right in the datatype byte with a subcode} end;
     cDataTypeByte: fStream.Write(lStore.fDataByte,1);
     cDataTypeInt32: fStream.Write(lStore.fDataInt32,4);
     cDataTypeInt64: fStream.Write(lStore.fDataInt64,8);
@@ -505,22 +496,7 @@ end;
 { TDataObjStreamer }
 
 
-{ TDataObjStreamerBase }
-constructor TDataObjStreamerBase.Create(aStream: TStream);
-begin
-  inherited Create;
-  fStream := aStream;
-end;
 
-class function TDataObjStreamerBase.GetClipboardFormatStr: string;
-begin
-  result := 'CF_'+self.ClassName;    // base class implements this pattern for all descendants, but each descendant is free to override and do something else.
-end;
-
-class function TDataObjStreamerBase.IsFileExtension(aStr: string): boolean;
-begin
-  result := SameText(aStr, FileExtension) or SameText(aStr, '.'+FileExtension);
-end;
 
 { TStreamerRegistry }
 
@@ -528,23 +504,47 @@ procedure RegisterDataObjStreamer(aStreamer: TDataObjStreamerClass);
 begin
   if not assigned(gStreamerRegistry) then
     gStreamerRegistry := TStreamerRegistry.Create;
-  gStreamerRegistry.Add(aStreamer)
+  gStreamerRegistry.Add(aStreamer);
+ // TLogger.Add('Reg '+aStreamer.ClassName);
 end;
 
 
 { TStreamerRegistry }
 
+function TStreamerRegistry.CreateStreamerByFilename(aFilename: string): TDataObjStreamerBase;
+var
+  lSC: TDataObjStreamerClass;
+begin
+  result := nil;
+  lSC := FindStreamerClassByFilename(aFilename);
+  if assigned(lSC) then
+    result := lSC.Create(nil);
+end;
+
+function TStreamerRegistry.CreateStreamerByFilenameExtension(aExtension: string): TDataObjStreamerBase;
+var
+  lSC: TDataObjStreamerClass;
+begin
+  result := nil;
+  lSC := FindStreamerClassByFilenameExtension(aExtension);
+  if assigned(lSC) then
+    result := lSC.Create(nil);
+end;
+
 function TStreamerRegistry.FindStreamerClassByFilename(aFilename: string): TDataObjStreamerClass;
+begin
+  result := FindStreamerClassByFilenameExtension(ExtractFileExt(aFilename));
+end;
+
+function TStreamerRegistry.FindStreamerClassByFilenameExtension(aExtension: string): TDataObjStreamerClass;
 var
   i: integer;
-  lExtension: string;
 begin
-  lExtension := ExtractFileExt(aFilename);
   result := nil;
 
   for i := 0 to gStreamerRegistry.Count-1 do
   begin
-    if gStreamerRegistry.Items[i].IsFileExtension(lExtension) then
+    if gStreamerRegistry.Items[i].IsFileExtension(aExtension) then
     begin
       result := gStreamerRegistry.Items[i];
       break;

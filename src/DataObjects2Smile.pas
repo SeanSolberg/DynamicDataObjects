@@ -5,7 +5,7 @@ interface
 // FINISH - This whole unit needs to be finished,  just the basic framework has been put in here.
 // See https://github.com/FasterXML/smile-format-specification
 
-uses classes, DataObjects2, DataObjectsStreamers, SysUtils, RTTI, TypInfo, DataObjectsUtils, VarInt;
+uses classes, DataObjects2, DataObjects2Streamers, SysUtils, RTTI, TypInfo, DataObjects2Utils, VarInt;
 
 type
   TNumBytes = packed record

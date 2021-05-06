@@ -1,10 +1,10 @@
-unit DataObjectsBSON;
+unit DataObjects2BSON;
 
 interface
 
 // This unit has been coded for almost all decode and encode operations.  However, very little has been tested.
 
-uses classes, DataObjects2, DataObjectsStreamers, SysUtils, RTTI, TypInfo, DataObjectsUtils, IOUtils;
+uses classes, DataObjects2, DataObjects2Streamers, SysUtils, RTTI, TypInfo, DataObjects2Utils, IOUtils;
 
 type
   TBSONStreamer = class(TDataObjStreamerBase)
@@ -499,6 +499,8 @@ var
     lSlotName: UTF8String;
   begin
     lSlotName := UTF8String(aSlotName);      // convert from unicodeString to UTF8 String.
+    if lSlotName = '' then
+      raise exception.create('Cannot write to BSON with an empty string as a slotname.');
     aStream.Write(lSlotName[1], length(lSlotName)+1);   // +1 to include the null terminator
   end;
 

@@ -7,7 +7,7 @@ interface
   NOTE:  this streamer cannot be used by android apps in its existing form because it uses ansiString for serialization.
 }
 
-uses classes, DataObjects2, DataObjectsStreamers, SysUtils, RTTI, TypInfo, DataObjectsUtils;
+uses classes, DataObjects2, DataObjects2Streamers, SysUtils, RTTI, TypInfo, DataObjects2Utils;
 
 type
   TDDOStreamer = class(TDataObjStreamerBase)
@@ -211,24 +211,27 @@ begin
       fStream.Write(lInteger, 4);
 
       fStream.Write(lSize, 4);    // write 4 bytes representing the size of this frame (# of slots)
-      for i:=0 to lSize-1 do
+      if lSize>0 then             // need this check for zero to prevent the lSize-1 call below if lSize=0 because a range exception would fire.
       begin
-        // first write the slot name which needs to be an ansiString to follow spec.
-        lAnsiStr := AnsiString(aDataObj.AsFrame.Slotname(i));
+        for i:=0 to lSize-1 do
+        begin
+          // first write the slot name which needs to be an ansiString to follow spec.
+          lAnsiStr := AnsiString(aDataObj.AsFrame.Slotname(i));
 
-        lSize := Length(lAnsiStr);
+          lSize := Length(lAnsiStr);
 
-        if lSize <= 250 then      // Due to the spec for DDO, we need to cap the limit of the slotnames to 250 bytes.
-          lByte := byte(lSize)
-        else
-          lByte := 250;
+          if lSize <= 250 then      // Due to the spec for DDO, we need to cap the limit of the slotnames to 250 bytes.
+            lByte := byte(lSize)
+          else
+            lByte := 250;
 
-        fStream.Write(lByte, 1);  // write 1 byte representing the size of the slot name string
-        if lSize > 0 then
-          fStream.Write(lAnsiStr[1], lSize);  // write the slot Name. Not Including the Null Byte.
+          fStream.Write(lByte, 1);  // write 1 byte representing the size of the slot name string
+          if lSize > 0 then
+            fStream.Write(lAnsiStr[1], lSize);  // write the slot Name. Not Including the Null Byte.
 
-        // then write the slot data
-        Encode(lFrame.Slots[i]);  // recursion happening here.
+          // then write the slot data
+          Encode(lFrame.Slots[i]);  // recursion happening here.
+        end;
       end;
     end;
 
@@ -256,17 +259,20 @@ begin
 
       //DDO doesn't have the concept of a sparse Array, so we will send the data as a frame where the slotnames in the frame are the string representations of the integer indexes from the sparse Array.
       fStream.Write(lSize, 4);    // write 4 bytes representing the size of this frame (# of slots)
-      for i:=0 to lSize-1 do
+      if lSize>0 then             // need this check for zero to prevent the lSize-1 call below if lSize=0 because a range exception would fire.
       begin
-        // first write the slots Index in terms of a string which needs to be an ansiString to follow spec.
-        lAnsiStr := AnsiString(IntToStr(lSparseArray.SlotIndex(i)));
-        lSize := Length(lAnsiStr);
-        lByte := byte(lSize);
-        fStream.Write(lByte, 1);            // write 1 byte representing the size of the slot name string
-        fStream.Write(lAnsiStr[1], lSize);  // write the slot Name. Not Including the Null Byte.
+        for i:=0 to lSize-1 do
+        begin
+          // first write the slots Index in terms of a string which needs to be an ansiString to follow spec.
+          lAnsiStr := AnsiString(IntToStr(lSparseArray.SlotIndex(i)));
+          lSize := Length(lAnsiStr);
+          lByte := byte(lSize);
+          fStream.Write(lByte, 1);            // write 1 byte representing the size of the slot name string
+          fStream.Write(lAnsiStr[1], lSize);  // write the slot Name. Not Including the Null Byte.
 
-        // then write the slot data
-        Encode(lSparseArray.Slots[i]);  // recursion happening here.
+          // then write the slot data
+          Encode(lSparseArray.Slots[i]);  // recursion happening here.
+        end;
       end;
     end;
 
@@ -380,34 +386,40 @@ begin
 
       6{Frame}: begin
         fStream.Read(lSize, 4);
-        for i := 0 to lSize-1 do
+        if lSize>0 then             // need this check for zero to prevent the lSize-1 call below if lSize=0 because a range exception would fire.
         begin
-          // first read the slot name
-          fStream.Read(lByte, 1);    // get 1 byte representing the size of the string slotname
-          // if b is 255 or 254 or 253, then we are getting a 1 byte or 2 byte or 3 byte lookup code.
-          // We are NOT going to support this logic because it was pretty much never used anyway and to get it fully right would be very difficult.  not worth the effort.
-          if lByte>=253 then
+          for i := 0 to lSize-1 do
           begin
-            GenerateException(format( StrErrorReadingSlotNameSize, [lByte]));
-          end
-          else
-          begin
-            lSize := lByte;
-            SetLength(lAnsiString, lSize);
-            if lSize > 0 then
-              fStream.Read(lAnsiString[1], lSize);
-          end;
+            // first read the slot name
+            fStream.Read(lByte, 1);    // get 1 byte representing the size of the string slotname
+            // if b is 255 or 254 or 253, then we are getting a 1 byte or 2 byte or 3 byte lookup code.
+            // We are NOT going to support this logic because it was pretty much never used anyway and to get it fully right would be very difficult.  not worth the effort.
+            if lByte>=253 then
+            begin
+              GenerateException(format( StrErrorReadingSlotNameSize, [lByte]));
+            end
+            else
+            begin
+              lSize := lByte;
+              SetLength(lAnsiString, lSize);
+              if lSize > 0 then
+                fStream.Read(lAnsiString[1], lSize);
+            end;
 
-          Decode(aDataObj.AsFrame.NewSlot(String(lAnsiString)));     // create a new slot and recursively load it from the stream
+            Decode(aDataObj.AsFrame.NewSlot(String(lAnsiString)));     // create a new slot and recursively load it from the stream
+          end;
         end;
       end;
 
       7{Array}: begin
         lNum := fStream.Read(lSize, 4);    // read 4 bytes representing the size of this array (# of slots)
         if lNum<>4 then GenerateException(StrInvalidNumberOfBytes8);
-        for i:=0 to lSize-1 do
+        if (lSize>0) then      // we need this if statement because if the array is zero in size then the lSize-1 below will go to -1 which can't be true given this is a cardinal.  It would raise an exception if this happened.
         begin
-          Decode(aDataobj.AsArray.NewSlot);    // recursively read the slot
+          for i:=0 to lSize-1 do
+          begin
+            Decode(aDataobj.AsArray.NewSlot);    // recursively read the slot
+          end;
         end;
       end;
 
@@ -489,54 +501,57 @@ begin
 
             aDataObj.AsFrame.NewSlot('Flags').AsByte := lByte;
             lPartArray := aDataObj.AsFrame.NewSlot('Parts').AsArray;
-            for i:=0 to lSize-1 do
+            if lSize>0 then             // need this check for zero to prevent the lSize-1 call below if lSize=0 because a range exception would fire.
             begin
-              lFrame := lPartArray.NewSlot.AsFrame;
-
-              fStream.read(lPointCount, 4);
-
-              // read the flags for the individual part.
-              // This is optional as previous versions of data object streaming would write a flags longInt for the polygon but not a flags for each part.
-              // Also, if a data object is streamed out and none of the parts have individual flags (holes), then we won't stream the flags at all.
-              lPartFlags := 0;
-              if (lByte and $8{cGeomCapsHasHoles}) <> 0 then
+              for i:=0 to lSize-1 do
               begin
-                // this polyline has the possibilities for holes so we need to read the flags for this part.
-                fStream.Read(lPartFlags, 1);
-                lFrame.NewSlot('Flags').AsByte := lPartFlags;
-              end;
+                lFrame := lPartArray.NewSlot.AsFrame;
 
-              lPointArray := lFrame.NewSlot('Points').AsArray;
-              for j:=0 to lPointCount-1 do
-              begin
-                lFrame := lPointArray.NewSlot.AsFrame;
-                lNum := fStream.Read(lDouble,8);   // read X
-                if( lNum <> 8 ) then GenerateException(StrInvalidNumberOfBytes14);
-                lFrame.NewSlot('X').AsDouble := lDouble;
+                fStream.read(lPointCount, 4);
 
-                lNum := fStream.Read(lDouble,8);   // read Y
-                if( lNum <> 8 ) then GenerateException(StrInvalidNumberOfBytes14);
-                lFrame.NewSlot('Y').AsDouble := lDouble;
-
-                if (lByte and $1) <> 0 then    // Z Capability
+                // read the flags for the individual part.
+                // This is optional as previous versions of data object streaming would write a flags longInt for the polygon but not a flags for each part.
+                // Also, if a data object is streamed out and none of the parts have individual flags (holes), then we won't stream the flags at all.
+                lPartFlags := 0;
+                if (lByte and $8{cGeomCapsHasHoles}) <> 0 then
                 begin
-                  // this polyline has a Z in the points
-                  fStream.read(lDouble,8);
-                  lFrame.NewSlot('Z').AsDouble := lDouble;
+                  // this polyline has the possibilities for holes so we need to read the flags for this part.
+                  fStream.Read(lPartFlags, 1);
+                  lFrame.NewSlot('Flags').AsByte := lPartFlags;
                 end;
 
-                if (lByte and $2) <> 0 then    // M Capability
+                lPointArray := lFrame.NewSlot('Points').AsArray;
+                for j:=0 to lPointCount-1 do
                 begin
-                  // this polyline has a M (Measure) in the points
-                  fStream.read(lDouble,8);
-                  lFrame.NewSlot('M').AsDouble := lDouble;
-                end;
+                  lFrame := lPointArray.NewSlot.AsFrame;
+                  lNum := fStream.Read(lDouble,8);   // read X
+                  if( lNum <> 8 ) then GenerateException(StrInvalidNumberOfBytes14);
+                  lFrame.NewSlot('X').AsDouble := lDouble;
 
-                if (lByte and $4) <> 0 then    // B (Bulge) Capability
-                begin
-                  // this polyline has a B (Bulge) in the points
-                  fStream.read(lDouble,8);
-                  lFrame.NewSlot('B').AsDouble := lDouble;
+                  lNum := fStream.Read(lDouble,8);   // read Y
+                  if( lNum <> 8 ) then GenerateException(StrInvalidNumberOfBytes14);
+                  lFrame.NewSlot('Y').AsDouble := lDouble;
+
+                  if (lByte and $1) <> 0 then    // Z Capability
+                  begin
+                    // this polyline has a Z in the points
+                    fStream.read(lDouble,8);
+                    lFrame.NewSlot('Z').AsDouble := lDouble;
+                  end;
+
+                  if (lByte and $2) <> 0 then    // M Capability
+                  begin
+                    // this polyline has a M (Measure) in the points
+                    fStream.read(lDouble,8);
+                    lFrame.NewSlot('M').AsDouble := lDouble;
+                  end;
+
+                  if (lByte and $4) <> 0 then    // B (Bulge) Capability
+                  begin
+                    // this polyline has a B (Bulge) in the points
+                    fStream.read(lDouble,8);
+                    lFrame.NewSlot('B').AsDouble := lDouble;
+                  end;
                 end;
               end;
             end;

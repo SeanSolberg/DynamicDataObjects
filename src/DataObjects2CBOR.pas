@@ -2,7 +2,7 @@ unit DataObjects2CBOR;
 
 interface
 
-uses classes, DataObjects2, DataObjectsStreamers, SysUtils, RTTI, TypInfo, DataObjectsUtils;
+uses classes, DataObjects2, DataObjects2Streamers, SysUtils, RTTI, TypInfo, DataObjects2Utils;
 
 type
 
@@ -644,7 +644,7 @@ begin
   begin
     // Need to read a string only for the key since the key is the property name in this case.
     // The CBOR spec allows for reading any type of CBOR data type as a key, but we only support strings here.
-    aStream.Read(lMajorType,1);
+    aStream.Read(lMajorType,1);                // FINISH - If we ran out of stream bytes to read then we should have a different exception produced that what we get below which gives an incorrect exception message
     lSubType := lMajorType and $1F;     // first 5 bits
     lMajorType := lMajorType shr 5;     // get it to a 0-7 range
 
@@ -899,6 +899,7 @@ var
   i: Integer;
   lSlotName: string;
   lObject: TObject;
+  lBinary: TDataBinary;
 
 begin
   fStream.Read(lMajorType, 1);
@@ -1018,9 +1019,10 @@ begin
       begin
         // reading a defined-length string of bytes.
         lToReadCount := ReadLength(fStream, 2, lSubType);
+        lBinary := aDataObj.AsBinary;    // make it a binary slot even if no bytes are following to put into it.
         if lToReadCount > 0 then
         begin
-          lCount := aDataObj.AsBinary.CopyFrom(fStream, lToReadCount);
+          lCount := lBinary.CopyFrom(fStream, lToReadCount);
           if lCount <> lToReadCount then
             RaiseParsingException(fStream, format(cExceptNotEnoughBytesByteString, [lToReadCount, lCount]));
         end;
@@ -1076,7 +1078,7 @@ begin
           begin
             // Need to read a string only for the key.  The spec allows for reading any type of CBOR data type as a key, but we only support strings here.
             // maybe we will also support numbers for the sparse array which uses numbers as the keys.
-            fStream.Read(lMajorType,1);
+            fStream.Read(lMajorType,1);           // FINISH - If we ran out of stream bytes to read then we should have a different exception produced that what we get below which gives an incorrect exception message
             lSubType := lMajorType and $1F;     // first 5 bits
             lMajorType := lMajorType shr 5;  // get it to a 0-7 range
 

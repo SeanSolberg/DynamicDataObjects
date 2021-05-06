@@ -1,9 +1,9 @@
-unit DataObjectsClipboard;
+unit DataObjects2Clipboard;
 
 interface
 
 uses
-  Classes, generics.collections, generics.defaults, Windows, SysUtils, DataObjects2, DataObjectsStreamers;
+  Classes, generics.collections, generics.defaults, Windows, SysUtils, DataObjects2, DataObjects2Streamers;
 
 type
   TClipboardItem = class(TPersistent)
