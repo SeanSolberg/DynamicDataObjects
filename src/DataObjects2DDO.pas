@@ -344,6 +344,11 @@ begin
     lNum:=fStream.Read(lSlotType, 4);
     if lNum<>4 then GenerateException(StrInvalidNumberOfBytes1);
     case lSlotType of
+      0{null}: begin
+        // Nothing more to read.
+        aDataObj.Clear;
+      end;
+
       1{string}, 8{symbol}: begin
         lNum:=fStream.Read(lSize, 4);    // get the size of the data
         if lNum <> 4 then GenerateException(StrInvalidNumberOfBytes2);
