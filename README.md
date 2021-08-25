@@ -6,4 +6,4 @@ This project is primarily coded and tested with Delphi 10.4.  It has not been te
 
 A significant amount of attention has been placed on serialization performance, especially with CBOR, DataObj and JSON.  With JSON, it's considerably faster than the Embarcadero's multiple JSON implementations. 
 
-
+To use this code in its most basic form, you only need to include DataObjects2.pas in your project.  Then, to choose one or more serializers to also be included, simply include those units as well.  
