@@ -97,7 +97,7 @@ var
   lCurrentLine: integer;
   lSL: TStringList;
 
-  procedure ParseLine(aLocalDataObj: TDataObj);
+  procedure ParseLine(aLocalDataObj: TDataObj; aSectionName: string);
   var
     lLine: string;
     lPos: integer;
@@ -109,6 +109,7 @@ var
     i: Integer;
     lAttributeList: TStringList;
     lValueAtt: string;
+    lSectionName: string;
 
     function GetNextLine: string;    // get the next line unfolded.  returns empty string if no line can be retrieved.
     var
@@ -327,11 +328,19 @@ var
     begin
       if lLine.StartsWith('BEGIN:') then
       begin
-        ParseLine(aLocalDataObj.AsFrame.NewSlot(lLine.Substring(7)).AsArray.newSlot);
+        lSectionName := Trim(lLine.Substring(6));
+        ParseLine(aLocalDataObj.AsFrame.NewSlot(lSectionName).AsArray.newSlot, lSectionName);              // RECURSION HAPPENING HERE.
       end
       else if lline.StartsWith('END:') then
       begin
         // Note that we really should be comparing to make sure that the END object identifier we are reading here matches the objectname that got us into this function.  Error if it doesn't match.
+        lSectionName := Trim(lLine.Substring(4));
+
+        if (lSectionName <> aSectionName) then
+        begin
+          raise exception.Create('Error parsing ICS.  Encountered END section '+lSectionName+' but expected END for section '+aSectionName);
+        end;
+
         exit;
       end
       else
@@ -449,7 +458,7 @@ begin
     lSL.OwnsObjects := false;
     lSL.LoadFromStream(fStream);   // NOTE that this brings the whole file into memory which is not what we want to do long term.  Fix this.
     lCurrentLine:=0;
-    ParseLine(aDataObj);
+    ParseLine(aDataObj,'');
   finally
     lSL.Free;
   end;
