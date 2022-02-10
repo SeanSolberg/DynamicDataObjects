@@ -127,6 +127,7 @@ type
     DoNotSerializeDefaultValues: boolean;   // if set to true, then we won't serialize out to a frame those properties that contain a value that is the default value.  EG) an integer that has the value zero.
     SerializeEnumerationsAsIntegers: boolean; // if set to true, then we serialize enumeration values out as a number.  If the enumeration has a small set of values, it will be a byte.  If it has a lot, it will be an integer.
                                               // by default, the enumeration value is serialized as a symbol text.
+    IncludeSerializingClassName: boolean;     // by default this is true.  Means that we will add "_Class" field to the dataObject we are serializing to.
     constructor Create;
     destructor Destroy; override;
     function IsAlreadySerialized(aObject: TObject): boolean;
@@ -1254,21 +1255,31 @@ var
   lProperties: TArray<TRttiProperty>;
 begin
   // Now go though the members of the instance and serialize those
-  lRttiType := GetRttiContext.GetType(aObj.ClassType);
-
-  if lRttiType.IsInstance then
+  if aObj = nil then
   begin
-    lFrame := aDataObj.AsFrame;
-    aAssignContext.AddObject(aObj);   // important to be here so that child properties can't ultimately refer back to aObj and cause infinite recursion.
+    aDataObj.Clear;   // makes the dataObj contain nil because aObj is nil.
+  end
+  else
+  begin
+    lRttiType := GetRttiContext.GetType(aObj.ClassType);
 
-    lProperties := lRttiType.GetProperties;
-    for lRttiProp in lProperties do
+    if lRttiType.IsInstance then
     begin
-      if (lRTTIProp.IsReadable) then
+      lFrame := aDataObj.AsFrame;
+      aAssignContext.AddObject(aObj);   // important to be here so that child properties can't ultimately refer back to aObj and cause infinite recursion.
+
+      if aAssignContext.IncludeSerializingClassName then
+        lFrame.NewSlot('_Class').AsSymbol := aObj.ClassName;
+
+      lProperties := lRttiType.GetProperties;
+      for lRttiProp in lProperties do
       begin
-        if (lRTTIProp.Visibility in aAssignContext.MemberVisibilities) then
+        if (lRTTIProp.IsReadable) then
         begin
-          AssignObjectPropertyToFrame(lFrame, aObj, lRttiProp, aAssignContext);
+          if (lRTTIProp.Visibility in aAssignContext.MemberVisibilities) then
+          begin
+            AssignObjectPropertyToFrame(lFrame, aObj, lRttiProp, aAssignContext);
+          end;
         end;
       end;
     end;
@@ -1372,6 +1383,9 @@ begin
         case aDataObj.DataType.Code of
           cDataTypeSingle: begin aValue := aDataObj.AsSingle; result := true; end;
           cDataTypeDouble: begin aValue := aDataObj.AsDouble; result := true; end;
+          cDataTypeDatetime: begin aValue := aDataObj.AsDateTime; result := true; end;
+          cDataTypeTime: begin aValue := aDataObj.AsTime; result := true; end;
+          cDatatypeDate: begin aValue := aDataObj.AsDate; result := true; end;
         end;
       end;
 
@@ -3492,6 +3506,7 @@ constructor TDataObjAssignContext.Create;
 begin
   inherited Create;
   fSerializedObjects := TList.Create;
+  IncludeSerializingClassName := true;
 end;
 
 destructor TDataObjAssignContext.Destroy;
