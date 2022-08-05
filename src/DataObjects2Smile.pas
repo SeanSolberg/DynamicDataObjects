@@ -47,6 +47,7 @@ type
     destructor Destroy; override;
 
     class function FileExtension: string; override;
+    class function Description: string; override;
     class function GetFileFilter: string; override;
     class function IsFileExtension(aStr: string): boolean; override;
     class function ClipboardPriority: cardinal; override;
@@ -547,6 +548,11 @@ begin
       end;
     end;
   end;
+end;
+
+class function TSmileStreamer.Description: string;
+begin
+  result := 'Smile Data Format.  https://github.com/FasterXML/smile-format-specification and https://en.wikipedia.org/wiki/Smile_(data_interchange_format)';
 end;
 
 destructor TSmileStreamer.Destroy;

@@ -15,6 +15,7 @@ type
   public
     function Clone: TDataObjStreamerBase; override;
     class function FileExtension: string; override;
+    class function Description: string; override;
     class function GetFileFilter: string; override;
     class function IsFileExtension(aStr: string): boolean; override;
     class function ClipboardPriority: cardinal; override;
@@ -127,6 +128,7 @@ var
   function GetSymbolID(aSymbol: string): cardinal;
   begin
     //FINISH
+    result := 0;
   end;
 
   procedure WriteSymbol(aSymbol: string);
@@ -514,6 +516,11 @@ begin
 end;
 
 
+
+class function TIonStreamer.Description: string;
+begin
+  result := 'Amazon Ion Format.  https://amzn.github.io/ion-docs/';
+end;
 
 initialization
   RegisterDataObjStreamer(TIonStreamer);

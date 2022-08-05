@@ -33,16 +33,24 @@ type
 
   TJsonStreamer = class(TDataObjStreamerBase)
   private
+    // Settings for Encoding options.
     fStyle: TJsonStyle;
     fIndention: byte;
-    fIndent: integer;                 // only used during streaming.
-    fStringBuilder: TStringBuilder;
     fFormatSettings: TFormatSettings;
 
+    // Settings for Decoding options
+    fAllowParsingExtendedTypes: boolean;
+    fAllowParsingSymbols: boolean;        // Means we will allow a text "identifer" to be streamed in after a slotname that is not valid JSON, but we consider it a symbol.  IE)  {"Slotname": ~TemplateName~, "SlotName2": ALWAYSRUN}
+
+    // Settings for both Encoding and Decoding options.
+    fEncoding: TEncoding;
+
+    // Variables used during serialization.
+    fStringBuilder: TStringBuilder;
     fJSON: string;
     fEncodeNonAsciiCharacters: boolean;    // only used when streaming out.
+    fIndent: integer;                 // only used during streaming.
 
-    fEncoding: TEncoding;
 
     procedure SetEncoding(aEncoding: TEncoding);
 
@@ -60,6 +68,8 @@ type
     destructor Destroy; override;
 
     class function FileExtension: string; override;
+    class function Description: string; override;
+    class procedure GetParameterInfo(aParameterPurpose: TDataObjParameterPurposes; aStrings: TStrings); override;
     class function GetFileFilter: string; override;
     class function IsFileExtension(aStr: string): boolean; override;
     class function ClipboardPriority: cardinal; override;
@@ -75,6 +85,8 @@ type
 
     property EncodeNonAsciiCharacters: boolean read fEncodeNonAsciiCharacters write fEncodeNonAsciiCharacters;
     property Encoding: TEncoding read fEncoding write setEncoding;
+    property AllowParsingExtendedTypes: boolean read fAllowParsingExtendedTypes write fAllowParsingExtendedTypes;
+    property AllowParsingSymbols: boolean read fAllowParsingSymbols write fAllowParsingSymbols;
 
     property JSON: string read fJSON write fJSON;
 
@@ -395,6 +407,11 @@ begin
   result := StringOfChar(' ',fIndent);
 end;
 
+class function TJsonStreamer.Description: string;
+begin
+  result := 'JavaScript Object Notation.  https://www.json.org and https://en.wikipedia.org/wiki/JSON';
+end;
+
 destructor TJsonStreamer.Destroy;
 begin
   //NOTE:  do not free the fEncoding becuase that is management globally.  we just have a reference to it.
@@ -592,7 +609,7 @@ procedure TJsonStreamer.parseFromJson(aObj: TDataObj);
          There are two downsides to this code that I hope to improve upon in the future:
            1.  With TJsonStreamContext, The code is written to expect that the entire source stream is going to be parsed into aDataObj.  This might not be the case in some people's implementations.
                I would rather read and parse the JSON from the stream and once a full JSON payload is loaded, leave the stream untouched and at the right position.  However,
-               we are supporting the different possible text encodings (really Unicode and UTF8) and that decoding happens before the JSON parsing actually begins.  I would
+               we are supporting the different possible text encodings (really Unicode, ASCII and UTF8) and that decoding happens before the JSON parsing actually begins.  I would
                need to be able to pull one "character" at a time from any type of encoding and that's just too much work for me to do right now.   Maybe delphi has a way to
                do that, maybe it doesn't.  Anyway... future issue.
            2.  The error handling isn't very good.  If there's malformed JSON fed in, the resulting object structure will be fine and it will get the data up to the point
@@ -604,7 +621,7 @@ procedure TJsonStreamer.parseFromJson(aObj: TDataObj);
 }
 
   {This call will parse out whatever the next token that's encountered is}
-  function ParseAnyType(aIndex: Integer; var oRetIndex: Integer; aDataObj: TDataObj): Boolean; forward;
+  function ParseAnyType(aIndex: Integer; var oRetIndex: Integer; aDataObj: TDataObj): boolean; forward;
 
   {Returns true if we are not at the end of the string that we are parsing.}
   function IsNotEnd(aIndex: Integer): Boolean;
@@ -642,7 +659,7 @@ procedure TJsonStreamer.parseFromJson(aObj: TDataObj);
   end;
 
   // Try to parse the false identifier from fJSON
-  function ParseFalse(aIndex: Integer; var oRetIndex: Integer; aDataObj: TDataObj): Boolean;
+  function ParseFalse(aIndex: Integer; var oRetIndex: Integer; aDataObj: TDataObj): boolean;
   begin
     result := false;
     if ((fJSON[aIndex] = 'f') or (fJSON[aIndex] = 'F')) and
@@ -658,7 +675,7 @@ procedure TJsonStreamer.parseFromJson(aObj: TDataObj);
   end;
 
   // Try to parse the null identifier from fJSON
-  function ParseNull(aIndex: Integer; var oRetIndex: Integer; aDataObj: TDataObj): Boolean;
+  function ParseNull(aIndex: Integer; var oRetIndex: Integer; aDataObj: TDataObj): boolean;
   begin
     result := false;
     if ((fJSON[aIndex] = 'n') or (fJSON[aIndex] = 'N')) and
@@ -672,10 +689,10 @@ procedure TJsonStreamer.parseFromJson(aObj: TDataObj);
     end;
   end;
 
-  function ParseObjectID(aIndex: Integer; var oRetIndex: Integer; aDataObj: TDataObj): Boolean;
+  function ParseObjectID(aIndex: Integer; var oRetIndex: Integer; aDataObj: TDataObj): integer;
   begin
-    result := false;
-    if ((fJSON[aIndex] = 'o') or (fJSON[aIndex] = 'O')) and
+    result := 0;
+    if ((fJSON[aIndex] = 'o') or (fJSON[aIndex] = 'O')) and     // Why do I do it this goofy way?   Answer: Much faster, especially since the vast majority of the time we do not find an "objectid()"
        ((fJSON[aIndex+1] = 'b') or (fJSON[aIndex+1] = 'B')) and
        ((fJSON[aIndex+2] = 'j') or (fJSON[aIndex+2] = 'J')) and
        ((fJSON[aIndex+3] = 'e') or (fJSON[aIndex+3] = 'E')) and
@@ -685,28 +702,20 @@ procedure TJsonStreamer.parseFromJson(aObj: TDataObj);
        ((fJSON[aIndex+7] = 'd') or (fJSON[aIndex+7] = 'D')) and
        (fJSON[aIndex+8] = '(') then
     begin
-      // we have the start of an objectID so now try and parse out the string representation of the objectID followed by a ")"
+      // FINISH - we have the start of an objectID so now try and parse out the string representation of the objectID followed by a ")"
 
-
-
-
-      result := true;
+      result := 1;
       oRetIndex := aIndex + 4;
-      aDataObj.Clear;   // should already be clear, but let's just be explicit.
     end;
   end;
 
-function ParseISODate(aIndex: Integer; var oRetIndex: Integer; aDataObj: TDataObj): Boolean;
+function ParseISODate(aIndex: Integer; var oRetIndex: Integer; aDataObj: TDataObj): integer;
 begin
+  // Example:  ISODate("2021-01-27T00:19:08.862Z")
   //FINISH
-  result := false;
+  result := 0;
 end;
 
-function NumberInt(aIndex: Integer; var oRetIndex: Integer; aDataObj: TDataObj): Boolean;
-begin
-  //FINISH
-  result := false;
-end;
 
 
 
@@ -714,7 +723,7 @@ end;
   // Try to parse a number from fJSON
   // This could read and populate an integer(int64, int32, or byte) or a double float.
   // We are not having it read in single floats cause it's not obvious to decide when to choose a single and when to choose a double.  Could be a future improvement maybe.
-  function ParseNumber(aIndex: Integer; var aRetIndex: Integer; aDataobj: TDataObj): Boolean;
+  function ParseNumber(aIndex: Integer; var aRetIndex: Integer; aDataobj: TDataObj): boolean;
   var
     lWs: string;
     lContinue: boolean;
@@ -722,6 +731,7 @@ end;
     lWholeCount: integer;
     lIsFloat: boolean;
     lInt64: int64;
+    lIsExponent: boolean;
   begin
     result := false;
     if not IsNotEnd(aIndex) then exit;
@@ -732,6 +742,7 @@ end;
     lCanBePlusOrMinus := true;                // + or minus character can only come in as the first character or directly after an "e"
     lWholeCount := 0;
     lIsFloat := false;
+    lIsExponent := false;
 
     while (lContinue) do
     begin
@@ -747,25 +758,27 @@ end;
       else if lCanBePlusOrMinus and ((fJSON[aIndex] = '+') or (fJSON[aIndex] = '-')) then
       begin
         lContinue := true;
+        lCanBePlusOrMinus := false;
         inc(aIndex);
       end
-      else if (fJSON[aIndex] = '.') and (lWholeCount > 0) then
+      else if (lIsFloat=false) and (fJSON[aIndex] = '.') and (lWholeCount > 0) then
       begin
         lContinue := true;
         lIsFloat := true;
+        lCanBePlusOrMinus := false;
         inc(aIndex);
       end
-      else if (fJSON[aIndex] = 'e') or (fJSON[aIndex] = 'E') then
+      else if (lWholeCount=1) and (lIsExponent = false) and ((fJSON[aIndex] = 'e') or (fJSON[aIndex] = 'E')) then
       begin
         lContinue := true;
         lIsFloat := true;
         lCanBePlusOrMinus := true;
+        lIsExponent := true;
         inc(aIndex);
       end
       else
       begin
         // None of the possible conditions above absorbed this character so we are done trying to read this number.
-        // to be a valid JSON number that makes sense here, this character should be empty space, or a ',' to end this slot, or a '}' to end this frame, or a ']' to end this array.
         if result then
         begin
           // we either found an integer number or a floating point number
@@ -778,13 +791,15 @@ end;
           end
           else
           begin
+            // NOTE: someday, we may need to be able to support unsigned Int64 sized numbers.
+
             // choose the smallest integer data type to hold this value.
             lInt64 := StrToInt64(lWS);
             if (lInt64 > 2147483647) or (lInt64 < -2147483648) then
             begin
               aDataObj.AsInt64 := lInt64;
             end
-            else if (lInt64 >= 0) and (lInt64<=255)  then
+            else if (lInt64 >= 0) and (lInt64<=255) then
             begin
               aDataObj.AsByte := lInt64;
             end
@@ -803,7 +818,7 @@ end;
 
 
   // Try to parse a string from fJSON and along the way, do any special escaping handling such as \uxxxxx, etc.
-  function ParseString(aIndex: Integer; var aRetIndex: Integer; var oString: string): Boolean;
+  function ParseString(aIndex: Integer; var aRetIndex: Integer; var oString: string): boolean;
 
     const cHexDecimalConvert: array[Byte] of Byte = (
        $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff, {00-$0F}
@@ -854,9 +869,10 @@ end;
   begin
     lWorkString := '';
     SkipSpaces(aIndex);
+    result := false;
 
-    result := IsNotEnd(aIndex);
-    if not result then exit;
+    if not IsNotEnd(aIndex) then
+      exit;
 
     lStartsWithSingleQuote := false;
     if (fJSON[aIndex] = '''') then
@@ -867,7 +883,6 @@ end;
     else if (fJSON[aIndex] <> '"') then
     begin
       // didn't begin with a double quote or a single quote so can't be a valid string.
-      result := false;
       exit;
     end;
 
@@ -1161,16 +1176,16 @@ end;
 *)
 
   //Try to parse an array from fJSON.  Needs to start with "["
-  function ParseArray(aIndex: Integer; var oRetIndex: Integer; aDataObj: TDataObj): Boolean;
+  function ParseArray(aIndex: Integer; var oRetIndex: Integer; aDataObj: TDataObj): integer;
   var
     lArray: TDataArray;
   begin
     try
-      result := IsNotEnd(aIndex);
-      if not result then exit;
-      result := fJSON[aIndex] = '[';
-      if not result then exit;
+      result := 0;
+      if not IsNotEnd(aIndex) then exit;
+      if not (fJSON[aIndex] = '[') then exit;   // not the start of an array so get out.
 
+      result := 1;
       inc(aIndex);
 
       SkipSpaces(aIndex);
@@ -1186,17 +1201,22 @@ end;
           end
           else
           begin
-            break;
+            break; // we are done reading the elements in this array.  The current byte could be the ending ] character or it could be invalid data that we error out on next.
           end;
         end
         else
         begin
-//          break;   // we hit the end of the array
+          // We were not able to parse this item in the array. Maybe nothing was parsed, or maybe an item was paritally parsed.
+          // However, there was something there that could not be parsed.  So, the code below will handle that.
         end;
       end;
 
-      result := IsNotEnd(aIndex) and (fJSON[aIndex] = ']');
-      if not result then exit;
+      if not (IsNotEnd(aIndex) and (fJSON[aIndex] = ']')) then
+      begin
+        oRetIndex := aIndex;   // need to return where the error occurred.
+        result := 2;  // Means we parsed some stuff, but errored out here because we are not getting the end of array marker.
+        exit;
+      end;
 
       inc(aIndex);
     finally
@@ -1216,27 +1236,30 @@ end;
     begin
       // consume up to the ":"
       SkipSpaces(aIndex);
-      result := fJSON[aIndex] = ':';
-      if result then
+      if fJSON[aIndex] = ':' then
       begin
         inc(aIndex);
-        oRetIndex := aIndex;
+      end
+      else
+      begin
+        result := false;  // We did parse the slotname, but the ":" is not next and thus the slotname is not really valid.
       end;
+      oRetIndex := aIndex;
     end;
   end;
 
   //Try to parse a frame (in JSON terminoloty, it's called an object) from fJSON.  Needs to start with "{"
-  function ParseFrame(aIndex: Integer; var oRetIndex: Integer; aDataObj: TDataObj): Boolean;
+  function ParseFrame(aIndex: Integer; var oRetIndex: Integer; aDataObj: TDataObj): integer;
   var
     lFrame: TDataFrame;
     lSlotName: string;
   begin
     try
-      result := IsNotEnd(aIndex);
-      if not result then exit;
-      result := fJSON[aIndex] = '{';
-      if not result then exit;
+      result := 0;
+      if not IsNotEnd(aIndex) then exit;
+      if not (fJSON[aIndex] = '{') then exit;
 
+      result := 1;  // we are a frame and event though we didn't load much yet, we are valid so far.
       inc(aIndex);
 
       SkipSpaces(aIndex);
@@ -1256,6 +1279,10 @@ end;
             begin
               break;
             end;
+          end
+          else
+          begin
+            raise Exception.Create('Unable to parse JSON at '+InttoStr(aIndex));
           end;
         end
         else
@@ -1265,41 +1292,110 @@ end;
         end;
       end;
 
-      result := IsNotEnd(aIndex) and (fJSON[aIndex] = '}');
-      if not result then exit;
+      // check for properly frame ending.
+      if not(IsNotEnd(aIndex) and (fJSON[aIndex] = '}')) then
+      begin
+        result := 2;
+        oRetIndex := aIndex;
+        exit;
+      end;
 
-      inc(aIndex);
+      inc(aIndex);  // consume closing '}'
     finally
       oRetIndex := aIndex;
     end;
   end;
 
+  function TryParsingExtendedType(aIndex: Integer; var oRetIndex: Integer; aDataObj: TDataObj): integer;  //0=nothing applicable, 1=successful parse, 2=Applicable, but error in parsing.
+  begin
+    //Extended JSON parsing options such as MongoDB Extended JSON.
+    //Note that parsing these are not following standard JSON, but I've found that there are other "json" like files such as BSON text format that we can support here.
+    Result := ParseObjectID(aIndex, oRetIndex, aDataObj);
+    if Result = 0 then
+    begin
+      Result := ParseISODate(aIndex, oRetIndex, aDataObj);
+    end;
+  end;
+
+  function TryParsingSymbol(aIndex: Integer; var oRetIndex: Integer; aDataObj: TDataObj): integer;  //0=nothing applicable, 1=successful parse, 2=Applicable, but error in parsing.
+  begin
+
+  end;
+
   // This function will parse whatever JSON data type it can find next and will put that data into aDataObj
-  function ParseAnyType(aIndex: Integer; var oRetIndex: Integer; aDataObj: TDataObj): Boolean;
+  function ParseAnyType(aIndex: Integer; var oRetIndex: Integer; aDataObj: TDataObj): boolean;  // result 0=Not Parsed, 1=Successfully Parsed, 2=Partially Successfully parsed (example: an array was successfully parsing, but errored out on the nth item in the array)
   var
     lString: string;
+    lParseResult: integer;
   begin
     SkipSpaces(aIndex);
-    result := ParseFalse(aIndex, oRetIndex, aDataObj);
-    if not result then result := ParseTrue(aIndex, oRetIndex, aDataObj);
-    if not result then result := ParseNull(aIndex, oRetIndex, aDataObj);
-    if not result then result := ParseNumber(aIndex, oRetIndex, aDataObj);
-    if not result then
+    if not ParseFalse(aIndex, oRetIndex, aDataObj) then
     begin
-      result := ParseString(aIndex, oRetIndex, lString);
-      if result then
+      result := ParseTrue(aIndex, oRetIndex, aDataObj);
+      if not result then
       begin
-        aDataObj.AsString := lString;
+        result := ParseNull(aIndex, oRetIndex, aDataObj);
+        if not result then
+        begin
+          result := ParseNumber(aIndex, oRetIndex, aDataObj);
+          if not result then
+          begin
+            result := ParseString(aIndex, oRetIndex, lString);
+            if result then
+            begin
+              aDataObj.AsString := lString;
+            end
+            else
+            begin
+              lParseResult := ParseArray(aIndex, oRetIndex, aDataObj);   // if ParseArray partially succeeded, it will have updated oRetIndex.  Returns 0 if not an array, returns 1 if successful, returns 2 if it was an array, but errored out in the middle.
+              if lParseResult>0 then
+              begin
+                if lParseResult=1 then
+                  result := true
+                else
+                begin
+                  // Error from within the ParseArray which started out being successful but errored out inside somewhere.
+                end;
+              end
+              else
+              begin
+                lParseResult := ParseFrame(aIndex, oRetIndex, aDataObj);
+                if lParseResult>0 then
+                begin
+                  if lParseResult=1 then
+                    result := true
+                  else
+                  begin
+                    // Error from within the ParseFrame which started out being successful but errored out inside somewhere.
+                  end;
+                end
+                else
+                begin
+                  // Was not able to parse any of the regular JSON data types at this point.  SO, see if we are accepting ExtendedTypes to be parsed.
+                  lParseResult := 0;
+                  if self.fAllowParsingExtendedTypes then
+                  begin
+                    lParseResult := TryParsingExtendedType(aIndex, oRetIndex, aDataObj);
+                    if lParseResult=1 then
+                    begin
+                      // successfully parsed an extended type
+                      result := true;
+                    end
+                  end;
+
+                  if (lParseResult=0) and self.fAllowParsingSymbols then
+                  begin
+                    // We treat symbols as anything up to a possible ending case such as a "," or "]" or "}"
+                    TryParsingSymbol(aIndex, oRetIndex, aDataObj);
+                  end;
+                end
+              end;
+            end;
+          end;
+        end;
       end;
     end;
-    if not result then result := ParseArray(aIndex, oRetIndex, aDataObj);
-    if not result then result := ParseFrame(aIndex, oRetIndex, aDataObj);
 
-    //Extended JSON parsing options such as MongoDB Extended JSON.
-    //Note that parsing these are not following standard JSON, but I've found that there ara other "json" like files such as BSON text format that we can support here.
-    if not result then result := ParseObjectID(aIndex, oRetIndex, aDataObj);
-    if not result then result := ParseISODate(aIndex, oRetIndex, aDataObj);
-    if not result then result := NumberInt(aIndex, oRetIndex, aDataObj);
   end;
 
 var
@@ -1357,6 +1453,21 @@ begin
   result := 'JSON Files (*.json, *.txt)|*.json;*.txt';
 end;
 
+class procedure TJsonStreamer.GetParameterInfo(aParameterPurpose: TDataObjParameterPurposes; aStrings: TStrings);
+begin
+  if cppEncoding in aParameterPurpose then
+  begin
+    aStrings.AddPair('-Human', 'Will produce output with indentions and new lines for better human readability.');
+    aStrings.AddPair('-Indent <number>', 'Defines how many characters to indent when using the -Human option. Default = 2');
+    aStrings.AddPair('-Encoding <value>', 'Defines the text encoding of the output.  value=[UTF-8, UTF-7, ASCII, UNICODE, BIGENDIANUNICODE] default=UTF-8');
+  end;
+  if cppDecoding in aParameterPurpose then
+  begin
+    aStrings.AddPair('-AllowExtendedTypes', 'Allow decoding some non-json compliant extended types like BSON objectIds and IsoDates, etc.');
+    aStrings.AddPair('-AllowSymbols', 'Allow decoding non-json compliant values into symbols such as strings without being enclosed in quotes.');
+  end;
+end;
+
 procedure TJsonStreamer.ApplyOptionalParameters(aParams: TStrings);
 var
   i: Integer;
@@ -1367,6 +1478,7 @@ begin
   i := 0;
   while i < aParams.Count do
   begin
+    // Parameters used for Writing out JSON
     if SameText(aParams[i], '-Human') then
       Style := cJsonHumanReadable
     else if SameText(aParams[i], '-Indent') and (i < aParams.Count-1) then
@@ -1391,6 +1503,16 @@ begin
       // ANYTHING ELSE IS IGNORED.
 
       inc(i);
+    end
+
+    // Parameters used for logic in Reading JSON
+    else if SameText(aParams[i], '-AllowExtendedTypes') then
+    begin
+      AllowParsingExtendedTypes := true;
+    end
+    else if SameText(aParams[i], '-AllowSymbols') then
+    begin
+      AllowParsingSymbols := true;
     end;
 
     inc(i);
@@ -1452,11 +1574,19 @@ begin
     fStream.Read(lBytes[0], lSize);
 
     lEncoding := nil;
-    lPreambleSize := TEncoding.GetBufferEncoding(lBytes, lEncoding);
-    if assigned(lEncoding) then
+
+    lPreambleSize := TEncoding.GetBufferEncoding(lBytes, lEncoding); // this call only chooses an encoding by inspecting the preamble.  If it can't find a preamble, then the default system encoding is returned.
+    if lPreambleSize=0 then   // If a preamble was not found, then we can assume the default was chosen.
     begin
-      SetEncoding(lEncoding);
+      // Note that if the lBytes didn't have a preamble, the the GetBufferEncoding may choose the wrong one because it's just picking the system default.
+      // We should do a little more checking and one little test we can do to see if we have full Unicode in the stream (not UTF-8 or UTF-7), is to think that most
+      // likely we are starting out with a "{" or "[" character (or white space leading up to that character).  With or without whitespace, we "should" see
+      // "{ #0" or "[ #0" or "<space> #0" or "<tab> #0", etc. as the first two bytes of a starting sequence if the incoming bytes are truely Unicode encoded.
+      // so, as a simple check, we will inspect that second byte to see if it is in fact a #0.  If so, we will instantiate the UniCode Encoding.
+      if ((lBytes[0] <> 0) and (lBytes[1] = 0)) then
+        lEncoding := TEncoding.Unicode;
     end;
+    SetEncoding(lEncoding);
 
     fJSON := fEncoding.GetString(lBytes, lPreambleSize, lSize-lPreambleSize);
   end;

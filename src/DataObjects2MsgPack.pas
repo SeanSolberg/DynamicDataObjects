@@ -15,11 +15,12 @@ type
 
   public
     class function FileExtension: string; override;
+    class function Description: string; override;
     class function GetFileFilter: string; override;
     class function IsFileExtension(aStr: string): boolean; override;
     class function ClipboardPriority: cardinal; override;
 
-    function Clone: TDataObjStreamerBase;
+    function Clone: TDataObjStreamerBase; override;
     procedure Decode(aDataObj: TDataObj); override;
     procedure Encode(aDataObj: TDataObj); override;
   end;
@@ -841,6 +842,11 @@ begin
 end;
 
 
+
+class function TMsgPackStreamer.Description: string;
+begin
+  result := 'MessagePack. https://msgpack.org/ and https://en.wikipedia.org/wiki/MessagePack';
+end;
 
 initialization
   RegisterDataObjStreamer(TMsgPackStreamer);

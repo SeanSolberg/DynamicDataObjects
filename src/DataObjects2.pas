@@ -115,7 +115,10 @@ uses SysUtils, DateUtils, Generics.collections, Classes, VarInt, StreamCache, Rt
 {$Define cMakeMoreCompatibleWithOldDataObjects}
 
 
+
 type
+  TDataObjParameterPurpose = (cppDecoding, cppEncoding);
+  TDataObjParameterPurposes = set of TDataObjParameterPurpose;
   TOnHandleExceptionProc = procedure(Sender: TObject; aException: Exception);
   TMemberVisibilities = set of TMemberVisibility;      // used for RTTI assigning
   TDataObjAssignContext = class
@@ -190,7 +193,6 @@ type
     cDataTypeTime = 11,
     cDataTypeGUID = 12,       // Stored and streamed as the 16 byte data that makes up a GUID.
     cDataTypeObjectID = 13,   // equivalent to the BSON ObjectID  12 bytes.   https://docs.mongodb.com/manual/reference/method/ObjectId/
-//    cDataTypeUTF8String = 16,      // UTF-8 encoded string.  Note that each string data type can have flags
     cDataTypeString = 14,     // Unicode encode string.   always 2 bytes per character.
     cDataTypeStringList = 15,
     cDataTypeFrame = 16,           // Each slot in the frame is identified by a case-insensitive
@@ -518,6 +520,8 @@ type
     function Clone: TDataObjStreamerBase; virtual; abstract;
 
     class function FileExtension: string; virtual; abstract;
+    class function Description: string; virtual; abstract;
+    class procedure GetParameterInfo(aParameterPurpose: TDataObjParameterPurposes; aStrings: TStrings); virtual;  // Will fill aStrings with information about the optional parameters that the streamer may support.
     class function GetFileFilter: string; virtual; abstract;
     class function IsFileExtension(aStr: string): boolean; virtual;
     class function ClipboardPriority: cardinal; virtual; abstract;
@@ -2392,6 +2396,7 @@ var
   lFS: TFileStream;
   lRS: TStreamReadCache;
 begin
+  result := nil;
   lFS := TFileStream.Create(aFilename, fmOpenRead + fmShareDenyNone);
   try
     lRS := TStreamReadCache.Create(lFS);
@@ -2410,13 +2415,16 @@ begin
         end
         else
         begin
-          // FINISH - If nothing concrete was found, then attempt to load from each of the streamers and if one of them doesn't except out, then maybe it was successful loading
-          // For now, generate an exception.
-          raise(exception.Create(format('%s is not a format that can be loaded into a dataObject.',[aFilename])));
+         // FINISH - If nothing concrete was found, then attempt to load from each of the streamers and if one of them doesn't except out, then maybe it was successful loading
+         // For now, we are returning nil to signal that we could not get a streamer to do the load.
+          //raise(exception.Create(format('%s is not a format that can be loaded into a dataObject.',[aFilename])));
         end;
       end;
-      result.ApplyOptionalParameters(aOptionalParameters);
-      result.Decode(self);
+      if assigned(result) then
+      begin
+        result.ApplyOptionalParameters(aOptionalParameters);
+        result.Decode(self);
+      end;
     finally
       lRS.free;
     end;
@@ -3456,6 +3464,14 @@ class function TDataObjStreamerBase.IsFileExtension(aStr: string): boolean;
 begin
   result := SameText(aStr, FileExtension) or SameText(aStr, '.'+FileExtension);
 end;
+
+class procedure TDataObjStreamerBase.GetParameterInfo(aParameterPurpose: TDataObjParameterPurposes; aStrings: TStrings);
+begin
+  // Most descendant classes will not have optional streaming parameters so we implement a base here to do nothing
+end;
+
+
+
 
 
 procedure DataObjConvertStringListToArrayOfStrings(aDataObj: TDataObj);

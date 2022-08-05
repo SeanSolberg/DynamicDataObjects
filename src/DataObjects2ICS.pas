@@ -19,6 +19,7 @@ type
     constructor Create(aStream: TStream); override;
 
     class function FileExtension: string; override;
+    class function Description: string; override;
     class function GetFileFilter: string; override;
     class function IsFileExtension(aStr: string): boolean; override;
     class function ClipboardPriority: cardinal; override;
@@ -464,6 +465,11 @@ begin
   end;
 end;
 
+
+class function TICSStreamer.Description: string;
+begin
+  result := 'Internet Calendaring and Scheduling (iCalendar).  https://datatracker.ietf.org/doc/html/rfc5545';
+end;
 
 procedure TICSStreamer.Encode(aDataObj: TDataObj);
 var

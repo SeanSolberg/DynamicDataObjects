@@ -23,6 +23,8 @@ type
     constructor Create(aStream: TStream); override;
 
     class function FileExtension: string; override;
+    class function Description: string; override;
+    class procedure GetParameterInfo(aParameterPurpose: TDataObjParameterPurposes; aStrings: TStrings); override;
     class function GetFileFilter: string; override;
     class function IsFileExtension(aStr: string): boolean; override;
     class function ClipboardPriority: cardinal; override;
@@ -106,6 +108,17 @@ end;
 class function TCSVStreamer.GetFileFilter: string;
 begin
   result := 'CSV Files (*.csv)|*.csv';
+end;
+
+class procedure TCSVStreamer.GetParameterInfo(aParameterPurpose: TDataObjParameterPurposes; aStrings: TStrings);
+begin
+  inherited;
+  if cppDecoding in aParameterPurpose then
+  begin
+    aStrings.AddPair('-AutoDetectDataTypes', 'Will attempt to convert string values to other data types such as numbers and dates, etc.');
+    aStrings.AddPair('-AddEmptyValuesAsNilSlots', 'Will create a nil slot for each imported CSV value that has no text characters.');
+    aStrings.AddPair('-FirstRowIsFieldNames', 'If set, then the first row is considered the set of field names for all subsequent rows.');
+  end;
 end;
 
 class function TCSVStreamer.IsFileExtension(aStr: string): boolean;
@@ -426,6 +439,11 @@ begin
   end;
 end;
 
+
+class function TCSVStreamer.Description: string;
+begin
+  result := 'Comma Separated Values.  This is typically used to share text formatted data into a spreadsheet.';
+end;
 
 procedure TCSVStreamer.Encode(aDataObj: TDataObj);
 var

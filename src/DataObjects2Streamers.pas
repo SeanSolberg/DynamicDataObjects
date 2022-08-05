@@ -32,6 +32,7 @@ type
   TDataObjStreamer = class(TDataObjStreamerBase)
   public
     class function FileExtension: string; override;
+    class function Description: string; override;
     class function GetFileFilter: string; override;
     class function IsFileExtension(aStr: string): boolean; override;
     class function ClipboardPriority: cardinal; override;
@@ -298,6 +299,11 @@ end;
 class function TDataObjStreamer.getFileFilter: string;
 begin
   result := 'DataObject Files (*.dataObj)|*.dataObj';
+end;
+
+class function TDataObjStreamer.Description: string;
+begin
+  result := 'Dynamic Data Object binary serialization.  https://github.com/SeanSolberg/DynamicDataObjects';
 end;
 
 destructor TDataObjStreamer.Destroy;

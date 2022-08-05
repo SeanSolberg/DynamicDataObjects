@@ -98,6 +98,7 @@ Tag	Data Item	Semantics	Reference
     function Clone: TDataObjStreamerBase; override;
 
     class function FileExtension: string; override;
+    class function Description: string; override;
     class function GetFileFilter: string; override;
     class function IsFileExtension(aStr: string): boolean; override;
     class function ClipboardPriority: cardinal; override;
@@ -166,8 +167,6 @@ end;
 //writes out the generic pattern of a MajorType number 0-7 along with the aCount which is the value portion of this MajorType.
 procedure WriteTypeAndNumber(aStream: TStream; aMajorType: byte; aValue: UInt64); overload;
 var
-  lUInt32: cardinal;
-  lUInt64: UInt64;
   lBytes: TNumBytes;
 begin
   //Deals with positive numbers
@@ -506,14 +505,18 @@ begin
     end;
     25: begin
       aStream.Read(lShort, 2);
+      lShort := SwapBytes(lShort);
       result := lShort;     // numbers 256-65535 are covered by reading two bytes
     end;
     26: begin
       aStream.Read(lCardinal, 4);
+      lCardinal := SwapBytes(lCardinal);
       result := lCardinal;  // numbers 65536 -  2 billion are covered by reading four bytes
     end;
     27: begin
-      aStream.Read(lUInt64, 8);  // 8 byte unsigned int64.  Problem we have here is that we natively model signed 64biters, so it's possible we get an incoming unsigned number that's too big here.
+      aStream.Read(lUInt64, 8);  // 8 byte unsigned int64.
+      lUInt64 := SwapBytes(lUInt64);
+      result := lUInt64;
     end
     else
     begin
@@ -870,6 +873,11 @@ end;
 class function TCBORStreamer.FileExtension: string;
 begin
   result := 'cbor';
+end;
+
+class function TCBORStreamer.Description: string;
+begin
+  result := 'Compact Binary Object Representation. https://cbor.io/ and https://en.wikipedia.org/wiki/CBOR';
 end;
 
 class function TCBORStreamer.ClipboardPriority: cardinal;

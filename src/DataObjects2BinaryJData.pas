@@ -14,6 +14,7 @@ type
     procedure DecodeType(aType: byte; aDataObj: TDataObj); override;
   public
     class function FileExtension: string; override;
+    class function Description: string; override;
     class function GetFileFilter: string; override;
     class function IsFileExtension(aStr: string): boolean; override;
     class function ClipboardPriority: cardinal; override;
@@ -165,6 +166,11 @@ begin
       // if we didn't pick up any of the jdata specific types, then call up to the ancestor to see if the type is a base type from UBJSON.
       inherited DecodeType(aType, aDataObj);
   end;
+end;
+
+class function TJDataStreamer.Description: string;
+begin
+  result :=  'Binary JData format. https://github.com/NeuroJSON/bjdata and https://github.com/OpenJData/jdata/blob/master/JData_specification.md';
 end;
 
 procedure TJDataStreamer.Encode(aDataObj: TDataObj);

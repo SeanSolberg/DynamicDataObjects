@@ -24,6 +24,7 @@ type
     procedure RaiseParsingException(aMessage: string);
   public
     class function FileExtension: string; override;
+    class function Description: string; override;
     class function GetFileFilter: string; override;
     class function IsFileExtension(aStr: string): boolean; override;
     class function ClipboardPriority: cardinal; override;
@@ -61,6 +62,11 @@ end;
 procedure TBSONStreamer.Decode(aDataObj: TDataObj);
 begin
   ReadDocument(aDataObj);
+end;
+
+class function TBSONStreamer.Description: string;
+begin
+  result := 'BSON (Binary JSON).  https:/bsonspec.org/ and https:/en.wikipedia.org/wiki/BSON';
 end;
 
 procedure TBSONStreamer.DoRead(var Buffer; Count: LongInt);

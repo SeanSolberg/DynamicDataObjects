@@ -29,6 +29,7 @@ type
     procedure RaiseParsingException(aMessage: string);
   public
     class function FileExtension: string; override;
+    class function Description: string; override;
     class function GetFileFilter: string; override;
     class function IsFileExtension(aStr: string): boolean; override;
     class function ClipboardPriority: cardinal; override;
@@ -66,6 +67,11 @@ end;
 procedure TEBMLStreamer.Decode(aDataObj: TDataObj);
 begin
   ReadDocument(aDataObj);
+end;
+
+class function TEBMLStreamer.Description: string;
+begin
+  result := 'Extensible Binary Meta Language. https://datatracker.ietf.org/doc/rfc8794/';
 end;
 
 procedure TEBMLStreamer.DoRead(var Buffer; Count: LongInt);

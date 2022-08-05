@@ -17,6 +17,7 @@ type
     function DecodeSize(aType: byte): int64;
   public
     class function FileExtension: string; override;
+    class function Description: string; override;
     class function GetFileFilter: string; override;
     class function IsFileExtension(aStr: string): boolean; override;
     class function ClipboardPriority: cardinal; override;
@@ -424,6 +425,11 @@ end;
 
 
 
+
+class function TUBJSONStreamer.Description: string;
+begin
+  result := 'Universal Binary JSON.  http://ubjson.org/ and https://github.com/ubjson/universal-binary-json';
+end;
 
 (* NOTE #1:
   So what we are doing here is putting in a NOOP in front of the string.  For all readers out there, this will simply be ignored.  But, for our reader,

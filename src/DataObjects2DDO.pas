@@ -17,6 +17,7 @@ type
   public
     function Clone: TDataObjStreamerBase; override;
     class function FileExtension: string; override;
+    class function Description: string; override;
     class function GetFileFilter: string; override;
     class function IsFileExtension(aStr: string): boolean; override;
     class function ClipboardPriority: cardinal; override;
@@ -582,6 +583,11 @@ begin
     on e: Exception do
       GenerateException(e.Message);
   end;
+end;
+
+class function TDDOStreamer.Description: string;
+begin
+  result := 'DDO format.';
 end;
 
 initialization
