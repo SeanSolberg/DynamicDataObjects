@@ -1307,7 +1307,7 @@ var
   lRecord: TRttiRecordType;
   lFrame: TDataFrame;
   lField: TRttiField;
-  lValue: TValue;
+  lValue: TValue;   // for nested records.
 type
   PTGuid = ^TGUID;
 begin
@@ -1333,27 +1333,26 @@ begin
         // Emumerations can either be serialized as text symbols or as ordinal values?   Default option is to do symbols(text).  We need to detect type and do either.
         case aDataObj.DataType.Code of
           cDataTypeNull: begin
-            aValue := nil;
-            result := true;
+            result := false;
           end;
           cDataTypeBoolean: begin
-            aValue := aDataObj.AsBoolean;
-            result := true;
+            result := false;
           end;
           cDataTypeByte: begin
-            aValue := aDataObj.AsByte;
+            aValue.FromOrdinal(aValue.TypeInfo, aDataObj.AsByte);
             result := true;
           end;
           cDataTypeInt32: begin
-            aValue := aDataObj.AsInt32;
+            aValue.FromOrdinal(aValue.TypeInfo, aDataObj.AsInt32);
             result := true;
           end;
           cDataTypeInt64: begin
-            aValue := aDataObj.AsInt64;
+            aValue.FromOrdinal(aValue.TypeInfo, aDataObj.AsInt64);
             result := true;
           end;
           cDataTypeString: begin
-            aValue := GetEnumValue(aValue.TypeInfo, aDataObj.AsString);
+            aValue.FromOrdinal(aValue.TypeInfo, GetEnumValue(aValue.TypeInfo, aDataObj.AsString));
+//            aValue := GetEnumValue(aValue.TypeInfo, aDataObj.AsString);
 //            aRttiProp.SetValue(aObj, TValue.FromOrdinal(lValue.TypeInfo, GetEnumValue(lValue.TypeInfo, aDataObj.AsString)));
             result := true;
           end;
