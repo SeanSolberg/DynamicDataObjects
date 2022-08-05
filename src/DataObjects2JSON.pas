@@ -63,8 +63,8 @@ type
   public
     function Clone: TDataObjStreamerBase; override;
     constructor Create(aStream: TStream); overload; override;
-    constructor Create(aStyle: TJsonStyle = cJSONTight; aIndention: byte = 2); overload;
-    constructor Create(aStream: TStream; aEncoding: TEncoding; aStyle: TJsonStyle = cJSONTight; aIndention: byte = 2); overload;
+    constructor Create(aStyle: TJsonStyle = cJSONTight; aIndention: byte = 2); overload;    // Will generate a warning because we are using overload and other versions are overridden virtual.
+    constructor Create(aStream: TStream; aEncoding: TEncoding; aStyle: TJsonStyle = cJSONTight; aIndention: byte = 2); overload;    // Will generate a warning because we are using overload and other versions are overridden virtual.
     destructor Destroy; override;
 
     class function FileExtension: string; override;
@@ -1319,7 +1319,7 @@ end;
 
   function TryParsingSymbol(aIndex: Integer; var oRetIndex: Integer; aDataObj: TDataObj): integer;  //0=nothing applicable, 1=successful parse, 2=Applicable, but error in parsing.
   begin
-
+    result := 0;
   end;
 
   // This function will parse whatever JSON data type it can find next and will put that data into aDataObj
@@ -1329,7 +1329,8 @@ end;
     lParseResult: integer;
   begin
     SkipSpaces(aIndex);
-    if not ParseFalse(aIndex, oRetIndex, aDataObj) then
+    result := ParseFalse(aIndex, oRetIndex, aDataObj);
+    if not result then
     begin
       result := ParseTrue(aIndex, oRetIndex, aDataObj);
       if not result then
