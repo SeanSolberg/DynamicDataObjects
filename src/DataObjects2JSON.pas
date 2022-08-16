@@ -49,7 +49,8 @@ type
     fStringBuilder: TStringBuilder;
     fJSON: string;
     fEncodeNonAsciiCharacters: boolean;    // only used when streaming out.
-    fIndent: integer;                 // only used during streaming.
+    fIndent: integer;                      // only used during streaming.
+    fIncludeEncodingPreamble: boolean;             // only used when streaming out.
 
 
     procedure SetEncoding(aEncoding: TEncoding);
@@ -79,6 +80,7 @@ type
     procedure ApplyOptionalParameters(aParams: TStrings); override;
 
     property Style: TJsonStyle read fStyle write fStyle;
+    property IncludeEncodingPreamble: boolean read fIncludeEncodingPreamble write fIncludeEncodingPreamble;
 
     // defines how many spaces are inserted per indention level when Style is cJsonHumanReadable
     property Indention: byte read fIndention write fIndention;
@@ -1613,8 +1615,11 @@ begin
   begin
     // If we have an assigned stream, then move the string to a stream using the chosen text encoding.
     // If it's not assigned, then most likely the caller is just interested in getting the result by reading the fJSON string.
-    lBytes := fEncoding.GetPreamble;
-    fStream.Write(lBytes[0], length(lBytes));
+    if fIncludeEncodingPreamble then
+    begin
+      lBytes := fEncoding.GetPreamble;
+      fStream.Write(lBytes[0], length(lBytes));
+    end;
 
     lBytes:=fEncoding.GetBytes(fJSON);                  // perform the encoding step to return the actual bytes that the string should be encoded to.  For example, convert from unicode to UTF8
     fStream.Write(lBytes[0], length(lBytes));

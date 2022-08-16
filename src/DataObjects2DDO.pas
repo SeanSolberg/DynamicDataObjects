@@ -47,6 +47,7 @@ resourceString
   StrInvalidNumberOfBytes14 = 'Invalid number of bytes read while reading point geometry.';
   StrInvalidNumberOfBytes15 = 'Invalid number of bytes read while reading int64 data.';
   StrInvalidNumberOfBytes16 = 'Invalid number of bytes read while reading unknown data type size.';
+  StrInvalidPayloadSizeForNull = 'Invalid payload size of %d while reading a NULL value';
   StrErrorLoadingString = 'Error loading stringlist from stream.';
   StrErrorReadingSlotNameSize = 'Read slotname size of %d which is a size code for a slotname lookup index.  This capability is not supported on this reader.' ;
 
@@ -92,6 +93,8 @@ begin
     cDataTypeNull: begin
       lInteger := 0;  // code for nil
       fStream.Write(lInteger,4);    // Write out the slot type and thats all there is for this datatype
+      fStream.Write(lInteger,4);    // NOTE:  The original DataObject serialization actually did something wierd in that it considered the NULL data type to be in the class of "Unknown" data types.
+                                    //        As such, it would put into the stream a 0 for the data size (NULL Data size is zero) to make receiver happy.  SO, we do that here.  STUPID, but we are just trying to be compatible here.
     end;
 
     cDataTypeBoolean: begin
@@ -346,8 +349,13 @@ begin
     if lNum<>4 then GenerateException(StrInvalidNumberOfBytes1);
     case lSlotType of
       0{null}: begin
-        // Nothing more to read.
         aDataObj.Clear;
+
+        // Nothing more to read.  HOWEVER, the old DDO Streaming did something wierd where it considered the NULL data type as an "Unknown" data type, and
+        // as such, it needs to read a 4-byte size of the payload, which of course is going to be all zeros because there is no payload.  This is Stupid, but we need this to be compatible.
+        lNum:=fStream.Read(lSize, 4);    // get the size of the data which MUST be a zero.
+        if lNum <> 4 then GenerateException(StrInvalidNumberOfBytes2);
+        if lSize <> 0 then GenerateException(format(StrInvalidPayloadSizeForNull, [lSize]));
       end;
 
       1{string}, 8{symbol}: begin
@@ -406,10 +414,11 @@ begin
             end
             else
             begin
-              lSize := lByte;
-              SetLength(lAnsiString, lSize);
-              if lSize > 0 then
-                fStream.Read(lAnsiString[1], lSize);
+              SetLength(lAnsiString, lByte);
+              if lByte > 0 then
+              begin
+                fStream.Read(lAnsiString[1], lByte);
+              end;
             end;
 
             Decode(aDataObj.AsFrame.NewSlot(String(lAnsiString)));     // create a new slot and recursively load it from the stream

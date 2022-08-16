@@ -121,6 +121,8 @@ type
   TDataObjParameterPurposes = set of TDataObjParameterPurpose;
   TOnHandleExceptionProc = procedure(Sender: TObject; aException: Exception);
   TMemberVisibilities = set of TMemberVisibility;      // used for RTTI assigning
+  TCaseChangeOptions = (cCaseChangeNone, cCaseChangeUpper, cCaseChangeLower);
+
   TDataObjAssignContext = class
   private
     fSerializedObjects: TList;    // reference list of objects that have already been serialized.  This is to prevent an infinite object ref-to-object circular serialization.  EG)  Object that has a Parent property that refers to the parent object.
@@ -150,15 +152,17 @@ const
  // if the top MSB bit is set to 1, then that flag means this data has a set of attributes that precede the data.  These attributes
  //   are serialized as a Frame so that means after the dataType byte, a frame is serialized and then the data is serialized.
  // The next two MSB bits in this byte are used as a subclass mechanism for each of the data types and those 4 possible code values are specific to the data type (if used).
- // For a string for example.  Subclass code = 0: UTF8String.  We should stream the contents of this string as UTF8 (variable {1-4} bytes per character, but usually one byte per character)
- //                                     code = 1: Symbol.  Streamed using UTF8String
- //                                     code = 2: UniCode String.  We should stream the contents of this string as unicode (2-bytes per character)
- //                                     code = 3: Reserved for Extended Code which means another byte will follow to define more string flags.
- //                                               This extended code could define "JavaScript Code" (for BSON compatibility). Note: if this object has attributes, then in BSON form it's considered JavaScript code w/scope.
+ // For a string for example.  Subclass code = 0: String.  This is a normal text string that represents data.
+ //                                     code = 1: Symbol.  A Symbol is similar to a string, but is considered a unique value in and of itself such as an identifier.
+ //                                                        for example, we can have a string that is "visible" which is the literal text of those characters, or we can have a symbol "visible", which really is an identifer that really represents something is TRUE to "BE" visible.
+ //                                                        when serializing JSON, technically symbols are not valid in JSON, but we may read Invalid JSON values as symbols
+ //                                                        for example:  {"test": "~template1~"}  is a string value
+ //                                                                      {"test": ~template1~} is a symbol value, which is technically not JSON compliant, but might be used when a file that builds JSON from a template is used.
+ //                                     code = 2,3: future reserved.
  cSubCodeGeneric = 0;
  cSubCodeSymbol = 1;
- cSubCodeUnicode = 2;
- cSubCodeUnicodeSymbol = 3;
+// cSubCodeUnicode = 2;
+// cSubCodeUnicodeSymbol = 3;
 
  cFalseStr = 'False';
  cTrueStr = 'True';
@@ -552,6 +556,9 @@ type
     function getAsDate: TDate;
     function getAsDateTime: TDateTime;
     function getAsDouble: Double;
+{$ifDef cMakeMoreCompatibleWithOldDataObjects}
+    function getAsFloat: Double; deprecated 'Use AsDouble instead.';
+{$endif}
     function getAsFrame: TDataFrame;
     function getAsGuid: TDataGUID;
     function getAsInt32: integer;
@@ -578,6 +585,9 @@ type
     procedure setAsDate(const aValue: TDate);
     procedure setAsDateTime(const aValue: TDateTime);
     procedure setAsDouble(const aValue: Double);
+{$ifDef cMakeMoreCompatibleWithOldDataObjects}
+    procedure setAsFloat(const aValue: Double); deprecated 'Use AsDouble instead.';
+{$endif}
     procedure setAsFrame(const aValue: TDataFrame);
     procedure setAsGuid(const aValue: TDataGUID);
     procedure setAsInt32(const aValue: integer);
@@ -644,6 +654,9 @@ type
                                                                         // If you need to serialize this number, then you must use the AsInt64 option.
     property AsSingle: Single read getAsSingle write setAsSingle;
     property AsDouble: Double read getAsDouble write setAsDouble;
+{$ifdef cMakeMoreCompatibleWithOldDataObjects}
+    property AsFloat: Double read getAsFloat write setAsFloat;          // Only here for compatibility with old DDO code.
+{$endif}
 
     property AsDateTime: TDateTime read getAsDateTime write setAsDateTime;
     property AsUTCDateTime: int64 read getAsUTCDateTime write setAsUTCDateTime;
@@ -681,6 +694,9 @@ type
 //    property AsOleVariant: OleVariant read getOleVariant write setOleVariant;   maybe implement this someday.
 
     procedure CopyFrom(aSrcDataObj: TDataObj);
+
+    procedure ChangeCaseOnStrings(aContentCaseChange: TCaseChangeOptions; aSlotNameCaseChange: TCaseChangeOptions);
+
 
     // if aStreamerClass is passed in with a value of nil, then the streamer will be chosen automatically based on the extension of the filename passed in aFileName
     // if a streamer is chosen based on the filename, then aStreamerClass will be set to the class of the chosen streamer
@@ -759,10 +775,14 @@ type
     function NewSlot(aSlotName: string; aRaiseExceptionIfAlreadyExists: boolean = false): TDataObj;
     procedure AppendSlot(aSlotName: string; aDataObj: TDataObj);
     function SlotByName(aSlotName: string): TDataObj;
-    function DeleteSlot(aSlotName: string): boolean;   // returns true if the slot was found and delted.
-    function Delete(aIndex: integer): boolean;         // returns true if the slot was found and delted.
+    function DeleteSlot(aSlotName: string): boolean;   // returns true if the slot was found and deleted.
+    function Delete(aIndex: integer): boolean;         // returns true if the slot was found and deleted.
+    function RemoveSlot(aSlot: TDataObj): boolean;     // returns true if the slot was found and deleted.
     property Slots[aIndex: integer]: TDataObj read getSlot;
     function Slotname(aIndex: integer): string;
+    procedure SetSlotname(aIndex: integer; aSlotname: string);
+    function ChangeSlotName(aOldSlotName, aNewSlotName: string): Boolean;  // returns TRUE if in fact a slot did have it's name changed.  False othewise.  Only applies if the aOldSlotName is found and the aNewSlotName doesn't already exist.
+
 {$ifDef cMakeMoreCompatibleWithOldDataObjects}
     property SlotNames[aIndex: integer]: string read Slotname;
 {$endif}
@@ -796,8 +816,12 @@ type
     function Reduce(aReduceProcedure: TReduceProcedure): TDataObj;        // returns a newly created TDataObj that should contain the aggregated value according to how the aReduceProcedure calculates it.   It's up to the receiver to free it.
     function Map(aMapProcedure: TMapProcedure): TDataObj;                 // returns a newly created TDataObj that will be an array with the same number of slots as the source (self).  The values in each element are calculated by the map function.  It's up to the receiver to free it.
     function Concat(aArray: TDataArray): TDataObj;                        // returns a newly created TDataObj that will be a clone of self array and it will clone and append the slots from aArray.
-    procedure AppendFrom(aArray: TDataArray);                             // clones the slots in aArray and adds them to self.
+    procedure AppendFrom(aArray: TDataArray);                             // clones the slots in aArray and adds them to self.  same as CopyFrom.
     property Slots[aIndex: integer]: TDataObj read getSlot;
+    procedure DeleteSlot(aIndex: integer);
+{$ifdef cMakeMoreCompatibleWithOldDataObjects}
+    procedure CopyFrom(aArray: TDataArray);  deprecated 'Use AppendFrom instead';  // clones the slots in aArray and adds them to self.  same as AppendFrom.
+{$endif}
   end;
 
 
@@ -1606,6 +1630,77 @@ begin
   end;
 end;
 
+procedure TDataObj.ChangeCaseOnStrings(aContentCaseChange, aSlotNameCaseChange: TCaseChangeOptions);
+var
+  i: integer;
+  lStringList: TDataStringList;
+  lFrame: TDataFrame;
+  lArray: TDataArray;
+  lSparseArray: TDataSparseArray;
+begin
+  case DataType.Code of
+    cDataTypeString: begin
+      if aContentCaseChange = TCaseChangeOptions.cCaseChangeUpper then
+        AsString := UpperCase(AsString)
+      else if aContentCaseChange = TCaseChangeOptions.cCaseChangeLower then
+        AsString := LowerCase(AsString);
+    end;
+
+    cDataTypeStringList: begin
+      if (aContentCaseChange <> TCaseChangeOptions.cCaseChangeNone) then
+      begin
+        lStringList := AsStringList;
+        for i := 0 to lStringList.Count-1 do
+        begin
+          if aContentCaseChange = TCaseChangeOptions.cCaseChangeUpper then
+            lStringList.Strings[i] := UpperCase(lStringList.Strings[i])
+          else if aContentCaseChange = TCaseChangeOptions.cCaseChangeLower then
+            lStringList.Strings[i] := LowerCase(lStringList.Strings[i]);
+        end;
+      end;
+    end;
+
+    cDataTypeFrame: begin
+      lFrame := AsFrame;
+      if aSlotNameCaseChange <> cCaseChangeNone then
+      begin
+        for i := 0 to lFrame.Count-1 do
+        begin
+          if aSlotNameCaseChange = TCaseChangeOptions.cCaseChangeUpper then
+            lFrame.SetSlotname(i, UpperCase(lFrame.Slotname(i)))
+          else if aSlotNameCaseChange = TCaseChangeOptions.cCaseChangeLower then
+            lFrame.SetSlotname(i, LowerCase(lFrame.Slotname(i)));
+
+          if aContentCaseChange <> cCaseChangeNone then
+          begin
+            lFrame.Slots[i].ChangeCaseOnStrings(aContentCaseChange, aSlotNameCaseChange);    // recursion happening here.
+          end;
+        end;
+      end;
+    end;
+
+    cDataTypeArray: begin
+      lArray := AsArray;
+      for i := 0 to lArray.Count-1 do
+      begin
+        lArray.Slots[i].ChangeCaseOnStrings(aContentCaseChange, aSlotNameCaseChange);    // recursion happening here.
+      end;
+    end;
+
+    cDataTypeSparseArray: begin
+      lSparseArray := AsSparseArray;
+      for i := 0 to lSparseArray.Count-1 do
+      begin
+        lSparseArray.Slots[i].ChangeCaseOnStrings(aContentCaseChange, aSlotNameCaseChange);    // recursion happening here.
+      end;
+    end;
+
+    cDataTypeObject: begin
+      //FINISH
+    end;
+  end;
+end;
+
 procedure TDataObj.Clear;
 begin
   ClearData;
@@ -1903,6 +1998,12 @@ begin
   else
     Result:=0;    // all other types are not convertable to a Byte
   end;
+end;
+
+
+function TDataObj.getAsFloat: Double;
+begin
+  result := getAsDouble;
 end;
 
 function TDataObj.getAsFrame: TDataFrame;
@@ -2648,6 +2749,11 @@ begin
   FStore.fDataDouble:=aValue;
 end;
 
+procedure TDataObj.setAsFloat(const aValue: Double);
+begin
+  SetAsDouble(aValue);
+end;
+
 procedure TDataObj.setAsFrame(const aValue: TDataFrame);
 begin
   ClearData;    // Note that this clears any existing data but it leaves attributes intact.
@@ -2819,7 +2925,7 @@ begin
   end;
 
   if not assigned(lClass) then
-    lClass := TDataObjStreamer;
+    lClass := TDataObjStreamer;    // This is our default.
 
   lStreamer := lClass.Create(aStream);
   try
@@ -2895,6 +3001,21 @@ begin
   // this will add a new slot as long as aSlotName is not already in this frame.  If it is, then the previous slot wil be removed first.
   DeleteSlot(aSlotName);
   fSlotList.AddObject(aSlotname, aDataObj);
+end;
+
+function TDataFrame.ChangeSlotName(aOldSlotName, aNewSlotName: string): Boolean;
+var
+  lOldSlotIndex, lNewSlotIndex: Integer;
+begin
+  lOldSlotIndex := FindSlotIndex(aOldSlotName);
+  lNewSlotIndex := FindSlotIndex(aNewSlotName);
+  if (lOldSlotIndex>=0) and (lNewSlotIndex<0) then
+  begin
+    SetSlotname(lOldSlotIndex, aNewSlotName);
+    result := true;
+  end
+  else
+    result := false;
 end;
 
 procedure TDataFrame.Clear;
@@ -3017,6 +3138,19 @@ begin
 end;
 
 
+
+function TDataFrame.RemoveSlot(aSlot: TDataObj): boolean;
+var
+  lIndex: integer;
+begin
+  lIndex := fSlotList.IndexOfObject(aSlot);
+  result := Self.Delete(lIndex);               // will handle whether aSlot was found or not.   Also does the freeing of aSlot internally.
+end;
+
+procedure TDataFrame.SetSlotname(aIndex: integer; aSlotname: string);
+begin
+  fSlotList.Strings[aIndex] := aSlotname;
+end;
 
 function TDataFrame.SlotByName(aSlotName: string): TDataObj;
 begin
@@ -3213,6 +3347,16 @@ begin
     AppendFrom(self);
     AppendFrom(aArray);
   end;
+end;
+
+procedure TDataArray.CopyFrom(aArray: TDataArray);
+begin
+  AppendFrom(aArray);
+end;
+
+procedure TDataArray.DeleteSlot(aIndex: integer);
+begin
+  self.Delete(aIndex);
 end;
 
 function TDataArray.Every(aEveryFunction: TForEachFunction): boolean;
@@ -3430,14 +3574,19 @@ end;
 procedure TDataObjStreamerBase.ApplyOptionalParameters(aParams: String);
 var
   lStringList: TStringList;
+  lParams: string;
 begin
-  lStringList:=TStringList.Create;
-  try
-    lStringList.Delimiter := ' ';
-    lStringList.DelimitedText := aParams;
-    ApplyOptionalParameters(lStringList);
-  finally
-    lStringList.Free;
+  lParams := trim(aParams);
+  if length(lParams) > 0 then
+  begin
+    lStringList:=TStringList.Create;
+    try
+      lStringList.Delimiter := ' ';
+      lStringList.DelimitedText := lParams;
+      ApplyOptionalParameters(lStringList);
+    finally
+      lStringList.Free;
+    end;
   end;
 end;
 
