@@ -13,7 +13,6 @@ type
     procedure InternalEncode(aDataObj: TDataObj);
 
   public
-    function Clone: TDataObjStreamerBase; override;
     class function FileExtension: string; override;
     class function Description: string; override;
     class function GetFileFilter: string; override;
@@ -498,11 +497,6 @@ begin
   result := 30;
 end;
 
-function TIonStreamer.Clone: TDataObjStreamerBase;
-begin
-  result := TIonStreamer.Create(fStream);
-  // no properties to copy);
-end;
 
 procedure TIonStreamer.Decode(aDataObj: TDataObj);
 begin

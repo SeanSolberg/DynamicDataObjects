@@ -36,7 +36,8 @@ type
     // Settings for Encoding options.
     fStyle: TJsonStyle;
     fIndention: byte;
-    fFormatSettings: TFormatSettings;
+    fEncodeNonAsciiCharacters: boolean;    // only used when streaming out.
+    fIncludeEncodingPreamble: boolean;     // only used when streaming out.
 
     // Settings for Decoding options
     fAllowParsingExtendedTypes: boolean;
@@ -46,11 +47,10 @@ type
     fEncoding: TEncoding;
 
     // Variables used during serialization.
+    fFormatSettings: TFormatSettings;
     fStringBuilder: TStringBuilder;
     fJSON: string;
-    fEncodeNonAsciiCharacters: boolean;    // only used when streaming out.
     fIndent: integer;                      // only used during streaming.
-    fIncludeEncodingPreamble: boolean;             // only used when streaming out.
 
 
     procedure SetEncoding(aEncoding: TEncoding);
@@ -108,6 +108,25 @@ type
 implementation
 
 uses DateUtils, IdCoderMIME;
+
+const cHexDecimalConvert: array[Byte] of Byte = (
+   $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff, {00-$0F}
+   $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff, {10-$1F}
+   $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff, {20-2F}
+   0,    1,    2,    3,    4,    5,    6,    7,    8,    9,    $ff,  $ff,  $ff,  $ff,  $ff,  $ff, {30-3F}
+   $ff,  10,   11,   12,   13,   14,   15,   $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff, {40-4F}
+   $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff, {50-5F}
+   $ff,  10,   11,   12,   13,   14,   15,   $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff, {60-6F}
+   $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff, {70-7F}
+   $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff, {80-8F}
+   $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff, {90-9F}
+   $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff, {A0-AF}
+   $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff, {B0-BF}
+   $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff, {C-CF}
+   $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff, {D0-DF}
+   $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff, {E0-EF}
+   $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff); {F0-FF}
+
 
 function EncodeSpecialJSONCharacters(aStr: string; aEscapeNonAscii: boolean): string;
 var
@@ -393,6 +412,7 @@ begin
   fFormatSettings:=TFormatSettings.Create;
   fFormatSettings.DecimalSeparator := '.';     // used when parsing JSON cause json only allows '.' for decimal separators no matter what locale you are in.
   fEncoding := TEncoding.UTF8;
+  fAllowParsingSymbols := true;
 end;
 
 constructor TJsonStreamer.Create(aStyle: TJsonStyle = cJSONTight; aIndention: byte = 2);
@@ -821,25 +841,6 @@ end;
 
   // Try to parse a string from fJSON and along the way, do any special escaping handling such as \uxxxxx, etc.
   function ParseString(aIndex: Integer; var aRetIndex: Integer; var oString: string): boolean;
-
-    const cHexDecimalConvert: array[Byte] of Byte = (
-       $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff, {00-$0F}
-       $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff, {10-$1F}
-       $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff, {20-2F}
-       0,    1,    2,    3,    4,    5,    6,    7,    8,    9,    $ff,  $ff,  $ff,  $ff,  $ff,  $ff, {30-3F}
-       $ff,  10,   11,   12,   13,   14,   15,   $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff, {40-4F}
-       $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff, {50-5F}
-       $ff,  10,   11,   12,   13,   14,   15,   $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff, {60-6F}
-       $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff, {70-7F}
-       $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff, {80-8F}
-       $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff, {90-9F}
-       $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff, {A0-AF}
-       $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff, {B0-BF}
-       $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff, {C-CF}
-       $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff, {D0-DF}
-       $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff, {E0-EF}
-       $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff); {F0-FF}
-
   var
     lWorkString: String;
     i: integer;
@@ -1320,8 +1321,127 @@ end;
   end;
 
   function TryParsingSymbol(aIndex: Integer; var oRetIndex: Integer; aDataObj: TDataObj): integer;  //0=nothing applicable, 1=successful parse, 2=Applicable, but error in parsing.
+  var
+    i: integer;
+    lJsonLength: integer;
+    lUnicodeCH1: cardinal;   // should this be a word?
+    lUnicodeCH2: cardinal;   // should this be a word?
+    lUnicodeCH3: cardinal;   // should this be a word?
+    lUnicodeCH4: cardinal;   // should this be a word?
+    lWorkString: string;
+    lStartIdx: Integer;
+    lEndIdx: integer;
+    lChar: char;
+
+
+    procedure AppendWorkStringWithChar(aNewChar: Char);
+    begin
+      // will move the bytes from the source buffer we are looking through to the WorkString and append aNewChar which came from the escaping.
+      lWorkString := lWorkString + copy(fJSON, lStartIdx, lEndIdx-lStartIdx) + aNewChar;        //FINISH - this subtraction may not be right
+      lStartIdx := i;
+    end;
+
+    procedure FinishWorkString;
+    begin
+      // will move the bytes from the source buffer we are looking through to the WorkString and append aNewChar which came from the escaping.
+      lWorkString := lWorkString + copy(fJSON, lStartIdx, lEndIdx-lStartIdx);
+      lEndIdx := i;
+    end;
   begin
+    //Take all data up to an "ending" situation such as a "," or a "]" or a "}"
+    lWorkString := '';
     result := 0;
+
+    SkipSpaces(aIndex);
+
+    if not IsNotEnd(aIndex) then
+      exit;
+
+    i := aIndex;
+    lStartIdx := aIndex;  // this is the index for the begining character that we need to include.  We are starting off with what has been passed into this procedure.
+    lEndIdx := aIndex;    // this is the index for the last character that we will include from the source string.
+    lJsonLength := length(fJSON);
+
+    while (i<=lJsonLength) do
+    begin
+      if (fJSON[i]='\') then
+      begin
+        // we have the starting of an escaper character so start an escape read.
+        if i < lJsonLength then
+        begin
+          inc(i);
+          case fJSON[i] of
+            '\': begin AppendWorkStringWithChar('\'); inc(i); end;
+            '"': begin AppendWorkStringWithChar('"'); inc(i); end;
+            '/': begin AppendWorkStringWithChar('/'); inc(i); end;
+            'b': begin AppendWorkStringWithChar(#8); inc(i); end;   //backspace
+            'f': begin AppendWorkStringWithChar(#12); inc(i); end;  //Form Feed
+            'n': begin AppendWorkStringWithChar(#10); inc(i); end;  //New Line
+            'r': begin AppendWorkStringWithChar(#13); inc(i); end;  //carriage return
+            't': begin AppendWorkStringWithChar(#9); inc(i); end;   //tab
+            'u':
+              begin
+                inc(i);
+                if i+3 <= lJsonLength then
+                begin
+                  lUnicodeCH1 := cHexDecimalConvert[ord(fJSON[i])];
+                  inc(i);
+                  lUnicodeCH2 := cHexDecimalConvert[ord(fJSON[i])];
+                  inc(i);
+                  lUnicodeCH3 := cHexDecimalConvert[ord(fJSON[i])];
+                  inc(i);
+                  lUnicodeCH4 := cHexDecimalConvert[ord(fJSON[i])];
+                  inc(i);
+                  if (lUnicodeCH1 <= 15) and (lUnicodeCH2 <= 15) and (lUnicodeCH3 <= 15) and (lUnicodeCH4 <= 15)then
+                  begin
+                    lChar := WideChar((lUnicodeCH1 shl 12) or (lUnicodeCH2 shl 8) or (lUnicodeCH3 shl 4) or lUnicodeCH4);  // we have four valid hex characters.
+                    AppendWorkStringWithChar(lChar);
+                  end
+                  else
+                  begin
+                    raise Exception.Create('Invalid character parsing an escape "\uxxxx" sequence.');
+                  end;
+                end
+                else
+                begin
+                  // we started with an /u sequence but there aren't enough characters to pick up 4 more.
+                  raise Exception.Create('Invalid characters parsing an escape "\uxxxx" sequence.');
+                end;
+              end;
+            else
+            begin
+              // This must be an error condition because an invalid character is following the excape '\' character.
+              raise Exception.Create('Invalid character after encountering an escape "\" character.');
+            end;
+          end;
+        end
+        else
+        begin
+          // we are out of characters to pickup in an escape sequence.
+          raise Exception.Create('Invalid character after encountering an escape "\" character.');
+        end;
+      end
+      else if (fJSON[i]=',') or (fJSON[i]='}') or (fJSON[i]=']') then
+      begin
+         // Finish our string.
+        FinishWorkString;
+        result := 1;
+        break;
+      end
+      else
+      begin
+        inc(i);  // move to the next character.
+        lEndIdx := i;
+      end;
+    end;
+
+    oRetIndex := lEndIdx;      // Don't add 1 because the terminator that popped us out of the loop above did so on a comma or endframe or endarray which is needed for the outer callee
+    // What happens if we get out of this loop without receiving the closing quote.  That's an error condition.
+    if result = 1 then
+    begin
+      aDataObj.AsSymbol := lWorkString;
+    end;
+
   end;
 
   // This function will parse whatever JSON data type it can find next and will put that data into aDataObj
@@ -1389,7 +1509,11 @@ end;
                   if (lParseResult=0) and self.fAllowParsingSymbols then
                   begin
                     // We treat symbols as anything up to a possible ending case such as a "," or "]" or "}"
-                    TryParsingSymbol(aIndex, oRetIndex, aDataObj);
+                    if TryParsingSymbol(aIndex, oRetIndex, aDataObj) = 1 then
+                    begin
+                      // successfully parsed a symbol
+                      result := true;
+                    end;
                   end;
                 end
               end;
@@ -1529,17 +1653,15 @@ begin
 end;
 
 function TJsonStreamer.Clone: TDataObjStreamerBase;
-var
-  lS: TJsonStreamer;
 begin
-  lS := TJsonStreamer.create;
-  lS.fStyle:=self.fStyle;
-  lS.fIndention:=self.fIndention;
-  lS.fIndent:=self.fIndent;
-  lS.fFormatSettings:=self.fFormatSettings;
-  lS.fEncodeNonAsciiCharacters:=self.fEncodeNonAsciiCharacters;
-  lS.fEncoding:=self.fEncoding;
-  result := lS;
+  result := inherited clone;
+  TJsonStreamer(result).fStyle:=self.fStyle;
+  TJsonStreamer(result).fIndention:=self.fIndention;
+  TJsonStreamer(result).fIndent:=self.fIndent;
+  TJsonStreamer(result).fEncodeNonAsciiCharacters:=self.fEncodeNonAsciiCharacters;
+  TJsonStreamer(result).fEncoding:=self.fEncoding;
+
+
 end;
 
 constructor TJsonStreamer.Create(aStream: TStream; aEncoding: TEncoding; aStyle: TJsonStyle = cJSONTight; aIndention: byte = 2);

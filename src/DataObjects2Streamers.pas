@@ -41,7 +41,6 @@ type
 
     procedure Decode(aDataObj: TDataObj); override;
     procedure Encode(aDataobj: TDataObj); override;
-    function Clone: TDataObjStreamerBase; override;
   end;
 
 var
@@ -58,12 +57,6 @@ implementation
 class function TDataObjStreamer.ClipboardPriority: cardinal;
 begin
   result := 1;    // highest priority
-end;
-
-function TDataObjStreamer.Clone: TDataObjStreamerBase;
-begin
-  result := TDataObjStreamer.Create(fStream);
-  // no properties to copy
 end;
 
 procedure TDataObjStreamer.Decode(aDataobj: TDataObj);

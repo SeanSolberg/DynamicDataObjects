@@ -20,7 +20,6 @@ type
     class function IsFileExtension(aStr: string): boolean; override;
     class function ClipboardPriority: cardinal; override;
 
-    function Clone: TDataObjStreamerBase; override;
     procedure Decode(aDataObj: TDataObj); override;
     procedure Encode(aDataObj: TDataObj); override;
   end;
@@ -364,10 +363,6 @@ begin
   result := 30;
 end;
 
-function TMsgPackStreamer.Clone: TDataObjStreamerBase;
-begin
-  result := TMsgPackStreamer.Create(nil);   // no properties to copy yet
-end;
 
 procedure TMsgPackStreamer.Decode(aDataObj: TDataObj);
 var

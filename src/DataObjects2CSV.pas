@@ -86,7 +86,7 @@ end;
 
 function TCSVStreamer.Clone: TDataObjStreamerBase;
 begin
-  result := TCSVStreamer.create(nil);    // create instance and copy the properties.
+  result := inherited Clone;    // create instance and copy the properties.
   TCSVStreamer(result).FAutoDetectDataTypes := FAutoDetectDataTypes;
   TCSVStreamer(result).FAddEmptyValuesAsNilSlots := FAddEmptyValuesAsNilSlots;
   TCSVStreamer(result).FFirstRowIsFieldNames := FFirstRowIsFieldNames;
@@ -101,7 +101,7 @@ begin
   //Setup our defaults.
   FAutoDetectDataTypes := true;
   FAddEmptyValuesAsNilSlots:=true;
-  FFirstRowIsFieldNames:=true;   //if this true, the we produce an array of frames.  if this is false then we produce an array of arrays.
+  FFirstRowIsFieldNames:=true;   //if this true, then we produce an array of frames.  if this is false then we produce an array of arrays.
   FConsumeAllRemainingDataIntoLastField:=true;
 end;
 
@@ -188,6 +188,62 @@ var
   lDouble: Double;
   lDateTime: TDateTime;
   lError: integer;
+
+  procedure MakeSureWeHaveGoodFieldNames(aFieldNames: TStrings);
+  var
+    i: integer;
+    lFieldName: string;
+    lIndex: integer;
+    lIncrement: integer;
+
+    // find aFieldName within aFieldNames case Insensitively, starting at the beginning of the list.
+    // returns -1 if not found, or 0..n for the index it was found at.
+    function FindField(aFieldNames: TStrings; aFieldName: string): integer;
+    var
+      i: Integer;
+    begin
+      result := -1;   // not found.
+      for i := 0 to aFieldNames.Count-1 do
+      begin
+        if SameText(aFieldNames[i], aFieldName) then
+        begin
+          result := i;
+          break;
+        end;
+      end;
+    end;
+
+    function GenerateFieldName(aFieldNameBase: string; aFieldIndex: integer): string;
+    begin
+      result := aFieldNameBase+IntToStr(aFieldIndex);
+      lIncrement := 0;
+      while FindField(aFieldNames, result) >= 0 do                               // This check helps us to not have a generated fieldname step over a passed in fieldname.
+      begin
+        result := aFieldNameBase+IntToStr(aFieldIndex)+'_'+IntToStr(lIncrement);
+      end;
+    end;
+
+  begin
+    // check to make sure that our fieldnames are reasonably valid.  IE) not empty strings, and there are no duplicates, no leading or trailing spaces.
+    // If we need to, we will generate field names that are "Fieldx" where x=1..n
+    for i := 0 to aFieldNames.Count-1  do
+    begin
+      lFieldName := trim(aFieldNames[i]);
+      if lFieldname <> '' then
+      begin
+        lIndex := FindField(aFieldNames, lFieldName);     // case-insensitive finder.
+        if (lIndex <> i) then
+        begin
+          // If the fieldname we are checking right now is found with a different index in the list of fields, then we know it is a second to one that is in the list earlier.  so Fix it.
+          aFieldNames[i] := GenerateFieldName(lFieldName+'_', i);
+        end;
+      end
+      else
+      begin
+        aFieldNames[i] := GenerateFieldName('Field_', i);
+      end;
+    end;
+  end;
 
   procedure ParseLine(aLine: string; aValues: TStrings);
   var
@@ -318,6 +374,8 @@ begin
         //Process into an Array of Frames.
         // read the fieldnames row
         ParseLine(lSL[0], lFields);
+
+        MakeSureWeHaveGoodFieldNames(lFields);
 
         // read the records
         for i := 1 to lSL.Count-1 do

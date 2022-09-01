@@ -108,7 +108,7 @@ unit DataObjects2;
 
 interface
 
-uses SysUtils, DateUtils, Generics.collections, Classes, VarInt, StreamCache, Rtti, typInfo,
+uses SysUtils, DateUtils, Generics.collections, Classes, VarInt, StreamCache, Rtti, typInfo, System.NetEncoding,
      windows {for outputdebugString};
 
 // If you enable cMakeMoreCompatibleWithOldDataObjects then it makes this code more compatible with the old dataObjects library I used to use.
@@ -521,7 +521,7 @@ type
     constructor Create(aStream: TStream); virtual;
     destructor Destroy; override;
 
-    function Clone: TDataObjStreamerBase; virtual; abstract;
+    function Clone: TDataObjStreamerBase; virtual;
 
     class function FileExtension: string; virtual; abstract;
     class function Description: string; virtual; abstract;
@@ -706,7 +706,9 @@ type
 {$ifDef cMakeMoreCompatibleWithOldDataObjects}
     procedure ReadFromFile(aFilename: string);
 {$endif}
-    procedure WriteToFile(aFilename: string);   //WriteToFile will look a the aFilename extension to choose a streamer class.  by default, it will pick the ".DataObj" default streamer.
+    //WriteToFile will look at the aFilename extension to choose a streamer class if one is not passed in through the aStreamerClass parameter.
+    //by default, it will pick the ".DataObj" default streamer if a streamer cannot be determined by the parameter or the filename extension.
+    procedure WriteToFile(aFilename: string; aStreamerClass: TDataObjStreamerClass = nil);
   end;
 
 {$ifDef cMakeMoreCompatibleWithOldDataObjects}
@@ -879,6 +881,8 @@ type
   // Here are some useful utility functions
   procedure DataObjConvertStringListToArrayOfStrings(aDataObj: TDataObj);
   procedure DataObjConvertArrayOfStringsToStringList(aDataObj: TDataObj);
+  procedure DataObjConvertBase64StringToBinary(aDataObj: TDataObj);
+  procedure DataObjConvertBinaryToBase64String(aDataObj: TDataObj);
 
   procedure AssignObjectToDataObj(aDataObj: TDataObj; aObj: TObject; aAssignContext: TDataObjAssignContext);
   procedure AssignDataObjToObject(aDataObj: TDataObj; aObj: TObject; aAssignContext: TDataObjAssignContext);
@@ -1336,6 +1340,9 @@ type
   PTGuid = ^TGUID;
 begin
   result := false;
+
+  if not assigned(aDataObj) then exit;    // Handle the case where we don't have a dataObject for this value.
+  
   try
     case aValue.Kind of
       tkSet:
@@ -1559,9 +1566,12 @@ var
 begin
   if not assigned(aDataObj) then exit;     // aDataObj could be nil which means we have nothing to load.
 
-  lValue := aRttiProp.GetValue(aObj);
-  AssignDataObjToValue(aDataObj, lValue, aAssignContext);
-  aRttiProp.SetValue(aObj, lValue);
+  if aRttiProp.IsWritable then
+  begin
+    lValue := aRttiProp.GetValue(aObj);
+    AssignDataObjToValue(aDataObj, lValue, aAssignContext);
+    aRttiProp.SetValue(aObj, lValue);
+  end;
 end;
 
 procedure AssignDataObjToObject(aDataObj: TDataObj; aObj: TObject; aAssignContext: TDataObjAssignContext);
@@ -1733,6 +1743,8 @@ procedure TDataObj.CopyFrom(aSrcDataObj: TDataObj);
 var
   lPosition: Int64;
 begin
+  if not assigned(aSrcDataObj) then exit;
+  
   case aSrcDataObj.DataType.Code of
     cDataTypeNull: self.Clear; // makes sure we are a null object
 
@@ -1796,6 +1808,7 @@ begin
     end;
   end;
 end;
+
 
 
 destructor TDataObj.Destroy;
@@ -2875,14 +2888,26 @@ begin
   aStreamer.ReadFromDataObj(self);
 end; *)
 
-procedure TDataObj.WriteToFile(aFilename: string);
+procedure TDataObj.WriteToFile(aFilename: string; aStreamerClass: TDataObjStreamerClass = nil);
 var
   lStreamer: TDataObjStreamerBase;
   lFS: TFileStream;
   lWS: TStreamWriteCache;
 begin
-  // First, find the right streamer based on the filename extension.
-  lStreamer := gStreamerRegistry.CreateStreamerByFilename(aFilename);
+  // First, see if the streamer passed in is usable
+  lStreamer := nil;
+  if assigned(aStreamerClass) then
+  begin
+    if not aStreamerClass.InheritsFrom(TDataObjStreamerBase) then    // just a safety check that should never happen.
+    begin
+      raise Exception.Create('Attempted to write a dataObject to a stream using class '+aStreamerClass.ClassName+' but this class is not a TDataObjStreamerBase descendant');
+    end;
+    lStreamer := aStreamerClass.Create(nil);
+  end;
+
+  if not assigned(lStreamer) then
+    lStreamer := gStreamerRegistry.CreateStreamerByFilename(aFilename);
+
   if assigned(lStreamer) then
   begin
     lFS := TFileStream.Create(aFilename, fmCreate);
@@ -3590,6 +3615,13 @@ begin
   end;
 end;
 
+function TDataObjStreamerBase.Clone: TDataObjStreamerBase;
+begin
+
+  Result := TDataObjStreamerBase(self.ClassType.NewInstance);   // instantiate an object of the same class that this is and bound to the same fStream.
+//  Result := TDataObjStreamerBase(self.ClassType).Create(fStream);   // instantiate an object of the same class that this is and bound to the same fStream.
+end;
+
 constructor TDataObjStreamerBase.Create(aStream: TStream);
 begin
   inherited Create;
@@ -3657,6 +3689,52 @@ begin
       aDataObj.setAsStringList(lSL);     // This gets the aDataObj to take over ownership.
     end;
   end;
+end;
+
+procedure DataObjConvertBase64StringToBinary(aDataObj: TDataObj);
+var
+  lEncoder : TBase64StringEncoding;
+  lSS: TStringStream;
+  lMS: TMemoryStream;
+begin
+  if aDataObj.DataType.Code = cDataTypeString then
+  begin
+    lSS:=TStringStream.create(aDataObj.AsString);    // get the source string accessible as a Stream.
+    lMS:=TMemoryStream.Create;
+    try
+      lEncoder := TBase64StringEncoding.create;
+      lEncoder.decode(lSS, lMS);
+
+      // If the above call did not except out, then we can use what was produced.
+      aDataObj.AsBinary.LoadFromStream(lMS);    // FINISH - Bettery way to ASSIGN the memory stream just so ownership can be taken over?
+
+    finally
+      lSS.Free;
+      lMS.Free;
+    end;
+  end;
+end;
+
+procedure DataObjConvertBinaryToBase64String(aDataObj: TDataObj);
+var
+  lEncoder : TBase64StringEncoding;
+  lSS: TStringStream;
+  lMS: TMemoryStream;
+begin
+  if aDataObj.DataType.Code = cDataTypeBinary then
+  begin
+    lSS:=TStringStream.create();
+    try
+      lEncoder := TBase64StringEncoding.create;
+      lEncoder.encode(aDataObj.AsBinary, lSS);
+
+      // If the above call did not except out, then we can use what was produced.
+      aDataObj.AsString := lSS.DataString;
+    finally
+      lSS.Free;
+    end;
+  end;
+
 end;
 
 { TDataObjAssignContext }

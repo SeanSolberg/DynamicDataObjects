@@ -95,8 +95,6 @@ Tag	Data Item	Semantics	Reference
   private
     fCurrentTagValue: Int64;        // used to keep track of state when decoding.
   public
-    function Clone: TDataObjStreamerBase; override;
-
     class function FileExtension: string; override;
     class function Description: string; override;
     class function GetFileFilter: string; override;
@@ -885,11 +883,6 @@ begin
   result := 20;
 end;
 
-function TCBORStreamer.Clone: TDataObjStreamerBase;
-begin
-  result := TCBORStreamer.Create(fStream);
-  // there aren't any properties to clone over to the new one being returned
-end;
 
 procedure TCBORStreamer.Decode(aDataObj: TDataObj);
 var

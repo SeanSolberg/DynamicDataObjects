@@ -24,7 +24,6 @@ type
     class function IsFileExtension(aStr: string): boolean; override;
     class function ClipboardPriority: cardinal; override;
 
-    function Clone: TDataObjStreamerBase; override;
     procedure Decode(aDataObj: TDataObj); override;
     procedure Encode(aDataObj: TDataObj); override;
     procedure ApplyOptionalParameters(aParams: TStrings); override;
@@ -52,10 +51,6 @@ begin
   raise Exception.Create(aMessage+' when reading an ICS Stream at position='+intToStr(fStream.Position));
 end;
 
-function TICSStreamer.Clone: TDataObjStreamerBase;
-begin
-  result := TICSStreamer.create(nil);    // create instance and copy the properties.
-end;
 
 constructor TICSStreamer.Create(aStream: TStream);
 begin

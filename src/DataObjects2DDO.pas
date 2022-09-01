@@ -15,7 +15,6 @@ type
     procedure GenerateException(aMessage: string);
 
   public
-    function Clone: TDataObjStreamerBase; override;
     class function FileExtension: string; override;
     class function Description: string; override;
     class function GetFileFilter: string; override;
@@ -315,12 +314,6 @@ end;
 class function TDDOStreamer.ClipboardPriority: cardinal;
 begin
   result := 10;
-end;
-
-function TDDOStreamer.Clone: TDataObjStreamerBase;
-begin
-  result := TDDOStreamer.Create(fStream);
-  // no properties to copy
 end;
 
 procedure TDDOStreamer.Decode(aDataObj: TDataObj);

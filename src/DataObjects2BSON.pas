@@ -320,7 +320,7 @@ begin
   DoRead(lSize, 4);
 
   // Now go in a loop and read the elements until we consume up the size we were given.
-  dec(lSize, 5);    // 4 for the size and 1 for the null terminator.
+  dec(lSize, 5);    // The expected content size is going to be less 4 for the size Int32 and 1 for the trailing null terminator that we should expect.
   lStartPos := fStream.Position;
   while fStream.Position-lStartPos < lSize do
   begin
@@ -357,6 +357,7 @@ var
   lMemStream: TMemoryStream;
   lSize: integer;    // the bson spec calls for this to be a signed integer.  I don't see why it should be signed instead of unsigned, but that's the spec.  whatever.
   lByte: byte;
+  lStreamSize: integer;
 begin
   lMemStream:=TMemoryStream.create;      // create a memory stream to serialize our contained document into because we need to learn the size as the size needs to be written first.
   try
@@ -366,13 +367,14 @@ begin
       WriteElement(aFrame.Slots[i], aFrame.Slotname(i), lMemStream);
     end;
 
-    // Write the size of the embedded document.
-    lSize := lMemStream.Size;
+
+    lStreamSize := lMemStream.Size;
+    lSize := lStreamSize+4+1;     // Write the size of the embedded document, plus 4 bytes for the size Int32 and 1 byte for the null terminator streamed below.
     aStream.Write(lSize, 4);
 
     // Now write the embedded document data.
     lMemStream.Seek(0,soBeginning);
-    aStream.CopyFrom(lMemStream, lSize);
+    aStream.CopyFrom(lMemStream, lStreamSize);
 
     // write null terminator for this document
     lByte := 0;
