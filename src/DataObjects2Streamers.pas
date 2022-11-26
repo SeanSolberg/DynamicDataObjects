@@ -68,7 +68,7 @@ var
   lStore: PTDataStore;
   lDataObj: TDataObj;
   lValue: byte;
-  lDataType: TDataType;
+//  lDataType: TDataType;
 
   // Read a Unsigned UVarInt from the stream.
   function ReadUVarInt: UInt64;
@@ -122,8 +122,11 @@ begin
   lStore := aDataObj.getStore;
 
   fStream.Read(lValue, 1);
-  lDataType.Value := lValue;
-  aDataObj.DataType := lDataType;
+  aDataObj.SetDataTypeByValue(lValue);
+//  lDataType.Value := lValue;
+//  aDataObj.DataType := lDataType;
+
+
   case aDataObj.DataType.Code of
     cDataTypeNull: begin end;
 
@@ -282,7 +285,7 @@ begin
   else
     begin
       // FINISH - need to generate a good exception here because we received a dataType that's not valid.
-      raise exception.Create('Read an invalid data type of '+IntToHex(lDataType.value,2));
+      raise exception.Create('Read an invalid data type of '+IntToHex(lValue,2));
     end;
   end;
 end;
@@ -560,7 +563,7 @@ end;
 
 function TStreamerRegistryComparer.Compare(const Left, Right: TDataObjStreamerClass): Integer;
 begin
-  result := Left.ClipboardPriority - right.ClipboardPriority;
+  result := Integer(Left.ClipboardPriority) - Integer(right.ClipboardPriority);
 end;
 
 initialization

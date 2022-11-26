@@ -174,7 +174,7 @@ begin
       fStream.Write(lDateTime, 8);
     end;
 
-    cDataTypeGUID, cDataTypeObjectID, cDataTypeString: begin
+    cDataTypeGUID, cDataTypeObjectID: begin
       //FUTURE - we could have a preference on whether we want to stream a GUID as a string formatted GUID or as a binary form GUID.  For now, we will do string GUID.
       //FUTURE - we could have a preference on whether we want to stream an ObjectID as a string formatted ObjectID or as a binary form ObjectID.  For now, we will do string ObjectID
 
@@ -187,6 +187,21 @@ begin
       if lSize > 0 then
         fStream.Write(lAnsiStr[1], lSize);  // write the string data. Not Including the Null Byte.
     end;
+
+    cDataTypeString: begin
+      if aDataObj.DataType.SubClass=1 then    // NOTE that we have not defined a purpose for the values 2 and 3 yet, so we just treat them as strings by default.
+        lInteger := 8   // code for symbol
+      else
+        lInteger := 1;   // code for string
+      fStream.Write(lInteger, 4);
+
+      lAnsiStr := AnsiString(aDataObj.AsString);  //converting to ansiString.  potential data loss, but that's how DDO specs it.
+      lSize:=Length(lAnsiStr);
+      fStream.Write(lSize, 4);           // write 4 bytes representing the size of the string
+      if lSize > 0 then
+        fStream.Write(lAnsiStr[1], lSize);  // write the string data. Not Including the Null Byte.
+    end;
+
 
     cDataTypeStringList: begin
       lInteger := 11;   // code for stringList

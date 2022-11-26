@@ -1,4 +1,4 @@
-unit JSONComparisonMainFrm;
+ï»¿unit JSONComparisonMainFrm;
 
 {This is a JSON comparison application that compares how the DataObjects JSON serializer compares to other JSON libraries performance-wise.
  In order to compile and run this application, you would need to install the other respective code libraries that we are comparing against.
@@ -13,9 +13,9 @@ unit JSONComparisonMainFrm;
 
 }
 
-//{$DEFINE cIncludeDDOTest}
+{$DEFINE cIncludeDDOTest}
 {$DEFINE cIncludeGrijjyTest}
-{$DEFINE cIncludeCleverJSON}
+//{$DEFINE cIncludeCleverJSON}
 
 
 interface
@@ -33,6 +33,9 @@ uses
       clJsonSerializer, clJsonParser, clJsonSerializerBase,
     {$endif}
     DataObjects2, DataObjects2JSON;
+
+const
+  cMakeTestSize = 1000;   // The number of rounds for making test data in the Makexxxxx tests.
 
 type
   TPerson = class
@@ -57,6 +60,8 @@ type
 
   end;
 
+  TTestType=(cttTightUTF8, cttTightAscii, cttFormattedUTF8, cttFormattedAscii);
+
 
   TForm15 = class(TForm)
     Memo1: TMemo;
@@ -70,6 +75,7 @@ type
     Button2: TButton;
     Label1: TLabel;
     btnRunAllTests: TButton;
+    Button3: TButton;
     procedure Button4Click(Sender: TObject);
     procedure btnDelphiLoadFromJSONClick(Sender: TObject);
     procedure btnOldDDOLoadFromJSONClick(Sender: TObject);
@@ -79,6 +85,7 @@ type
     procedure Button1Click(Sender: TObject);
     procedure Button2Click(Sender: TObject);
     procedure btnRunAllTestsClick(Sender: TObject);
+    procedure Button3Click(Sender: TObject);
   private
     { Private declarations }
     fTestJSONString: string;
@@ -99,6 +106,12 @@ type
     function runJsonSerializerTest: string;
     procedure LoadTwitterJSON;
     procedure LoadMeshJSON;
+
+    function MakeTestDataObj(aType: TTestType): string;
+    function MakeTestDDO(aType: TTestType): string;
+    function MakeTestGrijjy(aType: TTestType): string;
+    function MakeTestDelphi(aType: TTestType): string;
+
   public
     { Public declarations }
     function CompareStreams(aStream1, aStream2: TStream): integer;   // returns the position in the streams where they are different.  returns -1 if they are the same.
@@ -127,14 +140,16 @@ var
   lString: string;
   lSS: TStringStream;
 begin
-  LoadStoryJSON;
+//  LoadStoryJSON;
+  LoadMeshJSON;
 
   lString := RunDelphiTest;
 
   lSS:=TStringStream.create(lString, TEncoding.ANSI);
   try
     ForceDirectories('c:\temp');
-    lSS.SaveToFile('c:\temp\story-Delphi.json');
+//    lSS.SaveToFile('c:\temp\story-Delphi.json');
+    lSS.SaveToFile('c:\temp\mesh-Delphi.json');
   finally
     lSS.Free;
   end;
@@ -146,8 +161,9 @@ var
    lStart: TDateTime;
    i: integer;
    JSonObject: TJSonObject;
+   lSS: TStringStream;
 begin
-    m('Starting Delphi JSON Test');
+   m('Starting Delphi JSON Test');
 
    lStart := now;
    for i := 1 to fTestCount do
@@ -167,6 +183,13 @@ begin
        result := JSonValue.ToJSON([TJSONAncestor.TJSONOutputOption.EncodeBelow32,TJSONAncestor.TJSONOutputOption.EncodeAbove127]);
      end;
      m('Delphi JSON Write '+intToStr(fTestCount)+' times.  Total Time = '+FloatToStrf((now-lStart)*24*60*60, ffFixed, 10, 2));
+
+     lSS := TStringStream.Create;
+     lSS.WriteString(result);
+     lSS.SaveToFile('c:\temp\CreatedDelphiJSON.json');
+     lSS.Free;
+
+
    finally
      JSonValue.Free;
    end;
@@ -272,7 +295,8 @@ var
   lSS: TStringStream;
 begin
   m('Staring DataObjects2 JSON Test');
-  LoadStoryJSON;
+//  LoadStoryJSON;
+  LoadMeshJSON;
 
   lString := RunNewDataObjTest;
 
@@ -286,11 +310,8 @@ end;
 
 function TForm15.RunNewDataObjTest: string;
 var
-  lFS: Tfilestream;
-  lJsonStreamer: TJsonStreamer;
   lDataObj: Dataobjects2.TDataObj;
   lStart: TDatetime;
-  lMemStream: TMemoryStream;
   lSS: TStringStream;
   i: Integer;
   lJS: TJsonStreamer;
@@ -354,17 +375,15 @@ end;
 function TForm15.RunGrijjiTest: string;
 {$ifdef cIncludeGrijjyTest}
 var
-   JSonValue: TJSonValue;
    lStart: TDateTime;
    i: integer;
-   JSonObject: TJSonObject;
    lDoc: TgoBsonDocument;
 {$endif}
 begin
 {$ifdef cIncludeGrijjyTest}
    m('Starting GrijjyJSON Test');
    lStart := now;
-   for i := 1 to 5000 do
+   for i := 1 to fTestCount do
    begin
      lDoc := TgoBsonDocument.Parse(fTestJSONString);
    end;
@@ -386,7 +405,6 @@ procedure TForm15.Button24Click(Sender: TObject);
 var
   lSS: TStringStream;
   lString: string;
-  i: Integer;
   lOut: string;
   lDataObj: dataObjects2.TDataObj;
   lJS: TJsonStreamer;
@@ -440,6 +458,57 @@ begin
   end;
 end;
 
+procedure TForm15.Button3Click(Sender: TObject);
+var
+  lJSON: string;
+
+  procedure SaveJSON(aFilename: string; aIsAscii: boolean);
+  var
+    lSS: TStringStream;
+  begin
+    if aIsAscii then
+      lSS:=TStringStream.create('',TEncoding.Ascii)
+    else
+      lSS:=TStringStream.create('',TEncoding.UTF8);
+    try
+      lSS.WriteString(lJSON);
+      lSS.SaveToFile(aFilename);
+    finally
+      lSS.Free;
+    end;
+  end;
+
+  procedure DoARoundOfTests(aType: TTestType);
+  var
+    lSuffix: string;
+    lIsAscii: boolean;
+  begin
+    lIsAscii := false;
+    case aType of
+      cttTightUTF8: begin lSuffix := 'TightUTF8'; m('Tight UTF8'); m('-----------------'); end;
+      cttTightAscii: begin lSuffix := 'TightAscii'; m('Tight Ascii'); m('-----------------'); lIsAscii:=true; end;
+      cttFormattedUTF8: begin lSuffix := 'FormattedUTF8'; m('Formatted UTF8'); m('-----------------'); end;
+      cttFormattedAscii: begin lSuffix := 'FormattedAscii'; m('Formatted Ascii'); m('-----------------'); lIsAscii:=true; end;
+    end;
+    lJSON := MakeTestDataObj(aType);
+    SaveJSON('c:\temp\MakeTestDataObj-'+lSuffix+'.json', lIsAscii);
+    lJSON := MakeTestDDO(aType);
+    SaveJSON('c:\temp\MakeTestDDO-'+lSuffix+'.json', lIsAscii);
+    lJSON := MakeTestGrijjy(aType);
+    SaveJSON('c:\temp\MakeTestGrijjy-'+lSuffix+'.json', lIsAscii);
+    lJSON := MakeTestDelphi(aType);
+    SaveJSON('c:\temp\MakeTestDelphi-'+lSuffix+'.json', lIsAscii);
+    m('');
+  end;
+
+
+begin
+  DoAroundOfTests(cttTightUTF8);
+  DoAroundOfTests(cttTightAscii);
+  DoAroundOfTests(cttFormattedUTF8);
+  DoAroundOfTests(cttFormattedAscii);
+end;
+
 function TForm15.runJsonSerializerTest: string;
 {$ifdef cIncludeCleverJSON}
 var
@@ -450,24 +519,29 @@ var
 begin
 {$ifdef cIncludeCleverJSON}
   m('Starting CleverJSON Test');
-  lStart := now;
-  for i := 1 to fTestCount do
-  begin
-    lJSonObject := TclJSONBase.ParseObject(fTestJSONString);
-    lJSonObject.Free;
-  end;
-  m('TclJSONObject JSON Parse '+intToStr(fTestCount)+' times.  Total Time = '+FloatToStrf((now-lStart)*24*60*60, ffFixed, 10, 2));
-
-  lJSonObject := TclJSONBase.ParseObject(fTestJSONString);
   try
     lStart := now;
     for i := 1 to fTestCount do
     begin
-      result := lJSonObject.GetJSONString;
+      lJSonObject := TclJSONBase.ParseObject(fTestJSONString);
+      lJSonObject.Free;
     end;
-    m('TclJSONObject JSON Write '+intToStr(fTestCount)+' times.  Total Time = '+FloatToStrf((now-lStart)*24*60*60, ffFixed, 10, 2));
-  finally
-    lJSonObject.Free;
+    m('TclJSONObject JSON Parse '+intToStr(fTestCount)+' times.  Total Time = '+FloatToStrf((now-lStart)*24*60*60, ffFixed, 10, 2));
+
+    lJSonObject := TclJSONBase.ParseObject(fTestJSONString);
+    try
+      lStart := now;
+      for i := 1 to fTestCount do
+      begin
+        result := lJSonObject.GetJSONString;
+      end;
+      m('TclJSONObject JSON Write '+intToStr(fTestCount)+' times.  Total Time = '+FloatToStrf((now-lStart)*24*60*60, ffFixed, 10, 2));
+    finally
+      lJSonObject.Free;
+    end;
+  except
+    on e: exception do
+      m(e.ClassName+': '+e.Message);
   end;
 {$endif}
 end;
@@ -498,7 +572,7 @@ var
   lUTF8String: UTF8String;
   i: Integer;
 begin
-  lStr := 'Alle mennesker er født frie og med samme menneskeverd og menneskerettigheter. De er utstyrt med fornuft og samvittighet og bør handle mot hverandre i brorskapets ånd.';
+  lStr := 'Alle mennesker er fÃ¸dt frie og med samme menneskeverd og menneskerettigheter. De er utstyrt med fornuft og samvittighet og bÃ¸r handle mot hverandre i brorskapets Ã¥nd.';
   lAnsiString := lStr;
   lUTF8String := lStr;
   m(lStr);
@@ -597,13 +671,13 @@ begin
       newSlot('Age').AsInteger := 123;
       newslot('weight').asFloat := 123.456;
 
-      lStr := 'Alle mennesker er født frie og med samme menneskeverd og menneskerettigheter. De er utstyrt med fornuft og samvittighet og bør handle mot hverandre i brorskapets ånd.';
+      lStr := 'Alle mennesker er fÃ¸dt frie og med samme menneskeverd og menneskerettigheter. De er utstyrt med fornuft og samvittighet og bÃ¸r handle mot hverandre i brorskapets Ã¥nd.';
       newSlot('Norwegian1').AsString := lStr;
 
-      lStr := 'alle mennesker er født frie og med samme menneskeverd og menneskerettigheter. de er utstyrt med fornuft og samvittighet og bør handle mot hverandre i brorskapets ånd.';
+      lStr := 'alle mennesker er fÃ¸dt frie og med samme menneskeverd og menneskerettigheter. de er utstyrt med fornuft og samvittighet og bÃ¸r handle mot hverandre i brorskapets Ã¥nd.';
       newSlot('Norwegian2').AsString := lStr;
 
-      lStr := 'ALLE MENNESKER ER FØDT FRIE OG MED SAMME MENNESKEVERD OG MENNESKERETTIGHETER. DE ER UTSTYRT MED FORNUFT OG SAMVITTIGHET OG BØR HANDLE MOT HVERANDRE I BRORSKAPETS ÅND.';
+      lStr := 'ALLE MENNESKER ER FÃ˜DT FRIE OG MED SAMME MENNESKEVERD OG MENNESKERETTIGHETER. DE ER UTSTYRT MED FORNUFT OG SAMVITTIGHET OG BÃ˜R HANDLE MOT HVERANDRE I BRORSKAPETS Ã…ND.';
       newSlot('Norwegian3').AsString := lStr;
 
 
@@ -701,13 +775,13 @@ begin
       newSlot('Age').AsInt32 := 123;
       newslot('weight').AsDouble := 123.456;
 
-      lStr := 'Alle mennesker er født frie og med samme menneskeverd og menneskerettigheter. De er utstyrt med fornuft og samvittighet og bør handle mot hverandre i brorskapets ånd.';
+      lStr := 'Alle mennesker er fÃ¸dt frie og med samme menneskeverd og menneskerettigheter. De er utstyrt med fornuft og samvittighet og bÃ¸r handle mot hverandre i brorskapets Ã¥nd.';
       newSlot('Norwegian1').AsString := lStr;
 
-      lStr := 'alle mennesker er født frie og med samme menneskeverd og menneskerettigheter. de er utstyrt med fornuft og samvittighet og bør handle mot hverandre i brorskapets ånd.';
+      lStr := 'alle mennesker er fÃ¸dt frie og med samme menneskeverd og menneskerettigheter. de er utstyrt med fornuft og samvittighet og bÃ¸r handle mot hverandre i brorskapets Ã¥nd.';
       newSlot('Norwegian2').AsString := lStr;
 
-      lStr := 'ALLE MENNESKER ER FØDT FRIE OG MED SAMME MENNESKEVERD OG MENNESKERETTIGHETER. DE ER UTSTYRT MED FORNUFT OG SAMVITTIGHET OG BØR HANDLE MOT HVERANDRE I BRORSKAPETS ÅND.';
+      lStr := 'ALLE MENNESKER ER FÃ˜DT FRIE OG MED SAMME MENNESKEVERD OG MENNESKERETTIGHETER. DE ER UTSTYRT MED FORNUFT OG SAMVITTIGHET OG BÃ˜R HANDLE MOT HVERANDRE I BRORSKAPETS Ã…ND.';
       newSlot('Norwegian3').AsString := lStr;
 
 
@@ -762,6 +836,210 @@ begin
         add('   * DELPHI *   ');
       end;
     end;
+end;
+
+function TForm15.MakeTestDataObj(aType: TTestType): string;
+var
+  lTop: TDataObj;
+  lFrame: TDataFrame;
+  lArray: TDataArray;
+  lChildArray: TDataArray;
+  i: Integer;
+  j: Integer;
+  lStart: TDateTime;
+  lEnd: TDateTime;
+begin
+  lStart := now;
+  lTop := TDataObj.Create;
+  try
+    lArray := lTop.AsArray;
+    for i := 1 to cMakeTestSize do
+    begin
+      lFrame := lArray.NewSlot.AsFrame;
+      lFrame.NewSlot('ID').AsInt64 := i*1000000;
+      lFrame.NewSlot('FirstName').AsString := 'Sean';
+      lFrame.NewSlot('LastName').AsString := 'Solberg';
+      lFrame.NewSlot('Age').AsInteger := 18;
+      lFrame.NewSlot('Height').AsDouble := 1234.56789;
+      lFrame.NewSlot('DateTime').AsDateTime := now;
+      lFrame.NewSlot('Description').AsString := 'This text is intentionally including " characters that need to be escaped. '+#13+#10+'Plus line feed characters too.'+#13+#10+#9+'This line starts with a tab character'+#13+#10+'This line ends with a higher unicode character "RollingEyes" Face Character ðŸ™„';
+      lChildArray := lFrame.NewSlot('Numbers').AsArray;
+      for j := 0 to 999 do
+      begin
+        lChildArray.NewSlot.AsInteger := j;
+        lChildArray.NewSlot.AsDouble := j*pi;
+        lChildArray.NewSlot.AsString := 'CrazyStuff:#13+#10+"ðŸ™„"';
+      end;
+    end;
+
+    case aType of
+      cttTightUTF8: result := TJsonStreamer.DataObjToJson(lTop, cJsonTight, 2, false);
+      cttTightAscii: result := TJsonStreamer.DataObjToJson(lTop, cJsonTight, 2, true);
+      cttFormattedUTF8: result := TJsonStreamer.DataObjToJson(lTop, cJsonHumanReadable, 2, false);
+      cttFormattedAscii: result := TJsonStreamer.DataObjToJson(lTop, cJsonHumanReadable, 2, true);
+    end;
+    lEnd := now;
+  finally
+    lTop.Free;
+  end;
+
+  m('Make DataObj to JSON-> Length:'+InttoStr(length(result))+' Time: '+FloatToStrf((lEnd-lStart)*24*60*60, ffFixed, 10, 2));
+end;
+
+function TForm15.MakeTestDDO(aType: TTestType): string;
+var
+  lTop: DataObjects.TDataObj;
+  lFrame: DataObjects.TDataFrame;
+  lArray: DataObjects.TDataArray;
+  lChildArray: DataObjects.TDataArray;
+  i: Integer;
+  j: Integer;
+  lStart: TDateTime;
+  lEnd: TDateTime;
+begin
+  lStart := now;
+  lTop := DataObjects.TDataObj.Create;
+  try
+    lArray := lTop.AsArray;
+    for i := 1 to cMakeTestSize do
+    begin
+      lFrame := lArray.NewSlot.AsFrame;
+      lFrame.NewSlot('ID').AsInt64 := i*1000000;
+      lFrame.NewSlot('FirstName').AsString := 'Sean';
+      lFrame.NewSlot('LastName').AsString := 'Solberg';
+      lFrame.NewSlot('Age').AsInteger := 18;
+      lFrame.NewSlot('Height').AsFloat := 1234.56789;
+      lFrame.NewSlot('DateTime').AsDateTime := now;
+      lFrame.NewSlot('Description').AsString := 'This text is intentionally including " characters that need to be escaped. '+#13+#10+'Plus line feed characters too.'+#13+#10+#9+'This line starts with a tab character'+#13+#10+'This line ends with a higher unicode character "RollingEyes" Face Character ðŸ™„';
+      lChildArray := lFrame.NewSlot('Numbers').AsArray;
+      for j := 0 to 999 do
+      begin
+        lChildArray.NewSlot.AsInteger := j;
+        lChildArray.NewSlot.AsFloat := j*pi;
+        lChildArray.NewSlot.AsString := 'CrazyStuff:#13+#10+"ðŸ™„"';
+      end;
+    end;
+
+    case aType of
+      cttTightUTF8: result := lTop.JSON;       // this mechanism doesn't distinguish on character encoding options.
+      cttTightAscii: result := lTop.JSON;
+      cttFormattedUTF8: result := lTop.PrintToJSONReadable;
+      cttFormattedAscii: result := lTop.PrintToJSONReadable;
+    end;
+    lEnd := now;
+  finally
+    lTop.Free;
+  end;
+
+  m('Make DDO to JSON-> Length:'+InttoStr(length(result))+' Time: '+FloatToStrf((lEnd-lStart)*24*60*60, ffFixed, 10, 2));
+end;
+
+function TForm15.MakeTestDelphi(aType: TTestType): string;
+var
+  lTop: TJSONArray;
+  lFrame: TJSONObject;
+  lChildArray: TJSONArray;
+  i: Integer;
+  j: Integer;
+  lStart: TDateTime;
+  lEnd: TDateTime;
+  lInt64: Int64;
+  lFloat: Double;
+
+begin
+  lStart := now;
+  try
+    lTop := TJSONArray.Create;
+    for i := 1 to cMakeTestSize do
+    begin
+      lFrame := TJSONObject.Create;
+      lTop.Add(lFrame);
+      lInt64 := i*1000000;
+      lFrame.AddPair('ID',lInt64) ;
+      lFrame.AddPair('FirstName', 'Sean');
+      lFrame.AddPair('LastName', 'Solberg');
+      lFrame.AddPair('Age', 18);
+      lFrame.AddPair('Height', 1234.56789);
+      lFrame.AddPair('DateTime', now);
+      lFrame.AddPair('Description','This text is intentionally including " characters that need to be escaped. '+#13+#10+'Plus line feed characters too.'+#13+#10+#9+'This line starts with a tab character'+#13+#10+'This line ends with a higher unicode character "RollingEyes" Face Character ðŸ™„');
+      lChildArray := TJSONArray.Create;
+      lFrame.AddPair('Numbers',lChildArray);
+      for j := 0 to 999 do
+      begin
+        lChildArray.Add(j);
+        lFloat := j*pi;
+        lChildArray.Add(lFloat);
+        lChildArray.Add('CrazyStuff:#13+#10+"ðŸ™„"');
+      end;
+    end;
+
+    case atype of
+      cttTightUTF8: result := lTop.ToJSON([TJSONAncestor.TJSONOutputOption.EncodeBelow32]);
+      cttTightAscii: result := lTop.ToJSON([TJSONAncestor.TJSONOutputOption.EncodeBelow32,TJSONAncestor.TJSONOutputOption.EncodeAbove127]);
+      cttFormattedUTF8: result := lTop.Format(2);
+      cttFormattedAscii: result := lTop.Format(2);   // Don't see a way to control the JSONOputputOptions with the format call.
+    end;
+    lEnd := now;
+  finally
+    lTop.Free;
+  end;
+
+  m('Make Delphi to JSON-> Length:'+InttoStr(length(result))+' Time: '+FloatToStrf((lEnd-lStart)*24*60*60, ffFixed, 10, 2));
+end;
+
+function TForm15.MakeTestGrijjy(aType: TTestType): string;
+var
+  lTop: TgoBsonArray;
+  lFrame: TgoBsonDocument;
+  lChildArray: TgoBsonArray;
+  i: Integer;
+  j: Integer;
+  lStart: TDateTime;
+  lEnd: TDateTime;
+  lInt64: Int64;
+  lFloat: Double;
+  lSettings: TgoJsonWriterSettings;
+begin
+  lStart := now;
+  try
+    lTop := TgoBsonArray.Create;
+    for i := 1 to cMakeTestSize do
+    begin
+      lFrame := TgoBsonDocument.Create;
+      lTop.Add(lFrame);
+      lInt64 := i*1000000;
+      lFrame.Add('ID',lInt64) ;
+      lFrame.Add('FirstName', 'Sean');
+      lFrame.Add('LastName', 'Solberg');
+      lFrame.Add('Age', 18);
+      lFrame.Add('Height', 1234.56789);
+      lFrame.Add('DateTime', now);
+      lFrame.Add('Description','This text is intentionally including " characters that need to be escaped. '+#13+#10+'Plus line feed characters too.'+#13+#10+#9+'This line starts with a tab character'+#13+#10+'This line ends with a higher unicode character "RollingEyes" Face Character ðŸ™„');
+      lChildArray := TgoBsonArray.Create;
+      lFrame.Add('Numbers',lChildArray);
+      for j := 0 to 999 do
+      begin
+        lChildArray.Add(j);
+        lFloat := j*pi;
+        lChildArray.Add(lFloat);
+        lChildArray.Add('CrazyStuff:#13+#10+"ðŸ™„"');
+      end;
+    end;
+
+    case aType of
+      cttTightUTF8: lSettings := TgoJsonWriterSettings.Create('', '', TgoJsonOutputMode.Strict);
+      cttTightAscii: lSettings := TgoJsonWriterSettings.Create('', '', TgoJsonOutputMode.Strict);
+      cttFormattedUTF8: lSettings := TgoJsonWriterSettings.Create('  ', #13#10, TgoJsonOutputMode.Strict);
+      cttFormattedAscii: lSettings := TgoJsonWriterSettings.Create('  ', #13#10, TgoJsonOutputMode.Strict);
+    end;
+
+    result := lTop.ToJson(lSettings);
+    lEnd := now;
+  finally
+//    lTop.Free;
+  end;
+
+  m('Make Grijjy to JSON-> Length:'+InttoStr(length(result))+' Time: '+FloatToStrf((lEnd-lStart)*24*60*60, ffFixed, 10, 2));
 end;
 
 { TPerson }

@@ -84,9 +84,18 @@ var
   lByte: byte;
 begin
   // Read the UTF-8 String from the stream and return it as a unicode String.
-  DoRead(lSize, 4);
+  DoRead(lSize, 4);    // The size includes the byte for the null terminator.  SO, an empty string will give us a size of 1 cause that 1 is for the null terminator.
   SetLength(lUTF8String, lSize-1);
-  fStream.Read(lUTF8String[1], lSize-1);     // this should also read the null terminator byte from the stream.
+  if (lSize > 1) then
+  begin
+    fStream.Read(lUTF8String[1], lSize-1);     // this does not read the null terminator byte from the stream.
+  end
+  else if lSize = 0 then
+  begin
+    RaiseParsingException('Size was a zero when parsing a String which is not valid BSON');
+  end;
+
+
 
   // Read the null terminating byte.
   DoRead(lByte, 1);
@@ -166,6 +175,8 @@ var
   lInt32: integer;
   lBuffer: TArray<byte>;
   lDouble: double;
+  lDataFrame: TDataFrame;
+  lBinary: TDataBinary;
 begin
   // Now read the data content based on the type.
   case aType of
@@ -175,7 +186,7 @@ begin
     end;
 
     $02: begin  // UTF-8 String
-      aDataObj.AsSymbol := ReadString;
+      aDataObj.AsString := ReadString;
     end;
 
     $03: begin  //Embedded Document
@@ -194,10 +205,10 @@ begin
       DoRead(lByte, 1);
 
       // now read the binary data.
+      lBinary := aDataObj.AsBinary;
+      lBinary.SubTypeCode := lByte;
       if lInt32 > 0 then
-        aDataObj.AsBinary.CopyFrom(fStream, lInt32)
-      else
-        aDataObj.AsBinary;    // just to get the type set.
+        lBinary.CopyFrom(fStream, lInt32);
     end;
 
     $06: begin  //Undefined value (Depricated)
@@ -211,10 +222,7 @@ begin
 
     $08: begin  //Boolean
       DoRead(lByte, 1);
-      if lByte <> 0 then
-        aDataObj.AsBoolean := true
-      else
-        aDataObj.AsBoolean := false;
+      aDataObj.AsBoolean := lByte <> 0;
     end;
 
     $09: begin  //UTC DateTime
@@ -231,8 +239,10 @@ begin
        order. Valid options are 'i' for case insensitive matching, 'm' for multiline matching, 'x' for verbose mode, 'l' to make \w, \W, etc. locale dependent,
        's' for dotall mode ('.' matches everything), and 'u' to make \w, \W, etc. match unicode.}
 
-      aDataObj.AsFrame.NewSlot('RegEx').AsString := ReadCString;  // read the regexPattern
-      aDataObj.AsFrame.NewSlot('Options').AsString := ReadCString;  // read the regex options string
+       //FUTURE IMPROVEMENT - Maybe there is a CBOR tag for identifying RegExpressions that we can use here and then convert to a string tuple (IE) array of 2 elements.
+      lDataFrame := aDataObj.AsFrame;
+      lDataFrame.NewSlot('RegEx').AsString := ReadCString;  // read the regexPattern
+      lDataFrame.NewSlot('Options').AsString := ReadCString;  // read the regex options string
     end;
 
     $0C: begin  //DB Pointer (Depricated)
@@ -262,10 +272,11 @@ begin
       DoRead(lInt32, 4);   //The int32 is the length in bytes of the entire code_w_s value.   We are not going to make use of this value.
 
       // The string is JavaScript code.
-      aDataObj.AsFrame.NewSlot('JavaScript').AsStringList.Text := ReadString;
+      lDataFrame := aDataObj.AsFrame;
+      lDataFrame.NewSlot('JavaScript').AsStringList.Text := ReadString;
 
       // The document is a mapping from identifiers to values, representing the scope in which the JavaScript string should be evaluated.
-      ReadDocument(aDataObj.AsFrame.NewSlot('Scope'));
+      ReadDocument(lDataFrame.NewSlot('Scope'));
     end;
 
     $10: begin  //32 bit int
@@ -501,6 +512,7 @@ var
   lInt64: int64;
   lDouble: double;
   lUTF8String: UTF8String;
+  lBinary: TDataBinary;
 
   procedure WriteSlotName;
   var
@@ -667,21 +679,21 @@ begin
 
       WriteSlotname;
 
+      lBinary := aDataObj.AsBinary;
       // FINISH - Put in a oversize check.
 
       // Write the binary size.  NOTE: Only supports 32 bit sizes, and I suppose negative size is no good so really we are at the 2 gig limit here.
-      lInt32 := aDataObj.AsBinary.Size;
+      lInt32 := lBinary.Size; // convert 64 bit int to 32bit int.
       aStream.Write(lInt32, 4);
 
       // Write the Subtype code
-      lByte := $00;             // $00=Generic binary subtype, $01=Function, $02=Binary (Old), $03=UUID (Old), $04=UUID, $05=MD5, $80=User defined
+      lByte := lBinary.SubTypeCode;             // $00=Generic binary subtype, $01=Function, $02=Binary (Old), $03=UUID (Old), $04=UUID, $05=MD5, $06=Encrypted BSON, $07=Compressed BSON column, $80=User defined
       aStream.Write(lByte,1);
 
       // Write the binary data.
-      aDataObj.AsBinary.Seek(0, soBeginning);
+      lBinary.Seek(0, soBeginning);
       if lInt32>0 then
-        aStream.CopyFrom(aDataObj.AsBinary, lInt32);
-
+        aStream.CopyFrom(lBinary, lInt32);
     end;
 
     cDataTypeObject: begin

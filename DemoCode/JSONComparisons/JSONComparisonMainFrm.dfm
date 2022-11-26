@@ -118,4 +118,13 @@ object Form15: TForm15
     TabOrder = 9
     OnClick = btnRunAllTestsClick
   end
+  object Button3: TButton
+    Left = 8
+    Top = 368
+    Width = 167
+    Height = 25
+    Caption = 'Full Make Test'
+    TabOrder = 10
+    OnClick = Button3Click
+  end
 end

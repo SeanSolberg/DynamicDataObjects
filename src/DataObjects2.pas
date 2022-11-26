@@ -179,6 +179,34 @@ const
  //                                     code = 1: currency
 
 type
+  _TwoChar = packed record
+    case Integer of
+      0:(ch: array[1..2] of Char);
+      1:(u32: Cardinal);
+  end;
+
+const cTwoHexLookup: packed array[0..255] of _TwoChar =
+  (
+   (ch:'00'),(ch:'01'),(ch:'02'),(ch:'03'),(ch:'04'),(ch:'05'),(ch:'06'),(ch:'07'),(ch:'08'),(ch:'09'),(ch:'0a'),(ch:'0b'),(ch:'0c'),(ch:'0d'),(ch:'0e'),(ch:'0f'),
+   (ch:'10'),(ch:'11'),(ch:'12'),(ch:'13'),(ch:'14'),(ch:'15'),(ch:'16'),(ch:'17'),(ch:'18'),(ch:'19'),(ch:'1a'),(ch:'1b'),(ch:'1c'),(ch:'1d'),(ch:'1e'),(ch:'1f'),
+   (ch:'20'),(ch:'21'),(ch:'22'),(ch:'23'),(ch:'24'),(ch:'25'),(ch:'26'),(ch:'27'),(ch:'28'),(ch:'29'),(ch:'2a'),(ch:'2b'),(ch:'2c'),(ch:'2d'),(ch:'2e'),(ch:'2f'),
+   (ch:'30'),(ch:'31'),(ch:'32'),(ch:'33'),(ch:'34'),(ch:'35'),(ch:'36'),(ch:'37'),(ch:'38'),(ch:'39'),(ch:'3a'),(ch:'3b'),(ch:'3c'),(ch:'3d'),(ch:'3e'),(ch:'3f'),
+   (ch:'40'),(ch:'41'),(ch:'42'),(ch:'43'),(ch:'44'),(ch:'45'),(ch:'46'),(ch:'47'),(ch:'48'),(ch:'49'),(ch:'4a'),(ch:'4b'),(ch:'4c'),(ch:'4d'),(ch:'4e'),(ch:'4f'),
+   (ch:'50'),(ch:'51'),(ch:'52'),(ch:'53'),(ch:'54'),(ch:'55'),(ch:'56'),(ch:'57'),(ch:'58'),(ch:'59'),(ch:'5a'),(ch:'5b'),(ch:'5c'),(ch:'5d'),(ch:'5e'),(ch:'5f'),
+   (ch:'60'),(ch:'61'),(ch:'62'),(ch:'63'),(ch:'64'),(ch:'65'),(ch:'66'),(ch:'67'),(ch:'68'),(ch:'69'),(ch:'6a'),(ch:'6b'),(ch:'6c'),(ch:'6d'),(ch:'6e'),(ch:'6f'),
+   (ch:'70'),(ch:'71'),(ch:'72'),(ch:'73'),(ch:'74'),(ch:'75'),(ch:'76'),(ch:'77'),(ch:'78'),(ch:'79'),(ch:'7a'),(ch:'7b'),(ch:'7c'),(ch:'7d'),(ch:'7e'),(ch:'7f'),
+   (ch:'80'),(ch:'81'),(ch:'82'),(ch:'83'),(ch:'84'),(ch:'85'),(ch:'86'),(ch:'87'),(ch:'88'),(ch:'89'),(ch:'8a'),(ch:'8b'),(ch:'8c'),(ch:'8d'),(ch:'8e'),(ch:'8f'),
+   (ch:'90'),(ch:'91'),(ch:'92'),(ch:'93'),(ch:'94'),(ch:'95'),(ch:'96'),(ch:'97'),(ch:'98'),(ch:'99'),(ch:'9a'),(ch:'9b'),(ch:'9c'),(ch:'9d'),(ch:'9e'),(ch:'9f'),
+   (ch:'a0'),(ch:'a1'),(ch:'a2'),(ch:'a3'),(ch:'a4'),(ch:'a5'),(ch:'a6'),(ch:'a7'),(ch:'a8'),(ch:'a9'),(ch:'aa'),(ch:'ab'),(ch:'ac'),(ch:'ad'),(ch:'ae'),(ch:'af'),
+   (ch:'b0'),(ch:'b1'),(ch:'b2'),(ch:'b3'),(ch:'b4'),(ch:'b5'),(ch:'b6'),(ch:'b7'),(ch:'b8'),(ch:'b9'),(ch:'ba'),(ch:'bb'),(ch:'bc'),(ch:'bd'),(ch:'be'),(ch:'bf'),
+   (ch:'c0'),(ch:'c1'),(ch:'c2'),(ch:'c3'),(ch:'c4'),(ch:'c5'),(ch:'c6'),(ch:'c7'),(ch:'c8'),(ch:'c9'),(ch:'ca'),(ch:'cb'),(ch:'cc'),(ch:'cd'),(ch:'ce'),(ch:'cf'),
+   (ch:'d0'),(ch:'d1'),(ch:'d2'),(ch:'d3'),(ch:'d4'),(ch:'d5'),(ch:'d6'),(ch:'d7'),(ch:'d8'),(ch:'d9'),(ch:'da'),(ch:'db'),(ch:'dc'),(ch:'dd'),(ch:'de'),(ch:'df'),
+   (ch:'e0'),(ch:'e1'),(ch:'e2'),(ch:'e3'),(ch:'e4'),(ch:'e5'),(ch:'e6'),(ch:'e7'),(ch:'e8'),(ch:'e9'),(ch:'ea'),(ch:'eb'),(ch:'ec'),(ch:'ed'),(ch:'ee'),(ch:'ef'),
+   (ch:'f0'),(ch:'f1'),(ch:'f2'),(ch:'f3'),(ch:'f4'),(ch:'f5'),(ch:'f6'),(ch:'f7'),(ch:'f8'),(ch:'f9'),(ch:'fa'),(ch:'fb'),(ch:'fc'),(ch:'fd'),(ch:'fe'),(ch:'ff')
+  );
+
+
+type
 
   EDataObj = class(Exception);
 
@@ -217,18 +245,27 @@ type
 
   TDataType = packed record
   private
-    fValue: byte;
-    function getCode: TDataTypeCode;
-    function getHasAttributes: boolean;
-    function getSubClass: byte;
+    fCode: TDataTypeCode;
+    fSubClass: Byte;
+    fHasAttributes: Boolean;
+//    fValue: byte;
+//    function getCode: TDataTypeCode;
+//    function getHasAttributes: boolean;
+//    function getSubClass: byte;
     procedure setCode(const aValue: TDataTypeCode);
     procedure setHasAttributes(const aValue: boolean);
     procedure setSubClass(const aValue: byte);
+    function getValue: Byte;
+    procedure setValue(const aValue: Byte);
   public
-    property Value: byte read fValue write fValue;
-    property Code: TDataTypeCode read getCode write setCode;
-    property SubClass: byte read getSubClass write setSubClass;
-    property HasAttributes: boolean read getHasAttributes write setHasAttributes;
+//    property Value: byte read fValue write fValue;
+//    property Code: TDataTypeCode read getCode write setCode;
+//    property SubClass: byte read getSubClass write setSubClass;
+//    property HasAttributes: boolean read getHasAttributes write setHasAttributes;
+    property Code: TDataTypeCode read fCode write setCode;
+    property HasAttributes: boolean read fHasAttributes write setHasAttributes;
+    property SubClass: Byte read fSubClass write SetSubClass;
+    property Value: Byte read getValue write setValue;
   end;
 
 
@@ -528,7 +565,7 @@ type
     class procedure GetParameterInfo(aParameterPurpose: TDataObjParameterPurposes; aStrings: TStrings); virtual;  // Will fill aStrings with information about the optional parameters that the streamer may support.
     class function GetFileFilter: string; virtual; abstract;
     class function IsFileExtension(aStr: string): boolean; virtual;
-    class function ClipboardPriority: cardinal; virtual; abstract;
+    class function ClipboardPriority: Cardinal; virtual; abstract;
 
     class function GetClipboardFormatStr: string; virtual;
 
@@ -563,7 +600,6 @@ type
     function getAsGuid: TDataGUID;
     function getAsInt32: integer;
     function getAsInt64: Int64;
-//    function getAsInteger: Int64;
     function getAsObject: TObject;
     function getAsObjectID: TDataObjectID;
     function getAsSingle: Single;
@@ -592,7 +628,6 @@ type
     procedure setAsGuid(const aValue: TDataGUID);
     procedure setAsInt32(const aValue: integer);
     procedure setAsInt64(const aValue: Int64);
-//    procedure setAsInteger(const aValue: Int64);
     procedure setAsObject(const aValue: TObject);
     procedure setAsObjectID(const aValue: TDataObjectID);
     procedure setAsSingle(const aValue: Single);
@@ -612,6 +647,8 @@ type
 
     function getStore: PTDataStore;
 
+    procedure SetDataTypeByValue(aValue: byte);
+
     // this will set this dataObj to the NULL value.  Any other data possibly held by this dataObject is freed including all attributes
     procedure Clear;
 
@@ -627,19 +664,24 @@ type
     //Prints the contents of this object into a human-readable text form.
     function PrintToString: string;
 
+    // Write the contents of this data object to a new memory buffer that is allocated and return the size of the buffer written to.
+    // If the buffer size that was created is bigger than zero, then the aBuffer PointerPointer (This is a pointer to a pointer that will be updated to the address of the newly allocated buffer)
+    // This is a bit goofy, but it is the easiest way to do remote debugging of a TDataObj using a custom visualizer within the Delphi IDE.  We can basically transfer the memory that was put into this buffer to then visualize it.
+    // If aStreamerClass is left as undefined, then the default streamer class is used.
+    function AllocateAndWriteToMemoryBuffer(aPointerToPointer: PPointer; aStreamerClass: TClass = nil): int64;
+
     // Write the contents of this data object to aStream using the given aStreamerClass.  If aStreamerClass is left as undefined, then the default streamer class is used.
     procedure WriteToStream(aStream: TStream; aStreamerClass: TClass = nil);
 
     // Read the contents of this data object from aStream using the given aStreamerClass.  If aStreamerClass is left as undefined, then the default streamer class is used.
     procedure ReadFromStream(aStream: TStream; aStreamerClass: TClass = nil);
 
+    procedure ReadFromMemoryBuffer(aBuffer: Pointer; aSize: NativeInt; aStreamerClass: TClass = nil);
+
     procedure AssignTo(aObj: TObject; aMemberVisibilities: TMemberVisibilities = [mvPublished]);
 
     procedure AssignFrom(aObj: TObject; aMemberVisibilities: TMemberVisibilities = [mvPublished];
                          aDoNotSerializeDefaultValues: boolean = false; aSerializeEnumerationsAsIntegers: boolean = false);
-
-//    procedure WriteToStream(aStreamer: TDataObjStreamerBase); overload;
-//    procedure ReadFromStream(aStreamer: TDataObjStreamerBase); overload;
 
     property Items[aKey: variant]: TDataObj read getItem; default;
 
@@ -650,8 +692,6 @@ type
 {$ifdef cMakeMoreCompatibleWithOldDataObjects}
     property AsInteger: integer read getAsInt32 write setAsInt32;       // This property is a duplicate of asInt32.  It is here for code backwards compatibility so that I can use this new DataObjects against old code that was making use of the old DataObjects code.
 {$endif}
-//    property AsInteger: Int64 read getAsInteger write setAsInteger;     // normal serialization is as a varInt.  NOTE: one number, "negative zero" / "Largest negative number" can't possibly be serialized using this mode.   It's hexadecimal representation is $8000000000000000.
-                                                                        // If you need to serialize this number, then you must use the AsInt64 option.
     property AsSingle: Single read getAsSingle write setAsSingle;
     property AsDouble: Double read getAsDouble write setAsDouble;
 {$ifdef cMakeMoreCompatibleWithOldDataObjects}
@@ -698,9 +738,12 @@ type
     procedure ChangeCaseOnStrings(aContentCaseChange: TCaseChangeOptions; aSlotNameCaseChange: TCaseChangeOptions);
 
 
-    // if aStreamerClass is passed in with a value of nil, then the streamer will be chosen automatically based on the extension of the filename passed in aFileName
-    // if a streamer is chosen based on the filename, then aStreamerClass will be set to the class of the chosen streamer
-    // Will generate exceptions if anything goes wrong.
+    // If you pass in nil for aStreamer then this function will try to find the right streamer class by the filename extension and aStreamer will be populated with that object.
+    // NOTE: this function could potentially return a Streamer object, if so then the caller must free it.  It could return nil
+    // This function will try to load this TDataObj by reading the file using one of the possible registered streamers.
+    // Many different exceptions could be raised here, but if any exception is raised when reading data from a file, the object
+    // will be populated with whatever data it was successful loading before the exception.
+    // The caller must free the returned streamer object that was created if the caller did not pass in aStreamer
     function LoadFromFile(aFilename: string; aStreamer: TDataObjStreamerBase; aOptionalParameters: string=''): TDataObjStreamerBase; overload;
     procedure LoadFromFile(aFilename: string; aOptionalParams: string=''); overload;
 {$ifDef cMakeMoreCompatibleWithOldDataObjects}
@@ -750,6 +793,7 @@ type
     property MachineID: Cardinal read getMachineID write setMachineID;
     property ProcessID: Cardinal read getProcessID write setProcessID;
     property Counter: Cardinal read getCounter write setCounter;
+    procedure GenerateNewID;
   end;
 
   // We are using our own type here just in case we want to add methods to it.
@@ -853,7 +897,12 @@ type
 
 
   // We are using our own type here just in case we want to add methods to it in the future.
-  TDataBinary = class(TMemoryStream);
+  TDataBinary = class(TMemoryStream)
+  private
+    fSubTypeCode: byte;
+  public
+    property SubTypeCode: byte read fSubTypeCode write fSubTypeCode;   // Matches the BSON SubType code for the Binary data type.  Default: 0.
+  end;
 
   TDataTag = class
   private
@@ -887,9 +936,23 @@ type
   procedure AssignObjectToDataObj(aDataObj: TDataObj; aObj: TObject; aAssignContext: TDataObjAssignContext);
   procedure AssignDataObjToObject(aDataObj: TDataObj; aObj: TObject; aAssignContext: TDataObjAssignContext);
 
+
+
+var
+  gNewObjectID_MachineID: integer;   // These two global variables are used for generating new ObjectID values
+  gNewObjectID_Counter: Cardinal;
+
 implementation
 
 uses DataObjects2Streamers, Variants;
+
+type
+  // Helper class to be used in the TDataObj.AllocateAndWriteToMemoryBuffer
+  TDetachableMemoryStream = class(TMemoryStream)
+  public
+    destructor Destroy; override;
+  end;
+
 
 type
   TGetObjProc = reference to function: TDataObj;
@@ -1611,6 +1674,30 @@ end;
 
 
 { TDataObj }
+
+// This call is here to facilitate remote debugging of TDataObject contents to the Delphi IDE through the debugger.
+function TDataObj.AllocateAndWriteToMemoryBuffer(aPointerToPointer: PPointer; aStreamerClass: TClass = nil): int64;
+var
+  LStream: TDetachableMemoryStream;
+begin
+  LStream:=TDetachableMemoryStream.Create;
+  try
+    WriteToStream(LStream, aStreamerClass);
+    result := lStream.Size;    // return how many bytes we wrote into the memory buffer, which is likely less than the actual size of the memory buffer.
+
+    if lStream.Size > 0 then
+    begin
+      // now that lStream has a memory buffer, we need to steal it.  The pointer we are given is the location of a pointer that we need to update with the address of the memory we are going to steal.
+      aPointerToPointer^ := lStream.Memory;
+      // Caller needs to use FreeMem(Memory) to free the memory we are transferring ownership of.
+    end
+    else
+      aPointerToPointer^ := nil;   // we are not giving the caller any memory so tell them so.
+
+  finally
+    lStream.Free;   // will free the stream class, but it will not free the memory allocated within the stream object if it has any data in it because we stole it above.
+  end;
+end;
 
 procedure TDataObj.AssignFrom(aObj: TObject; aMemberVisibilities: TMemberVisibilities = [mvPublished]; aDoNotSerializeDefaultValues: boolean = false; aSerializeEnumerationsAsIntegers: boolean = false);
 var
@@ -2416,7 +2503,14 @@ function TDataObj.getDataTypeString: String;
 var
   lStore: PTDataStore;
 begin
-  if fDataType.Code = cDataTypeObject then
+  if fDataType.Code = cDataTypeString then
+  begin
+    if fDataType.SubClass = cSubCodeSymbol then
+      result := 'Symbol'
+    else
+      result := cDataTypeStrings[ord(fDataType.Code)];   // 'String'
+  end
+  else if fDataType.Code = cDataTypeObject then
   begin
     lStore := getStore;
     if assigned(lStore.fDataObject) then
@@ -2498,10 +2592,11 @@ begin
 end;
 
 // If you pass in nil for aStreamer then this function will try to find the right streamer class by the filename extension and aStreamer will be populated with that object.
-// NOTE: if this function could potentially return a Streamer object, if so then the caller must free it.  It could return nil
+// NOTE: this function could potentially return a Streamer object, if so then the caller must free it.  It could return nil
 // This function will try to load this TDataObj by reading the file using one of the possible registered streamers.
 // Many different exceptions could be raised here, but if any exception is raised when reading data from a file, the object
 // will be populated with whatever data it was successful loading before the exception.
+// The caller must free the returned streamer object that was created if the caller did not pass in aStreamer
 function TDataObj.LoadFromFile(aFilename: string; aStreamer: TDataObjStreamerBase; aOptionalParameters: string=''): TDataObjStreamerBase;
 var
   lStreamerClass: TDataObjStreamerClass;
@@ -2684,6 +2779,18 @@ end;
 procedure TDataObj.ReadFromFile(aFilename: string);
 begin
   LoadFromFile(aFilename);
+end;
+
+procedure TDataObj.ReadFromMemoryBuffer(aBuffer: Pointer; aSize: NativeInt; aStreamerClass: TClass);
+var
+  lStream: TPointerStream;
+begin
+  lStream:=TPointerStream.create(aBuffer, aSize, true);
+  try
+    ReadFromStream(lStream, aStreamerClass);
+  finally
+    lStream.Free;
+  end;
 end;
 
 procedure TDataObj.ReadFromStream(aStream: TStream; aStreamerClass: TClass = nil);
@@ -2883,6 +2990,11 @@ begin
   fDataType := Value;
 end;
 
+procedure TDataObj.SetDataTypeByValue(aValue: byte);
+begin
+  fDataType.Value := aValue;
+end;
+
 (*procedure TDataObj.WriteToStream(aStreamer: TDataObjStreamerBase);
 begin
   aStreamer.ReadFromDataObj(self);
@@ -2962,7 +3074,7 @@ end;
 
 { TDataType }
 
-function TDataType.getCode: TDataTypeCode;  // possible 0-31
+(*function TDataType.getCode: TDataTypeCode;  // possible 0-31
 begin
   result := TDataTypeCode(fValue and $1F);
 end;
@@ -2975,9 +3087,39 @@ end;
 function TDataType.getSubClass: byte;  // possible 0-3
 begin
   result := (fValue and $60) shr 5;
+end; *)
+
+function TDataType.getValue: Byte;
+begin
+  result := (ord(Code) and $1F) or               // 5  bits for the datatype code.
+            ((SubClass and $03) shl 5);     // 2  bits for the subClass
+  if HasAttributes then
+    result := result or $80;                // 1  bit for Has Attributes
 end;
 
+procedure TDataType.setCode(const aValue: TDataTypeCode);
+begin
+  fCode := aValue;
+end;
 
+procedure TDataType.setHasAttributes(const aValue: boolean);
+begin
+  fHasAttributes := aValue;
+end;
+
+procedure TDataType.setSubClass(const aValue: byte);
+begin
+  fSubClass := aValue;
+end;
+
+procedure TDataType.setValue(const aValue: Byte);
+begin
+  Code := TDataTypeCode(aValue and $1F);     // 5  bits for the datatype code.
+  SubClass := (aValue shr 5) and $03;        // 2  bits for the subClass
+  HasAttributes := (aValue and $80)<>0;          // 1  bit for Has Attributes
+end;
+
+(*
 procedure TDataType.setCode(const aValue: TDataTypeCode);
 begin
   fValue := (fValue and $E0) or (Byte(ord(aValue)) and $1F);
@@ -2995,6 +3137,7 @@ procedure TDataType.setSubClass(const aValue: byte);
 begin
   fValue := (fValue and $9F) or ((aValue and $03) shl 5);
 end;
+*)
 
 { TDataAttributeStore }
 
@@ -3193,9 +3336,34 @@ end;
 
 { TDataObjectID }
 
-function TDataObjectID.getAsString: string;
+// Fills self object with a newly generated ObjectID.
+procedure TDataObjectID.GenerateNewID;
+var
+  lSystemTime: TSystemTime;
 begin
-  result := Inttohex(self.getSeconds,8)+'-'+IntTohex(self.getMachineID,6)+'-'+IntTohex(self.getProcessID,4)+'-'+IntToHex(self.getCounter,6);
+  //juse one way of generating mongoDB objectID's
+  GetSystemTime(lSystemTime);
+  self.MachineID := gNewObjectID_MachineID; //see initialization
+  Self.ProcessID := GetCurrentThreadId;//GetCurrentProcessId;
+  Self.Counter := InterlockedIncrement(integer(gNewObjectID_Counter));
+  Self.Seconds := (((Round(EncodeDate(lSystemTime.wYear,lSystemTime.wMonth,lSystemTime.wDay))-UnixDateDelta)*24+lSystemTime.wHour)*60+lSystemTime.wMinute)*60+lSystemTime.wSecond;
+end;
+
+
+function TDataObjectID.getAsString: string;
+var
+  i: Cardinal;
+  lP: PCardinal;
+begin
+//  result := Inttohex(self.getSeconds,8)+IntTohex(self.getMachineID,6)+IntTohex(self.getProcessID,4)+IntToHex(self.getCounter,6);              // PRODUCES UPPERCASE.  NEED LOWER
+
+  SetLength(result, 24);
+  lP := Pointer(result);
+  for i := low(Data) to high(Data) do
+  begin
+    PCardinal(lP)^ := cTwoHexLookup[Data[i]].u32;    //lCharPair is 4 bytes.  Each pair is a unicode Character from the cTwoHexLookup Table.
+    inc(lP);
+  end;
 end;
 
 function TDataObjectID.getCounter: cardinal;
@@ -3617,9 +3785,15 @@ end;
 
 function TDataObjStreamerBase.Clone: TDataObjStreamerBase;
 begin
-
-  Result := TDataObjStreamerBase(self.ClassType.NewInstance);   // instantiate an object of the same class that this is and bound to the same fStream.
+  if assigned(self) then
+  begin
+    Result := TDataObjStreamerBase(self.ClassType.NewInstance);   // instantiate an object of the same class that this is NOT bound to the same stream.
 //  Result := TDataObjStreamerBase(self.ClassType).Create(fStream);   // instantiate an object of the same class that this is and bound to the same fStream.
+  end
+  else
+  begin
+    result := nil;
+  end;
 end;
 
 constructor TDataObjStreamerBase.Create(aStream: TStream);
@@ -3719,7 +3893,6 @@ procedure DataObjConvertBinaryToBase64String(aDataObj: TDataObj);
 var
   lEncoder : TBase64StringEncoding;
   lSS: TStringStream;
-  lMS: TMemoryStream;
 begin
   if aDataObj.DataType.Code = cDataTypeBinary then
   begin
@@ -3779,11 +3952,53 @@ begin
     result[i] := self.Strings[i];
 end;
 
+{ TDetachableMemoryStream }
+
+destructor TDetachableMemoryStream.Destroy;
+begin
+  if Size=0 then    // if the size is over zero, we are not calling the Clear method here because something else is taking ownership of the memory we allocated.
+    clear;          // if the size is zero.  Which means we didn't put anything into it, we have to do a clear because the capacity could have been set and it could be bigger than zero.
+//  inherited;     //DO NOT call inherited destroy as this will then go to TMemoryStream.Destroy which will free the allocated memory which we do NOT want to do.
+end;
+
+
+
+
+
+procedure InitObjectIDGenerator;
+var
+  lComputerName:string;
+  i,l:integer;
+begin
+  // We need to setup the number that represents this Machine and the random starting value for the sequence number whenever we ask TDataObjectID to generate a new ID.
+  begin
+    l:=MAX_PATH;
+    SetLength(lComputerName,l);
+    if GetComputerName(PChar(lComputerName),cardinal(l)) then
+      SetLength(lComputerName,l)
+    else
+      lComputerName:=GetEnvironmentVariable('COMPUTERNAME');
+
+    gNewObjectID_MachineID:=$10101;
+    for i:=1 to Length(lComputerName) do
+    begin
+      case lComputerName[i] of
+        '0'..'9':
+          gNewObjectID_MachineID:=(gNewObjectID_MachineID*36+(byte(lComputerName[i]) and $0F)) and $FFFFFF;
+        'A'..'Z','a'..'z':
+          gNewObjectID_MachineID:=(gNewObjectID_MachineID*36+(byte(lComputerName[i]) and $1F)+9) and $FFFFFF;
+        //else ignore
+      end;
+    end;
+  end;
+
+  //GetTickCount returns a cardinal and the gNewObjectID_Counter is an integer
+  gNewObjectID_Counter:=GetTickCount;  // Generate a random starting point.
+end;
+
+
 initialization
   gRttiContext := TRttiContext.Create;   // we make our own RttiContext to use for RTTI assignment.
-
-
-
-
+  InitObjectIDGenerator;
 
 end.

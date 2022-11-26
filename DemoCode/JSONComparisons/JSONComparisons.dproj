@@ -141,7 +141,6 @@
             <Form>Form15</Form>
             <FormType>dfm</FormType>
         </DCCReference>
-        <DCCReference Include="..\..\..\commonSource\src\DataObjects2JSON.pas"/>
         <DCCReference Include="..\..\..\commonSource\src\DataObjects.pas"/>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>
