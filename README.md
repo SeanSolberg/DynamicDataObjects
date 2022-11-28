@@ -24,4 +24,51 @@ There are a few future features that we have planned such as:
 
 Each serializer class may introduce some properties that affect the serialization.  For example, the JSON serializer can produce with tight formatting or human text readable formatting. The JSON serialization supports ASCII, ANSI, UTF8, UTF7 or Unicode character encodings. 
 
+# Code Example
+procedure TForm15.Button5Click(Sender: TObject);
+var
+  lDataObj: TDataObj;
+  lJSON: TJsonStreamer;
+  lFS: TFileStream;
+begin
+  lDataObj:=TDataObj.Create;
+  try
+    // Using RTTI, copy all published properties from the current form into lDataObj
+    lDataObj.AsFrame.NewSlot('Form').AssignFrom(self);
+
+    // Using each of the serializers included into this project, save to a file by
+    // automatically choosing the serializer class via the filename extension, and
+    // using each of the serializers default serialization properties.
+    lDataObj.WriteToFile('c:\temp\SampleForm.dataObj');
+    lDataObj.WriteToFile('c:\temp\SampleForm.bson');
+    lDataObj.WriteToFile('c:\temp\SampleForm.cbor');
+    lDataObj.WriteToFile('c:\temp\SampleForm.ddo');
+    lDataObj.WriteToFile('c:\temp\SampleForm.ion');
+    lDataObj.WriteToFile('c:\temp\SampleForm.smile');
+    lDataObj.WriteToFile('c:\temp\SampleForm.ubj');
+
+    // This is an example that serializes to JSON with more detailed control over how the serialization should be structured.
+    lFS:=TFileStream.Create('c:\temp\SampleForm.json',fmCreate);   // Create a fileStream to write to.
+    try
+      lJSON:=TJsonStreamer.Create(lFS);                 // Create a JSON streamer and set some properties
+      try
+        lJSON.Encoding := TEncoding.ASCII;
+        lJSON.Style := TJsonStyle.cJsonHumanReadable;   // Make this human readable.
+        lJSON.Indention := 2;
+        lJSON.EncodeNonAsciiCharacters := true;         // Since we are character encoding to ascii, we need to make sure all non-ascii characters are escaped.
+        lJSON.IncludeEncodingPreamble := true;        // Ascii doesn't have a preamble, but UTF8 or Unicode does
+
+        lJSON.Encode(lDataObj);
+      finally
+        lJSON.Free;
+      end;
+    finally
+      lFS.Free;
+    end;
+  finally
+    lDataObj.Free;
+  end;
+end;
+
+
 I have three general purpose executables that are built upon this library:  A standalone editor executable called the DataObject Editor, a windows explorer previewer dll so these file types can be viewed directly in the preview pane, and a Delphi plugin that lets you see the data within a DataObject while debugging.  The source code for these applications are not yet made public as they are just not quite baked enough, but they are coming.
