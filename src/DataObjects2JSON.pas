@@ -106,23 +106,14 @@ implementation
 uses DateUtils, IdCoderMIME;
 
 
-const cHexDecimalConvert: array[Byte] of Byte = (
+const cHexDecimalConvert: array[0..102] of Byte = (
    $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff, {00-$0F}
    $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff, {10-$1F}
    $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff, {20-2F}
    0,    1,    2,    3,    4,    5,    6,    7,    8,    9,    $ff,  $ff,  $ff,  $ff,  $ff,  $ff, {30-3F}
-   $ff,  10,   11,   12,   13,   14,   15,   $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff, {40-4F}
+   $ff,  10,   11,   12,   13,   14,   15,   $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff, {40-4F}    //A-F
    $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff, {50-5F}
-   $ff,  10,   11,   12,   13,   14,   15,   $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff, {60-6F}
-   $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff, {70-7F}
-   $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff, {80-8F}
-   $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff, {90-9F}
-   $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff, {A0-AF}
-   $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff, {B0-BF}
-   $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff, {C-CF}
-   $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff, {D0-DF}
-   $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff, {E0-EF}
-   $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff,  $ff); {F0-FF}
+   $ff,  10,   11,   12,   13,   14,   15);                                                       {60-66}    //a-f
 
 type
   PParseContext = ^TParseContext;
@@ -135,16 +126,12 @@ type
     AllowParsingSymbols: boolean;
     JSON: String;
 
-
-
     procedure SkipSpaces;
     function eof: boolean;
     function CurrentChar: Char;
     procedure IncIndex;
     function HasNumberOfChars(aCount: integer): boolean;
     function CurrentCharacterIndex: integer;
-
-//    procedure InitializeJumpTable;
   end;
 
   function ParseAnyType(aContext: PParseContext; aDataObj: TDataObj): boolean; forward;
@@ -164,6 +151,8 @@ type
   function ParseObjectID(aContext: PParseContext; aDataObj: TDataObj): boolean; forward;
   function ParseISODate(aContext: PParseContext; aDataObj: TDataObj): boolean; forward;
   function ParseFrame(aContext: PParseContext; aDataObj: TDataObj): boolean; forward;
+  function ParseI(aContext: PParseContext; aDataObj: TDataObj): boolean; forward;
+
 
 
 
@@ -177,14 +166,14 @@ const cJumpTable: array[#0..#127] of TJumpFunction =
   ParseNumber,ParseNumber,ParseNumber,ParseNumber,ParseNumber,ParseNumber,ParseNumber,ParseNumber,                                          //#48..#55:   '0' - '7'
   ParseNumber,ParseNumber,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,            //#56..#63    #56='8', #57='9'
 
-  ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseFalse,ParseInvalidChar,        //#64..#71:   #70='F'
-  ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseN,ParseObjectID,               //#72..#79:   #78='N', #79='O'
+  ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseFalse,ParseInvalidChar,        //#64..#71:   #65='I', #70='F'
+  ParseInvalidChar,ParseI,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseN,ParseObjectID,                         //#72..#79:   #78='N', #79='O'
   ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseTrue,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,         //#80..#87:   #84='T'
   ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseArray,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,        //#88..#95:   #91='['
   ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseFalse,ParseInvalidChar,        //#96..#103:  #102='f'
-  ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseN,ParseObjectID,               //#104..#111: #110='n', #111='o'
+  ParseInvalidChar,ParseI,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseN,ParseObjectID,                         //#104..#111: #105='i', #110='n', #111='o'
   ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseTrue,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,         //#112..#119: #116='t'
-  ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseFrame,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar   //#120..#127: #123='{'
+  ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseFrame,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar         //#120..#127: #123='{'
 );
 
 
@@ -288,11 +277,13 @@ end;
       aContext.CurrentCharPtr := lChPtr+1;          // Tell our context that we finished parsing the string all the way up through the ending quote by positioning it to one past that character.
     end;
 
-    function LocalHexConvert(aChr: Char): Byte;
+    function LocalHexConvert(aChr: Char): Byte; inline;
     begin
       if aChr <= 'f' then
       begin
+        {$R-}   // don't need range checking because the range was just limited in the above IF.
         result := cHexDecimalConvert[ord(aChr)];
+        {$R+}
       end
       else
       begin
@@ -355,14 +346,14 @@ end;
                   inc(lChPtr);   // Get past the 'u' character
                   if lChPtr+3*sizeof(Char) <= aContext.EndPtr then
                   begin
-                    lUnicodeCH1 := LocalHexConvert(lChPtr^);  //    cHexDecimalConvert[ord(lChPtr^)];   // Finish dealing with characters that are over 255.
+                    lUnicodeCH1 := LocalHexConvert(lChPtr^);
                     inc(lChPtr);
                     lUnicodeCH2 := LocalHexConvert(lChPtr^);
                     inc(lChPtr);
                     lUnicodeCH3 := LocalHexConvert(lChPtr^);
                     inc(lChPtr);
                     lUnicodeCH4 := LocalHexConvert(lChPtr^);
-                    inc(lChPtr);    // Now points past the 4 escapting characters
+                    inc(lChPtr);    // Now points past the 4 escaping characters
                     if (lUnicodeCH1 <= 15) and (lUnicodeCH2 <= 15) and (lUnicodeCH3 <= 15) and (lUnicodeCH4 <= 15)then
                     begin
                       lChar := WideChar((lUnicodeCH1 shl 12) or (lUnicodeCH2 shl 8) or (lUnicodeCH3 shl 4) or lUnicodeCH4);  // we have four valid hex characters so stitch them together into a unicode Character.
@@ -556,10 +547,6 @@ end;
   end;
 
 
-
-
-
-
   //Try to parse an array from fJSON.  Needs to start with "["
   // return 0 if this is not the start of an array
   // return 1 if this is an array and all the items in the array serialized and completed the array correctly
@@ -606,11 +593,85 @@ end;
     aContext.IncIndex;   // get moved past the ] chracter.
   end;
 
-  // Try to parse the INF or -INF identifier from fJSON to represent Infinity and Negative Infinity.
+  // Try to parse the INF identifier from fJSON to represent Infinity.
   // NOTE that parsing this is not really supported by the core JSON spec.  But we support it along with Nan
   // This seems like a lot of code, but it is writting in such a way to be fast and efficient to execute.
-  // FINISH - Needs to support -INF too.
+  // In order to call this function, aContext must already have been determined to point to a 'I' or 'i' character
   function ParseInfinity(aContext: PParseContext; aDataObj: TDataObj): boolean;
+  const
+    cHighCases: array[0..7] of char = ('I','N','F','I','N','I','T','Y');
+    cLowCases: array[0..7] of char = ('i','n','f','i','n','i','t','y');
+  var
+    lPtr: PChar;
+    lPtrHigh: PChar;
+    lPtrLow: PChar;
+    i: Cardinal;
+  begin
+    result := false;
+    if aContext.HasNumberOfChars(8) then
+    begin
+      lPtr := aContext.CurrentCharPtr;
+      lPtrHigh := cHighCases;
+      lPtrLow := cLowCases;
+
+      for i := low(cHighCases) to High(cHighCases) do
+      begin
+        if not ((lPtr^=lPtrLow^) or (lPtr^=lPtrHigh^)) then
+        begin
+          exit; // did not have a character to character match
+        end;
+        inc(lPtr);
+        inc(lPtrLow);
+        inc(lPtrHigh);
+      end;
+
+      result := true;   // if we did not exit above then we had a match to our constant string.
+      inc(aContext.CurrentCharPtr, 8);
+      aDataObj.AsDouble := Double.PositiveInfinity;    // Setting as INF         // Note that we do not support a Single version of Nan
+    end;
+  end;
+
+  // Try to parse the -INF identifier from fJSON to represent Negative Infinity.
+  // In order to call this function, aContext must already have been determined to point to a '-' character
+  function ParseNegativeInfinity(aContext: PParseContext; aDataObj: TDataObj): boolean;
+  const
+    cHighCases: array[0..8] of char = ('-','I','N','F','I','N','I','T','Y');
+    cLowCases: array[0..8] of char = ('-','i','n','f','i','n','i','t','y');
+  var
+    lPtr: PChar;
+    lPtrHigh: PChar;
+    lPtrLow: PChar;
+    i: Cardinal;
+  begin
+    result := false;
+    if aContext.HasNumberOfChars(9) then
+    begin
+      lPtr := aContext.CurrentCharPtr;
+      lPtrHigh := cHighCases;
+      lPtrLow := cLowCases;
+
+      for i := low(cHighCases) to High(cHighCases) do
+      begin
+        if not ((lPtr^=lPtrLow^) or (lPtr^=lPtrHigh^)) then
+        begin
+          exit; // did not have a character to character match
+        end;
+        inc(lPtr);
+        inc(lPtrLow);
+        inc(lPtrHigh);
+      end;
+
+      result := true;   // if we did not exit above then we had a match to our constant string.
+      inc(aContext.CurrentCharPtr, 9);
+      aDataObj.AsDouble := Double.NegativeInfinity;    // Setting as -INF         // Note that we do not support a Single version of Nan
+    end;
+  end;
+
+  // Try to parse the INF identifier from fJSON to represent Infinity.
+  // NOTE that parsing this is not really supported by the core JSON spec.  But we support it along with Nan
+  // This seems like a lot of code, but it is writting in such a way to be fast and efficient to execute.
+  // In order to call this function, aContext must already have been determined to point to a 'I' or 'i' character
+  function ParseInf(aContext: PParseContext; aDataObj: TDataObj): boolean;
   const
     cHighCases: array[0..2] of char = ('I','N','F');
     cLowCases: array[0..2] of char = ('i','n','f');
@@ -631,7 +692,7 @@ end;
       begin
         if not ((lPtr^=lPtrLow^) or (lPtr^=lPtrHigh^)) then
         begin
-          exit;    // did not have a character to character match so we must break out with a fail.
+          exit; // did not have a character to character match
         end;
         inc(lPtr);
         inc(lPtrLow);
@@ -640,23 +701,56 @@ end;
 
       result := true;   // if we did not exit above then we had a match to our constant string.
       inc(aContext.CurrentCharPtr, 3);
-      aDataObj.AsDouble := 0/0;    // Setting as Nan         // Note that we do not support a Single version of Nan
+      aDataObj.AsDouble := Double.PositiveInfinity;    // Setting as INF         // Note that we do not support a Single version of Nan
     end;
   end;
 
-  function ParseNegativeInfinity(aContext: PParseContext; aDataObj: TDataObj): boolean;
+  // Try to parse the -INF identifier from fJSON to represent Negative Infinity.
+  // In order to call this function, aContext must already have been determined to point to a '-' character
+  function ParseNegativeInf(aContext: PParseContext; aDataObj: TDataObj): boolean;
+  const
+    cHighCases: array[0..3] of char = ('-','I','N','F');
+    cLowCases: array[0..3] of char = ('-','i','n','f');
+  var
+    lPtr: PChar;
+    lPtrHigh: PChar;
+    lPtrLow: PChar;
+    i: Cardinal;
   begin
     result := false;
-    // FINISH
+    if aContext.HasNumberOfChars(4) then
+    begin
+      lPtr := aContext.CurrentCharPtr;
+      lPtrHigh := cHighCases;
+      lPtrLow := cLowCases;
+
+      for i := low(cHighCases) to High(cHighCases) do
+      begin
+        if not ((lPtr^=lPtrLow^) or (lPtr^=lPtrHigh^)) then
+        begin
+          exit; // did not have a character to character match
+        end;
+        inc(lPtr);
+        inc(lPtrLow);
+        inc(lPtrHigh);
+      end;
+
+      result := true;   // if we did not exit above then we had a match to our constant string.
+      inc(aContext.CurrentCharPtr, 4);
+      aDataObj.AsDouble := Double.NegativeInfinity;    // Setting as -INF         // Note that we do not support a Single version of Nan
+    end;
   end;
+
 
 
 
   function ParseNegative(aContext: PParseContext; aDataObj: TDataObj): boolean;
   begin
-    result := ParseNumber(aContext, aDataObj);
+    result := ParseNumber(aContext, aDataObj);              // Most likely, a '-' sign will give us a number so try that first.
     if not result then
       result := ParseNegativeInfinity(aContext, aDataObj);
+    if not result then
+      result := ParseNegativeInf(aContext, aDataObj);
   end;
 
   // NOTE:  the following code blocks are coded a bit wierdly considering the individual character comparisons.  Turns out, when looking for specific
@@ -943,6 +1037,15 @@ end;
         end;
       end;
     end;
+  end;
+
+  function ParseI(aContext: PParseContext; aDataObj: TDataObj): boolean;
+  begin
+    result := ParseInfinity(aContext, aDataObj);      // formally JSON5 compliant
+    if not result then
+      result := ParseINF(aContext, aDataObj);         // shortcut INF
+    if not result then
+      result := ParseISODate(aContext, aDataObj);     // will only do an ISO date if the feature is turned on.
   end;
 
 
@@ -1357,9 +1460,9 @@ begin
   //        fsNDenormal
   //        fsPositive
   //        fsNegative
-          fsInf: fStringBuilder.Append('Null');
-          fsNInf: fStringBuilder.Append('Null');
-          fsNaN: fStringBuilder.Append('Null');
+          fsInf: fStringBuilder.Append('null');
+          fsNInf: fStringBuilder.Append('null');
+          fsNaN: fStringBuilder.Append('null');
         else
           fStringBuilder.Append(aDataobj.getStore^.fDataSingle);
         end;
@@ -1393,9 +1496,9 @@ begin
   //        fsNDenormal
   //        fsPositive
   //        fsNegative
-          fsInf: fStringBuilder.Append('Null');
-          fsNInf: fStringBuilder.Append('Null');
-          fsNaN: fStringBuilder.Append('Null');
+          fsInf: fStringBuilder.Append('null');
+          fsNInf: fStringBuilder.Append('null');
+          fsNaN: fStringBuilder.Append('null');
         else
           fStringBuilder.Append(aDataobj.getStore^.fDataDouble);
         end;
@@ -1887,7 +1990,8 @@ begin
     if fIncludeEncodingPreamble then
     begin
       lBytes := fEncoding.GetPreamble;
-      fStream.Write(lBytes[0], length(lBytes));
+      if length(lBytes)>0 then
+        fStream.Write(lBytes[0], length(lBytes));
     end;
 
     lBytes:=fEncoding.GetBytes(fJSON);                  // perform the encoding step to return the actual bytes that the string should be encoded to.  For example, convert from unicode to UTF8

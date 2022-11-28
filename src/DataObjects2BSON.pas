@@ -625,7 +625,13 @@ begin
       aStream.Write(lInt32, 4);
 
       // Now write the string bytes including the null terminator byte
-      aStream.Write(lUTF8String[1], lInt32);
+      if lInt32 > 1 then
+        aStream.Write(lUTF8String[1], lInt32)
+      else
+      begin
+        lByte := 0;
+        aStream.WriteData(lByte);    // we are writing an empty string which only contains the ending null byte.
+      end;
     end;
 
     cDataTypeStringList: begin
