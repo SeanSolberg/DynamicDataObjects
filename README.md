@@ -51,15 +51,15 @@ begin
     // This is an example that serializes to JSON with more detailed control over how the serialization should be structured.
     lFS:=TFileStream.Create('c:\temp\SampleForm.json',fmCreate);   // Create a fileStream to write to.
     try
-      lJSON:=TJsonStreamer.Create(lFS);                 // Create a JSON streamer and set some properties
+      lJSON:=TJsonStreamer.Create(lFS);                 // Create a JSON streamer that is linked to the file stream we will produce.
       try
-        lJSON.Encoding := TEncoding.ASCII;
+        lJSON.Encoding := TEncoding.ASCII;              // Set a bunch of serialization properties to define how we want the JSON produced.  
         lJSON.Style := TJsonStyle.cJsonHumanReadable;   // Make this human readable.
-        lJSON.Indention := 2;
+        lJSON.Indention := 2;                           // Each nested item is indented 2 characters with spaces. 
         lJSON.EncodeNonAsciiCharacters := true;         // Since we are character encoding to ascii, we need to make sure all non-ascii characters are escaped.
-        lJSON.IncludeEncodingPreamble := true;        // Ascii doesn't have a preamble, but UTF8 or Unicode does
+        lJSON.IncludeEncodingPreamble := true;          // Ascii doesn't have a preamble, but UTF8 or Unicode does
 
-        lJSON.Encode(lDataObj);
+        lJSON.Encode(lDataObj);                         // This tells the serializer to produce the JSON into the stream that is linked to the lJSON serializer. 
       finally
         lJSON.Free;
       end;
