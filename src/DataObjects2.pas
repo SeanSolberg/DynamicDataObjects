@@ -824,6 +824,7 @@ type
     function DeleteSlot(aSlotName: string): boolean;   // returns true if the slot was found and deleted.
     function Delete(aIndex: integer): boolean;         // returns true if the slot was found and deleted.
     function RemoveSlot(aSlot: TDataObj): boolean;     // returns true if the slot was found and deleted.
+    function IndexOfChildSlot(aSlot: TDataObj): integer;
     property Slots[aIndex: integer]: TDataObj read getSlot;
     function Slotname(aIndex: integer): string;
     procedure SetSlotname(aIndex: integer; aSlotname: string);
@@ -865,6 +866,7 @@ type
     procedure AppendFrom(aArray: TDataArray);                             // clones the slots in aArray and adds them to self.  same as CopyFrom.
     property Slots[aIndex: integer]: TDataObj read getSlot;
     procedure DeleteSlot(aIndex: integer);
+    function IndexOfChildSlot(aSlot: TDataObj): integer;
 {$ifdef cMakeMoreCompatibleWithOldDataObjects}
     procedure CopyFrom(aArray: TDataArray);  deprecated 'Use AppendFrom instead';  // clones the slots in aArray and adds them to self.  same as AppendFrom.
 {$endif}
@@ -3291,6 +3293,11 @@ begin
   result := TDataobj(fSlotList.Objects[aIndex]);
 end;
 
+function TDataFrame.IndexOfChildSlot(aSlot: TDataObj): integer;
+begin
+  result := fSlotList.IndexOfObject(aSlot);
+end;
+
 function TDataFrame.NewSlot(aSlotName: string; aRaiseExceptionIfAlreadyExists: boolean = false): TDataObj;
 begin
   result := FindSlot(aSlotName);
@@ -3682,6 +3689,11 @@ begin
   result := items[aIndex];
 end;
 
+
+function TDataArray.IndexOfChildSlot(aSlot: TDataObj): integer;
+begin
+  result := self.IndexOfItem(aSlot, TDirection.FromBeginning);
+end;
 
 function TDataArray.Reduce(aReduceProcedure: TReduceProcedure): TDataObj;
 var

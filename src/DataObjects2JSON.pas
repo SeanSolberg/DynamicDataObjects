@@ -1783,8 +1783,8 @@ begin
 
   // Setup the parsing context that is used by all the parsing procedures
   lContext.JSON := fJSON;
-  lContext.CurrentCharPtr:=@lContext.JSON[1];
-  lContext.EndPtr := @lContext.JSON[length(lContext.JSON)];    // Address of the last character in the JSON string.
+  lContext.CurrentCharPtr:=pchar(lContext.JSON);
+  lContext.EndPtr := @pchar(lContext.JSON)[length(lContext.JSON)];    // Address of the last character in the JSON string.
   lContext.formatSettings := fFormatSettings;
   lContext.AllowParsingExtendedTypes := fAllowParsingExtendedTypes;
   lContext.AllowParsingSymbols := fAllowParsingSymbols;
