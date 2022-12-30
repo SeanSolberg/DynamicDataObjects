@@ -751,7 +751,10 @@ type
 {$endif}
     //WriteToFile will look at the aFilename extension to choose a streamer class if one is not passed in through the aStreamerClass parameter.
     //by default, it will pick the ".DataObj" default streamer if a streamer cannot be determined by the parameter or the filename extension.
-    procedure WriteToFile(aFilename: string; aStreamerClass: TDataObjStreamerClass = nil);
+    procedure WriteToFile(aFilename: string; aStreamerClass: TDataObjStreamerClass = nil);  overload;
+
+    // Write to the file identified by aFilename using the instance of aStreamer given the properties that have been set on aStreamer
+    procedure WriteToFile(aFilename: string; aStreamer: TDataObjStreamerBase); overload;
   end;
 
 {$ifDef cMakeMoreCompatibleWithOldDataObjects}
@@ -856,7 +859,9 @@ type
     function Find(aFindFunction: TForEachFunction): TDataObj;   // can return nil if not found.
     procedure ForEach(aForEachFunction: TForEachProcedure; aReverseOrder: boolean = false);
     function Every(aEveryFunction: TForEachFunction): boolean;
-    function IndexOf(aString: string; aCaseInsensitive: boolean = false): integer;   // returns -1 if nothing found.
+    function IndexOf(aString: string; aCaseInsensitive: boolean = false): integer; overload;   // returns -1 if nothing found.
+    function IndexOf(aInteger: Integer; aCaseInsensitive: boolean = false): integer; overload;   // returns -1 if nothing found.
+    function IndexOf(aInt64: Int64; aCaseInsensitive: boolean = false): integer; overload;   // returns -1 if nothing found.
     function LastIndexOf(aString: string; aCaseInsensitive: boolean = false): integer;   // returns -1 if nothing found.
 
     function RemoveForEach(aEveryFunction: TForEachFunction): integer;    // returns the number of items removed.
@@ -1432,7 +1437,8 @@ begin
             result := false;
           end;
           cDataTypeBoolean: begin
-            result := false;
+            aValue := aDataObj.AsBoolean;
+            result := true;
           end;
           cDataTypeByte: begin
             aValue.FromOrdinal(aValue.TypeInfo, aDataObj.AsByte);
@@ -1947,6 +1953,16 @@ begin
       lStore.dataSparseArray.OwnsObjects := true;
       setAsArray(result);            // this will free the old TDataSparseArray and get this object to now be holding the new TDataArray.
     end;
+    cDataTypeStringList: begin
+      // we can convert a stringList into an array of strings.
+      result := TDataArray.Create;
+      for i := 0 to lStore.DataStringList.Count-1 do
+      begin
+        // instead of doing copy operations from the original collection of TDataObjs, we can leave them in place and take those objects off the original collection and put them on the new collection.
+        result.NewSlot.AsString := lStore.DataStringList[i];
+      end;
+      setAsArray(result);                                // this will free the old TDataStringList and get this object to now be holding the new TDataArray.
+    end;
   else
     // there's no data that can possibly be converted so set as a new empty TDataArray
     if fDataType.Code = cDataTypeNull then
@@ -2061,6 +2077,28 @@ end;
 function TDataObj.getAsDateTime: TDateTime;
 var
   lStore: PTDataStore;
+
+  function TryConvertingStrToDateTime(aStr: string): TDatetime;   // this local function will try to convert string representations of a date into a TDatetime use a variety of possibilities.
+  begin
+    result := StrToDateTimeDef(lStore.DataString, TDateTime(0));    // first, try a normal system local orientated dateTime string
+    if result = 0 then
+    begin
+      try
+        result := ISO8601ToDate(lStore.DataString);      // Now try an ISODate string format   Example:  "2021-01-27T00:19:08.862Z"
+      except
+        result := 0;
+      end;
+
+      if result = 0 then
+      begin
+        try
+          result := HttpToDate(lStore.DataString);      // now try a HTTP Date: Example: "Apr 9 00:00:00 2015 GMT"
+        except
+          result := 0;
+        end;
+      end;
+    end;
+  end;
 begin
   lStore := getStore;
   case fDataType.Code of
@@ -2071,8 +2109,8 @@ begin
     cDataTypeDateTime, cDataTypeDate, cDataTypeTime: result:=lStore.fDataDateTime;
     cDataTypeUTCDateTime: result := UnixToDateTime(lStore.fDataInt64);
 //    cDataTypeUTF8String: result := StrToDateTimeDef(string(UTF8string(lStore.fDataUTF8String)), TDateTime(0));
-    cDataTypeString: result := StrToDateTimeDef(lStore.DataString, TDateTime(0));
-    cDataTypeStringList: result := StrToDateTimeDef(lStore.DataStringList.text, TDateTime(0));
+    cDataTypeString: result := TryConvertingStrToDateTime(lStore.DataString);
+    cDataTypeStringList: result := TryConvertingStrToDateTime(lStore.DataStringList.text);
   else
     result:=0;
   end;
@@ -3005,8 +3043,6 @@ end; *)
 procedure TDataObj.WriteToFile(aFilename: string; aStreamerClass: TDataObjStreamerClass = nil);
 var
   lStreamer: TDataObjStreamerBase;
-  lFS: TFileStream;
-  lWS: TStreamWriteCache;
 begin
   // First, see if the streamer passed in is usable
   lStreamer := nil;
@@ -3024,27 +3060,42 @@ begin
 
   if assigned(lStreamer) then
   begin
-    lFS := TFileStream.Create(aFilename, fmCreate);
     try
-      lWS := TStreamWriteCache.Create(lFS);
-      try
-        try
-          lStreamer.Stream := lWS;
-          lStreamer.Encode(self);
-        finally
-          lStreamer.Free;
-        end;
-      finally
-        lWS.free;
-      end;
+      WriteToFile(aFilename, lStreamer);
     finally
-      lFS.Free;
+      lStreamer.Free;
     end;
   end
   else
   begin
     // If nothing concrete was found, then raise an exception.
     raise Exception.Create('Unable to create a streamer for file '+aFilename);
+  end;
+end;
+
+procedure TDataObj.WriteToFile(aFilename: string; aStreamer: TDataObjStreamerBase);
+var
+  lFS: TFileStream;
+  lWS: TStreamWriteCache;
+begin
+  if aStreamer=nil then
+  begin
+    WriteToFile(aFilename); // go choose a streamer that will then call back to WriteToFile.
+  end
+  else
+  begin
+    lFS := TFileStream.Create(aFilename, fmCreate);
+    try
+      lWS := TStreamWriteCache.Create(lFS);
+      try
+        aStreamer.Stream := lWS;
+        aStreamer.Encode(self);
+      finally
+        lWS.free;
+      end;
+    finally
+      lFS.Free;
+    end;
   end;
 end;
 
@@ -3690,6 +3741,46 @@ begin
 end;
 
 
+function TDataArray.IndexOf(aInteger: Integer; aCaseInsensitive: boolean): integer;
+var
+  i: Integer;
+  lItem: TDataObj;
+begin
+  result := -1;
+  for i := 0 to count-1 do
+  begin
+    lItem := Items[i];
+    if lItem.DataType.Code = cDataTypeInt32 then
+    begin
+      if lItem.AsInteger = aInteger then
+      begin
+        result := i;
+        break;
+      end;
+    end;
+  end;
+end;
+
+function TDataArray.IndexOf(aInt64: Int64; aCaseInsensitive: boolean): integer;
+var
+  i: Integer;
+  lItem: TDataObj;
+begin
+  result := -1;
+  for i := 0 to count-1 do
+  begin
+    lItem := Items[i];
+    if lItem.DataType.Code = cDataTypeInt64 then
+    begin
+      if lItem.AsInt64 = aInt64 then
+      begin
+        result := i;
+        break;
+      end;
+    end;
+  end;
+end;
+
 function TDataArray.IndexOfChildSlot(aSlot: TDataObj): integer;
 begin
   result := self.IndexOfItem(aSlot, TDirection.FromBeginning);
@@ -3711,7 +3802,7 @@ var
   i: Integer;
 begin
   result := 0;
-  for i := count-1 to 0 do
+  for i := count-1 downto 0 do
   begin
     if aEveryFunction(self, items[i], i) then
     begin
@@ -3720,6 +3811,7 @@ begin
     end;
   end;
 end;
+
 
 
 { TDataTag }
