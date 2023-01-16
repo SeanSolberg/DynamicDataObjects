@@ -4,23 +4,32 @@ unit DataObjects2JSON;
 
 
 // TODO:  check that the Dates, DateTimes, Times are put to JSON in the ISO format?  Or are there options for the format encoding/decoding
+//        Improve the performance of the TDataArray.DeleteSlot method so that packing can be deferred.
 
 interface
 
 uses DataObjects2, DataObjects2Streamers, SysUtils, Classes, DataObjects2Utils;
-//  windows;   // used for timing testing only.
 
 type
   TJsonStyle = (cJsonTight, cJsonHumanReadable);
 
-  // This class helper Gives us the ability to do this:   lSomeString := lDataObj.JSON;    or    lDataObj.JSON := lSomeString;  When producing JSON, it uses the Tight JSON formatting.
-  // if you want formatted JSON text, then call lSomeString := lDataObj.JSONFormatted;
+  // This class helper Gives us the ability to do the following
+  //   lSomeString := lDataObj.JSON;  When producing JSON, it uses the Tight JSON formatting.
+  //     or
+  //   lSomeString := lDataObj.JSONFormatted;  // if you want formatted JSON text, then call this
+  //     or
+  //   lDataObj.JSON := lSomeString;
   TDataObjectsJSONHelper = class helper for DataObjects2.TDataObj
   public
     procedure setJSON(const Value: string);
     function GetAsJSON: string;
     property JSON: string read getAsJSON write setJSON;
     function JSONFormatted(aIndention: byte = 2): string;
+  end;
+
+  EJSONParsingException = class(Exception)
+  public
+    CharacterPosition: int64;
   end;
 
 
@@ -47,14 +56,49 @@ type
     fInitialBufferCapacity: Cardinal;
     fSupportJSON5: boolean;                      // only used during streaming.
 
+    // working variables used during the parsing.
+    fCurrentCharPtr: PChar;
+    fEndPtr: PChar;           // Pointer to the last allowed character in the JSON string.
+
+    // working helper functions used during the parsing.
+    procedure SkipSpaces; inline;
+    function eof: boolean; inline;
+    function CurrentChar: Char; inline;
+    procedure IncIndex; inline;
+    function HasNumberOfChars(aCount: integer): boolean; inline;
+    procedure RaiseParsingException(aMsg: string; aCharacterPos: PChar);
+
+
+    // the following set of methods are used in the parsing, most of which participate in the JumpTable.
+    function ParseString(var oString: string): boolean;
+    function ParseSlotname(var oSlotname: string): boolean;
+    function ParseAnyType(aDataObj: TDataObj): boolean;
+    function ParseInvalidChar(aDataObj: TDataObj): boolean;
+    function ParseStringValue(aDataObj: TDataObj): boolean;
+    function ParseNumber(aDataObj: TDataObj): boolean;
+    function ParseArray(aDataObj: TDataObj): boolean;
+    function ParseInfinity(aDataObj: TDataObj): boolean;
+    function ParseINF(aDataObj: TDataObj): boolean;
+    function ParseNegativeInfinity(aDataObj: TDataObj): boolean;
+    function ParseNegativeInf(aDataObj: TDataObj): boolean;
+    function ParseNegative(aDataObj: TDataObj): boolean;
+    function ParseTrue(aDataObj: TDataObj): Boolean;
+    function ParseFalse(aDataObj: TDataObj): boolean;
+    function ParseNull(aDataObj: TDataObj): boolean;
+    function ParseNan(aDataObj: TDataObj): boolean;
+    function ParseN(aDataObj: TDataObj): boolean;
+    function ParseObjectID(aDataObj: TDataObj): boolean;
+    function ParseISODate(aDataObj: TDataObj): boolean;
+    function ParseFrame(aDataObj: TDataObj): boolean;
+    function ParseI(aDataObj: TDataObj): boolean;
+    function TryParsingSymbol(aDataObj: TDataObj): integer;  //0=nothing applicable, 1=successful parse, 2=Applicable, but error in parsing.
 
     procedure SetEncoding(aEncoding: TEncoding);
-
     procedure ReadFromDataObjInternal(aDataObj: TDataObj);
     function IncInd: string;   // increment the indent
     function DecInd: string;
-    procedure parseFromJson(aObj: TDataObj);
-    procedure WriteStringEncodingSpecialJSONCharacters(aString: string);
+    procedure WriteStringEncodingSpecialJSONCharacters(const aString: string);
+    procedure ParseFromJson(aObj: TDataObj);
     procedure SetJSON(const Value: string);
   public
     function Clone: TDataObjStreamerBase; override;
@@ -97,8 +141,13 @@ type
     class function DataObjToJson(aDataObj: TDataObj; aStyle: TJSONStyle=cJsonTight; aIndent: byte = 2; aEncodeNonAsciiCharacters: boolean=false): string;
 
     // Parse a JSON string and put the results into aDataObj.
-    class procedure JsonToDataObj(aJson: string; aDataObj: TDataObj);
+    class procedure JsonToDataObj(const aJson: string; aDataObj: TDataObj);
+
+    class function CreateDataObjFromJSON(const aJson: string): TDataObj;
   end;
+
+  resourceString
+    SJsonParseMessageAt = '%s at %d';
 
 
 implementation
@@ -116,64 +165,26 @@ const cHexDecimalConvert: array[0..102] of Byte = (
    $ff,  10,   11,   12,   13,   14,   15);                                                       {60-66}    //a-f
 
 type
-  PParseContext = ^TParseContext;
-  TJumpFunction = function(aContext: PParseContext; aDataObj: TDataObj): boolean;
-  TParseContext = Record
-    CurrentCharPtr: PChar;
-    EndPtr: PChar;           // Pointer to the last allowed character in the JSON string.
-    FormatSettings: TFormatSettings;
-    AllowParsingExtendedTypes: boolean;
-    AllowParsingSymbols: boolean;
-    JSON: String;
+  TJumpFunction = function(aDataObj: TDataObj): boolean of object;
 
-    procedure SkipSpaces;
-    function eof: boolean;
-    function CurrentChar: Char;
-    procedure IncIndex;
-    function HasNumberOfChars(aCount: integer): boolean;
-    function CurrentCharacterIndex: integer;
-  end;
-
-  function ParseAnyType(aContext: PParseContext; aDataObj: TDataObj): boolean; forward;
-  function ParseInvalidChar(aContext: PParseContext; aDataObj: TDataObj): boolean; forward;
-  function ParseString(aContext: PParseContext; var oString: string): boolean; forward;
-  function ParseStringValue(aContext: PParseContext; aDataObj: TDataObj): boolean; forward;
-  function ParseNumber(aContext: PParseContext; aDataObj: TDataObj): boolean; forward;
-  function ParseArray(aContext: PParseContext; aDataObj: TDataObj): boolean; forward;
-  function ParseInfinity(aContext: PParseContext; aDataObj: TDataObj): boolean; forward;
-  function ParseNegativeInfinity(aContext: PParseContext; aDataObj: TDataObj): boolean; forward;
-  function ParseNegative(aContext: PParseContext; aDataObj: TDataObj): boolean; forward;
-  function ParseTrue(aContext: PParseContext; aDataObj: TDataObj): Boolean; forward;
-  function ParseFalse(aContext: PParseContext; aDataObj: TDataObj): boolean; forward;
-  function ParseNull(aContext: PParseContext; aDataObj: TDataObj): boolean; forward;
-  function ParseNan(aContext: PParseContext; aDataObj: TDataObj): boolean; forward;
-  function ParseN(aContext:  PParseContext; aDataObj: TDataObj): boolean; forward;
-  function ParseObjectID(aContext: PParseContext; aDataObj: TDataObj): boolean; forward;
-  function ParseISODate(aContext: PParseContext; aDataObj: TDataObj): boolean; forward;
-  function ParseFrame(aContext: PParseContext; aDataObj: TDataObj): boolean; forward;
-  function ParseI(aContext: PParseContext; aDataObj: TDataObj): boolean; forward;
-
-
-
-
-const cJumpTable: array[#0..#127] of TJumpFunction =
- (ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,  //#0..#7
-  ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,  //#8..#15
-  ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,  //#16..#23
-  ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,  //#24..#31
-  ParseInvalidChar,ParseInvalidChar,ParseStringValue,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseStringValue,  //#32..#39:   #34=", #39='
-  ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseNegative,ParseInvalidChar,ParseInvalidChar,     //#40..#47:   #45=-
-  ParseNumber,ParseNumber,ParseNumber,ParseNumber,ParseNumber,ParseNumber,ParseNumber,ParseNumber,                                          //#48..#55:   '0' - '7'
-  ParseNumber,ParseNumber,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,            //#56..#63    #56='8', #57='9'
-
-  ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseFalse,ParseInvalidChar,        //#64..#71:   #65='I', #70='F'
-  ParseInvalidChar,ParseI,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseN,ParseObjectID,                         //#72..#79:   #78='N', #79='O'
-  ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseTrue,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,         //#80..#87:   #84='T'
-  ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseArray,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,        //#88..#95:   #91='['
-  ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseFalse,ParseInvalidChar,        //#96..#103:  #102='f'
-  ParseInvalidChar,ParseI,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseN,ParseObjectID,                         //#104..#111: #105='i', #110='n', #111='o'
-  ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseTrue,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,         //#112..#119: #116='t'
-  ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseFrame,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar,ParseInvalidChar         //#120..#127: #123='{'
+// This is the magic method jump table that helps us with improving performance in parsing JSON text.
+const cJumpTable: array[#0..#127] of pointer =
+ (@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,  //#0..#7
+  @TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,  //#8..#15
+  @TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,  //#16..#23
+  @TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,  //#24..#31
+  @TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseStringValue,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseStringValue,  //#32..#39:   #34=", #39='
+  @TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseNegative,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,     //#40..#47:   #45=-
+  @TJsonStreamer.ParseNumber,@TJsonStreamer.ParseNumber,@TJsonStreamer.ParseNumber,@TJsonStreamer.ParseNumber,@TJsonStreamer.ParseNumber,@TJsonStreamer.ParseNumber,@TJsonStreamer.ParseNumber,@TJsonStreamer.ParseNumber,                                          //#48..#55:   '0' - '7'
+  @TJsonStreamer.ParseNumber,@TJsonStreamer.ParseNumber,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,            //#56..#63    #56='8', #57='9'
+  @TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseFalse,@TJsonStreamer.ParseInvalidChar,        //#64..#71:   #65='I', #70='F'
+  @TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseI,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseN,@TJsonStreamer.ParseObjectID,                         //#72..#79:   #78='N', #79='O'
+  @TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseTrue,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,         //#80..#87:   #84='T'
+  @TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseArray,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,        //#88..#95:   #91='['
+  @TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseFalse,@TJsonStreamer.ParseInvalidChar,        //#96..#103:  #102='f'
+  @TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseI,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseN,@TJsonStreamer.ParseObjectID,                         //#104..#111: #105='i', #110='n', #111='o'
+  @TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseTrue,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,         //#112..#119: #116='t'
+  @TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseFrame,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar         //#120..#127: #123='{'
 );
 
 
@@ -182,995 +193,1054 @@ const cJumpTable: array[#0..#127] of TJumpFunction =
    Note also, that we are not including high-up unicode characters that are special kinds of white space such as  00A0:No break space,
    200B:Zero width Space, 3000:ideographic space, 202F: narrow no-break space, 205F: Medium mathematical space, FEFF:Zero width no-break space, 2000-200B: assorted space characters, etc.
    This approach should probably be just fine since these special space characters are valid within JSON strings, but probably are not valid as white-space between JSON elements. }
-procedure TParseContext.SkipSpaces;
+procedure TJsonStreamer.SkipSpaces;
 begin
-  while (CurrentCharPtr <= EndPtr) and (CurrentCharPtr^ < #33) do
-    inc(CurrentCharPtr);
+  while (fCurrentCharPtr <= fEndPtr) and (fCurrentCharPtr^ < #33) do
+    inc(fCurrentCharPtr);
 end;
 
-function TParseContext.CurrentChar: Char;
+function TJsonStreamer.CurrentChar: Char;
 begin
-  result := CurrentCharPtr^;
+  result := fCurrentCharPtr^;
 end;
 
-function TParseContext.CurrentCharacterIndex: integer;
+function TJsonStreamer.eof: Boolean;
 begin
-  result := CurrentCharPtr - @JSON[1];
+  result := fCurrentCharPtr > fEndPtr;
 end;
 
-function TParseContext.eof: Boolean;
-begin
-  result := CurrentCharPtr > EndPtr;
-end;
-
-
-function TParseContext.HasNumberOfChars(aCount: integer): boolean;
+function TJsonStreamer.HasNumberOfChars(aCount: integer): boolean;
 var
   lPointer: PChar;
 begin
-  lPointer := CurrentCharPtr;
+  lPointer := fCurrentCharPtr;
   inc(lPointer, aCount);
-  result := lPointer <= EndPtr;
+  result := lPointer <= fEndPtr;
 end;
 
-procedure TParseContext.IncIndex;
+procedure TJsonStreamer.IncIndex;
 begin
-  inc(CurrentCharPtr);
+  inc(fCurrentCharPtr);
 end;
 
 //************************************************************************************
 // The following block of functions are called to by the cJumpTable during decoding.
 //************************************************************************************
 
-  function ParseInvalidChar(aContext: PParseContext; aDataObj: TDataObj): boolean;
+function TJsonStreamer.ParseInvalidChar(aDataObj: TDataObj): boolean;
+begin
+  result := false;   // This is a handler routine for the jumpTable so we can handle characters in the jumpTable that we should never encounter unless we have invalid JSON or we are allowing the parsing of Symbols.
+end;
+
+// Try to parse a string from fJSON and along the way, do any special escaping handling such as \uxxxxx, etc.
+function TJsonStreamer.ParseString(var oString: string): boolean;
+var
+  lSB: TStringBuilder;     // This may be nil if it is not needed.  Only needed IF/When we need to do string concatenations due to escape processing.
+  lStartsWithSingleQuote: boolean;
+  lUnicodeCH1: cardinal;   // should this be a word?
+  lUnicodeCH2: cardinal;   // should this be a word?
+  lUnicodeCH3: cardinal;   // should this be a word?
+  lUnicodeCH4: cardinal;   // should this be a word?
+  lChar: char;
+  lChPtr: PChar;
+  lStartPtr: PChar;
+  lCharCount: integer;
+
+  procedure AppendWorkStringWithChar(aNewChar: Char);
+  var
+    lSize: integer;
   begin
-    result := false;   // This is a handler routine for the jumpTable so we can handle characters in the jumpTable that we should never encounter unless we have invalid JSON or we are allowing the parsing of Symbols.
+    if not assigned(lSB) then
+    begin
+      lSize := 1024;               // lets start with a decent starting buffer size, much bigger than the normal default
+      if lCharCount > lSize then
+      begin
+        lSize := lCharCount * 3 div 2;   // 50% more than we need so we have some initial room to add more.
+      end;
+      lSB:=TStringBuilder.Create(lSize);
+    end;
+
+    // will move the characters from the source buffer we are looking through to the WorkString and append aNewChar which came from the escaping.
+    lSB.Append(lStartPtr, 0, lCharCount);
+    lSB.Append(aNewChar);
+    lStartPtr := lChPtr;    // make our new starting Pointer be where our current working pointer is now.
+    lCharCount := 0;
   end;
 
-  // Try to parse a string from fJSON and along the way, do any special escaping handling such as \uxxxxx, etc.
-  function ParseString(aContext: PParseContext; var oString: string): boolean;
-  var
-    lSB: TStringBuilder;     // This may be nil if it is not needed.  Only needed IF/When we need to do string concatenations due to escape processing.
-    lStartsWithSingleQuote: boolean;
-    lUnicodeCH1: cardinal;   // should this be a word?
-    lUnicodeCH2: cardinal;   // should this be a word?
-    lUnicodeCH3: cardinal;   // should this be a word?
-    lUnicodeCH4: cardinal;   // should this be a word?
-    lChar: char;
-    lChPtr: PChar;
-    lStartPtr: PChar;
-    lCharCount: integer;
-
-    procedure AppendWorkStringWithChar(aNewChar: Char);
-    var
-      lSize: integer;
-    begin
-      if not assigned(lSB) then
-      begin
-        lSize := 1024;               // lets start with a decent starting buffer size, much bigger than the normal default
-        if lCharCount > lSize then
-        begin
-          lSize := lCharCount * 3 div 2;   // 50% more than we need so we have some initial room to add more.
-        end;
-        lSB:=TStringBuilder.Create(lSize);
-      end;
-
-      // will move the characters from the source buffer we are looking through to the WorkString and append aNewChar which came from the escaping.
-      lSB.Append(lStartPtr, 0, lCharCount);
-      lSB.Append(aNewChar);
-      lStartPtr := lChPtr;    // make our new starting Pointer be where our current working pointer is now.
-      lCharCount := 0;
-    end;
-
-    procedure FinishWorkString;
-    begin
-      // will move the bytes from the source buffer we are looking through to the WorkString
-      if assigned(lSB) then
-      begin
-        lSB.Append(lStartPtr, 0, lCharCount);    // Only add our last string section if we have a string Builder already made to add it to. It's OK if lCharCount is zero.
-        oString := lSB.ToString(True);
-      end
-      else
-      begin
-        SetString(oString, lStartPtr, lCharCount);    // everything from the original start position to the end of what we want will be extracted out in one swoop as no escaping needed to be handled.
-      end;
-      aContext.CurrentCharPtr := lChPtr+1;          // Tell our context that we finished parsing the string all the way up through the ending quote by positioning it to one past that character.
-    end;
-
-    function LocalHexConvert(aChr: Char): Byte; inline;
-    begin
-      if aChr <= 'f' then
-      begin
-        {$R-}   // don't need range checking because the range was just limited in the above IF.
-        result := cHexDecimalConvert[ord(aChr)];
-        {$R+}
-      end
-      else
-      begin
-        result := $FF;
-      end;
-    end;
-
+  procedure FinishWorkString;
   begin
-    aContext.SkipSpaces;
-    result := false;
-    lSB := nil;   // Only need a StringBuilder if we need to handle escaping.
+    // will move the bytes from the source buffer we are looking through to the WorkString
+    if assigned(lSB) then
+    begin
+      lSB.Append(lStartPtr, 0, lCharCount);    // Only add our last string section if we have a string Builder already made to add it to. It's OK if lCharCount is zero.
+      oString := lSB.ToString(True);
+    end
+    else
+    begin
+      SetString(oString, lStartPtr, lCharCount);    // everything from the original start position to the end of what we want will be extracted out in one swoop as no escaping needed to be handled.
+    end;
+    fCurrentCharPtr := lChPtr+1;          // Tell our parsing context that we finished parsing the string all the way up through the ending quote by positioning it to one past that character.
+  end;
 
-    if aContext.eof then
+  function LocalHexConvert(aChr: Char): Byte; inline;
+  begin
+    if aChr <= 'f' then
+    begin
+      {$R-}   // don't need range checking because the range was just limited in the above IF.
+      result := cHexDecimalConvert[ord(aChr)];
+      {$R+}
+    end
+    else
+    begin
+      result := $FF; // code for "invalid"
+    end;
+  end;
+
+begin
+  SkipSpaces;
+  result := false;
+  lSB := nil;   // Only need a StringBuilder if we need to handle escaping.
+
+  if eof then
+    exit;
+
+  try
+    lStartsWithSingleQuote := false;
+    lChPtr := fCurrentCharPtr;
+    lChar := lChPtr^;
+    if (lChar = '''') then
+    begin
+      //technically speaking, json doesn't really support single quotes for string definitions.  however, we are going to support it.  JSON5 allows it.  maybe someday we will have an option to restrict to just explicitly valid json
+      lStartsWithSingleQuote := true;
+    end
+    else if (lChar <> '"') then
+    begin
+      // didn't begin with a double quote or a single quote so can't be a valid string.
       exit;
+    end;
 
-    try
-      lStartsWithSingleQuote := false;
-      lChPtr := aContext.CurrentCharPtr;
+    inc(lChPtr);  // Move up to the first actual character in our string
+
+    // Go through all the characters looking for the end character (either a double quote or single quote depending on how we started).
+    // along the way, we need to decode any escaping.
+    lStartPtr := lChPtr;
+    lCharCount := 0;
+
+    while (lChPtr <= fEndPtr) do
+    begin
       lChar := lChPtr^;
-      if (lChar = '''') then
+
+      if (lChar='\') then
       begin
-        //technically speaking, json doesn't really support single quotes for string definitions.  however, we are going to support it.  JSON5 allows it.  maybe someday we will have an option to restrict to just explicitly valid json
-        lStartsWithSingleQuote := true;
-      end
-      else if (lChar <> '"') then
-      begin
-        // didn't begin with a double quote or a single quote so can't be a valid string.
-        exit;
-      end;
-
-      inc(lChPtr);  // Move up to the first actual character in our string
-
-      // Go through all the characters looking for the end character (either a double quote or single quote depending on how we started).
-      // along the way, we need to decode any escaping.
-      lStartPtr := lChPtr;
-      lCharCount := 0;
-
-      while (lChPtr <= aContext.EndPtr) do
-      begin
-        lChar := lChPtr^;
-
-        if (lChar='\') then
+        // we have the starting of an escaper character so start an escape read.
+        inc(lChPtr);
+        if (lChPtr <= fEndPtr) then
         begin
-          // we have the starting of an escaper character so start an escape read.
-          inc(lChPtr);
-          if (lChPtr <= aContext.EndPtr) then
-          begin
-            lChar := lChPtr^;
-            case lChar of
-              '\': begin inc(lChPtr); AppendWorkStringWithChar('\'); end;
-              '"': begin inc(lChPtr); AppendWorkStringWithChar('"'); end;
-              '/': begin inc(lChPtr); AppendWorkStringWithChar('/'); end;
-              'b': begin inc(lChPtr); AppendWorkStringWithChar(#8); end;   //backspace
-              'f': begin inc(lChPtr); AppendWorkStringWithChar(#12); end;  //Form Feed
-              'n': begin inc(lChPtr); AppendWorkStringWithChar(#10); end;  //New Line
-              'r': begin inc(lChPtr); AppendWorkStringWithChar(#13); end;  //carriage return
-              't': begin inc(lChPtr); AppendWorkStringWithChar(#9); end;   //tab
-              'u':
+          lChar := lChPtr^;
+          case lChar of
+            '\': begin inc(lChPtr); AppendWorkStringWithChar('\'); end;
+            '"': begin inc(lChPtr); AppendWorkStringWithChar('"'); end;
+            '/': begin inc(lChPtr); AppendWorkStringWithChar('/'); end;
+            'b': begin inc(lChPtr); AppendWorkStringWithChar(#8); end;   //backspace
+            'f': begin inc(lChPtr); AppendWorkStringWithChar(#12); end;  //Form Feed
+            'n': begin inc(lChPtr); AppendWorkStringWithChar(#10); end;  //New Line
+            'r': begin inc(lChPtr); AppendWorkStringWithChar(#13); end;  //carriage return
+            't': begin inc(lChPtr); AppendWorkStringWithChar(#9); end;   //tab
+            'u':
+              begin
+                inc(lChPtr);   // Get past the 'u' character
+                if lChPtr+3*sizeof(Char) <= fEndPtr then
                 begin
-                  inc(lChPtr);   // Get past the 'u' character
-                  if lChPtr+3*sizeof(Char) <= aContext.EndPtr then
+                  lUnicodeCH1 := LocalHexConvert(lChPtr^);
+                  inc(lChPtr);
+                  lUnicodeCH2 := LocalHexConvert(lChPtr^);
+                  inc(lChPtr);
+                  lUnicodeCH3 := LocalHexConvert(lChPtr^);
+                  inc(lChPtr);
+                  lUnicodeCH4 := LocalHexConvert(lChPtr^);
+                  inc(lChPtr);    // Now points past the 4 escaping characters
+                  if (lUnicodeCH1 <= 15) and (lUnicodeCH2 <= 15) and (lUnicodeCH3 <= 15) and (lUnicodeCH4 <= 15)then
                   begin
-                    lUnicodeCH1 := LocalHexConvert(lChPtr^);
-                    inc(lChPtr);
-                    lUnicodeCH2 := LocalHexConvert(lChPtr^);
-                    inc(lChPtr);
-                    lUnicodeCH3 := LocalHexConvert(lChPtr^);
-                    inc(lChPtr);
-                    lUnicodeCH4 := LocalHexConvert(lChPtr^);
-                    inc(lChPtr);    // Now points past the 4 escaping characters
-                    if (lUnicodeCH1 <= 15) and (lUnicodeCH2 <= 15) and (lUnicodeCH3 <= 15) and (lUnicodeCH4 <= 15)then
-                    begin
-                      lChar := WideChar((lUnicodeCH1 shl 12) or (lUnicodeCH2 shl 8) or (lUnicodeCH3 shl 4) or lUnicodeCH4);  // we have four valid hex characters so stitch them together into a unicode Character.
-                      AppendWorkStringWithChar(lChar);
-                    end
-                    else
-                    begin
-                      raise Exception.Create('Invalid character parsing an escape "\uxxxx" sequence.');
-                    end;
+                    lChar := WideChar((lUnicodeCH1 shl 12) or (lUnicodeCH2 shl 8) or (lUnicodeCH3 shl 4) or lUnicodeCH4);  // we have four valid hex characters so stitch them together into a unicode Character.
+                    AppendWorkStringWithChar(lChar);
                   end
                   else
                   begin
-                    // we started with an /u sequence but there aren't enough characters to pick up 4 more.
-                    raise Exception.Create('Invalid characters parsing an escape "\uxxxx" sequence.');
+                    RaiseParsingException('Invalid character parsing an escape "\uxxxx" sequence.', lChPtr);
+
+                    raise EJSONParsingException.Create('Invalid character parsing an escape "\uxxxx" sequence.');
                   end;
+                end
+                else
+                begin
+                  // we started with an /u sequence but there aren't enough characters to pick up 4 more.
+                  RaiseParsingException('Invalid characters parsing an escape "\uxxxx" sequence.', lChPtr);
                 end;
-              else
-              begin
-                // This must be an error condition because an invalid character is following the excape '\' character.
-                raise Exception.Create('Invalid character after encountering an escape "\" character.');
               end;
+            else
+            begin
+              // This must be an error condition because an invalid character is following the excape '\' character.
+              RaiseParsingException('Invalid character after encountering an escape "\" character.', lChPtr);
             end;
-          end
-          else
-          begin
-            // we are out of characters to pickup in an escape sequence.
-            raise Exception.Create('Invalid character after encountering an escape "\" character.');
           end;
         end
-
-        else if lChar = '"' then   // this should be an end of string marker unless we started with a single quote.
-        begin
-          if lStartsWithSingleQuote then
-          begin
-            // just take this character as a normal character by counting up to include it.
-            inc(lChPtr);
-            inc(lCharCount);
-          end
-          else
-          begin
-             // Finish our string.
-            FinishWorkString;
-            result := true;
-            break;
-          end;
-        end
-
-        else if lChar = '''' then
-        begin
-          if lStartsWithSingleQuote = false then
-          begin
-            // just take this character as a normal character by counting up to include it.
-            inc(lChPtr);
-            inc(lCharCount);
-          end
-          else
-          begin
-             // Finish our string.
-            FinishWorkString;
-            result := true;
-            break;
-          end;
-        end
-
         else
+        begin
+          // we are out of characters to pickup in an escape sequence.
+          RaiseParsingException('Invalid character after encountering an escape "\" character.', lChPtr);
+        end;
+      end
+
+      else if lChar = '"' then   // this should be an end of string marker unless we started with a single quote.
+      begin
+        if lStartsWithSingleQuote then
         begin
           // just take this character as a normal character by counting up to include it.
           inc(lChPtr);
           inc(lCharCount);
+        end
+        else
+        begin
+           // Finish our string.
+          FinishWorkString;
+          result := true;
+          break;
         end;
+      end
+
+      else if lChar = '''' then
+      begin
+        if lStartsWithSingleQuote = false then
+        begin
+          // just take this character as a normal character by counting up to include it.
+          inc(lChPtr);
+          inc(lCharCount);
+        end
+        else
+        begin
+           // Finish our string.
+          FinishWorkString;
+          result := true;
+          break;
+        end;
+      end
+
+      else
+      begin
+        // just take this character as a normal character by counting up to include it.
+        inc(lChPtr);
+        inc(lCharCount);
       end;
-
-      // If we get out of this loop above without receiving the closing quote.  That's an error condition as we ran out of characters to process.
-      // If we got out of the loop above by calling the FinishWorkString, then we know that our result was set to true and the output string was created and returned.
-    finally
-      lSB.Free;
     end;
+
+    // If we get out of this loop above without receiving the closing quote.  That's an error condition as we ran out of characters to process.
+    // If we got out of the loop above by calling the FinishWorkString, then we know that our result was set to true and the output string was created and returned.
+  finally
+    lSB.Free;
   end;
+end;
 
-  function ParseStringValue(aContext: PParseContext; aDataObj: TDataObj): boolean;
-  var
-    lString: string;
+function TJsonStreamer.ParseStringValue(aDataObj: TDataObj): boolean;
+var
+  lString: string;
+begin
+  result := ParseString(lString);
+  if result then
+    aDataObj.AsString := lString;
+end;
+
+// Try to parse a number from fJSON
+// This could read and populate an integer(int64, int32, or byte) or a double float.
+// We are not having it read in single floats cause it's not obvious to decide when to choose a single and when to choose a double.  Could be a future improvement maybe.
+// Note that technically the JSON spec doesn't allow a number to start out with the '+' character such as "+10", but we are going to allow it here.
+// I do believe that JSON5 does technically allow it, though.
+// Note that a number like ".123" is not valid JSON without a leading zero, but I believe it is valid JSON5, so we will allow it as well.
+
+function TJsonStreamer.ParseNumber(aDataObj: TDataObj): boolean;
+var
+  lContinue: boolean;
+  lCanBePlusOrMinus: boolean;
+  lWholeCount: integer;
+  lIsFloat: boolean;
+  lWholeInt64: int64;
+  lExpInt64: int64;
+  lIsExponent: boolean;
+  lChPtr: PChar;
+  lChar: Char;
+  lExtended: Extended;
+  lSavedChar: Char;
+  lExpCount: integer;
+  lBase: integer;
+
+  procedure PerformLocalTextToFloat;
   begin
-    result := ParseString(aContext, lString);
-    if result then
-      aDataObj.AsString := lString;
-  end;
-
-  // Try to parse a number from fJSON
-  // This could read and populate an integer(int64, int32, or byte) or a double float.
-  // We are not having it read in single floats cause it's not obvious to decide when to choose a single and when to choose a double.  Could be a future improvement maybe.
-  // Note that technically the JSON spec doesn't allow a number to start out with the '+' character such as "+10", but we are going to allow it here.
-  // I do believe that JSON5 does technically allow it, though.
-  // Note that a number like ".123" is not valid JSON without a leading zero, but I believe it is valid JSON5, so we will allow it as well.
-
-  function ParseNumber(aContext: PParseContext; aDataObj: TDataObj): boolean;
-  var
-    lWs: string;
-    lContinue: boolean;
-    lCanBePlusOrMinus: boolean;
-    lWholeCount: integer;
-    lIsFloat: boolean;
-    lInt64: int64;
-    lIsExponent: boolean;
-    lChPtr: PChar;
-    lChar: Char;
-    lCharCount: integer;
-  begin
-    result := false;
-    if aContext.eof then exit;
-
-    lContinue := true;
-    lCanBePlusOrMinus := true;                // + or - characters can only come in as the first character or directly after an "e"
-    lWholeCount := 0;
-    lCharCount := 0;
-    lIsFloat := false;
-    lIsExponent := false;
-
-    lChPtr := aContext.CurrentCharPtr;
-
-    while (lContinue and not aContext.eof) do
+    // use the Delphi way of converting our string characters to a floaing point number.  should handle exponents, etc.
+    lSavedChar := lChPtr^;
+    lChPtr^ := #0;            // need to temporarily put in a null for the TextToFloat call next
+    if TextToFloat(fCurrentCharPtr, lExtended, TFloatValue.fvExtended) then
     begin
-      lChar := lChPtr^;
-      if (lChar >= '0') and (lChar <= '9') then
+      aDataObj.AsDouble := lExtended;     // assuming all floats are doubles.  not trying singles.
+    end
+    else
+    begin
+      // Error Condition of some sort?
+      lChPtr^ := lSavedChar;   // restore this before we raise the exception and leave this method without restoring it below.
+      RaiseParsingException('Unable to convert text to floating point number', fCurrentCharPtr);
+    end;
+    lChPtr^ := lSavedChar;   // restore.
+  end;
+
+begin
+  result := false;
+  if eof then exit;
+
+  lContinue := true;
+  lCanBePlusOrMinus := true;                // + or - characters can only come in as the first character or directly after an "e"
+  lWholeCount := 0;
+  lWholeInt64 := 0;                    // build this along the way
+  lExpInt64 := 0;                      // build this along the way
+  lExpCount := 0;
+  lIsFloat := false;
+  lIsExponent := false;
+
+
+  lChPtr := fCurrentCharPtr;
+
+  while (lContinue and not eof) do
+  begin
+    lChar := lChPtr^;
+    if (lChar >= '0') and (lChar <= '9') then
+    begin
+      if lIsFloat then
       begin
-        if not lIsFloat then
-          inc(lWholeCount);
-        lCanBePlusOrMinus := false;
-        inc(lChPtr);
-        inc(lCharCount);
-        result := true;       // now that we have received at least one digit, we can possibly have a true result.
-      end
-      else if lCanBePlusOrMinus and ((lChar = '+') or (lChar = '-')) then
-      begin
-        lCanBePlusOrMinus := false;
-        inc(lChPtr);
-        inc(lCharCount);
-      end
-      else if (lIsFloat=false) and (lChar = '.') and (lWholeCount > 0) then
-      begin
-        lIsFloat := true;
-        lCanBePlusOrMinus := false;
-        inc(lChPtr);
-        inc(lCharCount);
-      end
-      else if (lWholeCount=1) and (lIsExponent = false) and ((lChar = 'e') or (lChar = 'E')) then
-      begin
-        lIsFloat := true;
-        lCanBePlusOrMinus := true;
-        lIsExponent := true;
-        inc(lChPtr);
-        inc(lCharCount);
+        if lIsExponent=false then  // Once we hit an exponent, then I will no longer be doing this conversion and will fall back to a delphi call
+        begin
+          // FINISH - need to do overflow checking here
+          lExpInt64 := (lExpInt64 * 10) + ord(lChar) - ord('0');
+          inc(lExpCount);
+        end;
       end
       else
       begin
-        // None of the possible conditions above absorbed this character so we are done trying to read this number.
-        if result then
+        // FINISH - need to do overflow checking here
+        lWholeInt64 := (lWholeInt64 * 10) + ord(lChar) - ord('0');
+        inc(lWholeCount);
+      end;
+      lCanBePlusOrMinus := false;
+      inc(lChPtr);
+      result := true;       // now that we have received at least one digit, we can possibly have a true result.
+    end
+    else if lCanBePlusOrMinus and ((lChar = '+') or (lChar = '-')) then
+    begin
+      lCanBePlusOrMinus := false;
+      inc(lChPtr);
+    end
+    else if (lIsFloat=false) and (lChar = '.') and (lWholeCount > 0) then
+    begin
+      lIsFloat := true;
+      lCanBePlusOrMinus := false;
+      inc(lChPtr);
+    end
+    else if (lWholeCount=1) and (lIsExponent = false) and ((lChar = 'e') or (lChar = 'E')) then
+    begin
+      lIsFloat := true;
+      lCanBePlusOrMinus := true;
+      lIsExponent := true;
+      inc(lChPtr);
+    end
+    else
+    begin
+      // None of the possible conditions above absorbed this character so we are done trying to read this number.
+      if result then
+      begin
+        // we either found an integer number or a floating point number
+        if lIsFloat then
         begin
-          // we either found an integer number or a floating point number
-          SetString(lWS,aContext.CurrentCharPtr, lCharCount);
-          aContext.CurrentCharPtr := lChPtr;    // move up our context to the new current character that is after processing number string
-
-          if lIsFloat then
+          if lIsExponent then
           begin
-            aDataObj.AsDouble := StrToFloat(lWs, aContext.FormatSettings);  // Note:  assuming all floats from JSON are double.  not trying singles.
+            // we have an exponent in our number text, so we fall back to using Delphi's TextToFloat, but we need to setup a null ending character first.
+            PerformLocalTextToFloat;
           end
           else
           begin
-            // NOTE: someday, we may need to be able to support unsigned Int64 sized numbers.
-
-            // choose the smallest integer data type to hold this value.
-            lInt64 := StrToInt64(lWS);
-            if (lInt64 > 2147483647) or (lInt64 < -2147483648) then
+            // here we have a lWholeInt64 filled in and we have a lExpInt64 filled in.  Smash the two together to make a double
+            if lExpCount<19 then   // check on the character limit of the fractional part which we have to limit to under the character count of the biggest int64.
             begin
-              aDataObj.AsInt64 := lInt64;
-            end
-            else if (lInt64 >= 0) and (lInt64<=255) then
-            begin
-              aDataObj.AsByte := lInt64;
+              lBase := 10;
+              dec(lExpCount);
+              while (lExpCount>0) do
+              begin
+                lBase := lBase * 10;
+                dec(lExpCount);
+              end;
+              aDataObj.AsDouble := double(lWholeInt64) + (Double(lExpInt64) / lBase);
             end
             else
             begin
-              aDataObj.AsInt32 := lInt64;
+              //The fraction part is just too many digits, so just fall back back to Delphi's TextToFloat and let it go how it goes.
+              PerformLocalTextToFloat;
             end;
           end;
-        end;
-
-        lContinue := false;
-      end;
-    end;
-  end;
-
-
-  //Try to parse an array from fJSON.  Needs to start with "["
-  // return 0 if this is not the start of an array
-  // return 1 if this is an array and all the items in the array serialized and completed the array correctly
-  // return 2 if there is an error where we could not reach the end of the array.
-  function ParseArray(aContext: PParseContext; aDataObj: TDataObj): boolean;
-  var
-    lArray: TDataArray;
-  begin
-    result := false;
-    if aContext.eof then exit;
-    if not (aContext.CurrentChar = '[') then exit;   // not the start of an array so get out.
-
-    result := true;
-    aContext.IncIndex;
-
-    aContext.SkipSpaces;
-    lArray := aDataObj.AsArray;
-    while not (aContext.eof) and (aContext.CurrentChar <> ']') do
-    begin
-      if ParseAnyType(aContext, lArray.NewSlot) then
-      begin
-        aContext.SkipSpaces;
-        if (not aContext.eof) and (aContext.CurrentChar = ',') then
-        begin
-          aContext.IncIndex;
         end
         else
         begin
-          break; // we are done reading the elements in this array.  The current byte could be the ending ] character or it could be invalid data that we error out on next.
-        end;
-      end
-      else
-      begin
-        // We were not able to parse this item in the array. Maybe nothing was parsed, or maybe an item was paritally parsed.
-        // However, there was something there that could not be parsed.  So, the code below will handle that.
-      end;
-    end;
+          // NOTE: someday, we may need to be able to support unsigned Int64 sized numbers.
 
-    if not (aContext.eof) and (aContext.CurrentChar <> ']') then
-    begin
-      raise exception.Create('Error Parsing.  Expected ] at '+InttoStr(aContext.CurrentCharacterIndex));         // We parsed some stuff, but errored out here because we are not getting the end of array marker.
-    end;
-
-    aContext.IncIndex;   // get moved past the ] chracter.
-  end;
-
-  // Try to parse the INF identifier from fJSON to represent Infinity.
-  // NOTE that parsing this is not really supported by the core JSON spec.  But we support it along with Nan
-  // This seems like a lot of code, but it is writting in such a way to be fast and efficient to execute.
-  // In order to call this function, aContext must already have been determined to point to a 'I' or 'i' character
-  function ParseInfinity(aContext: PParseContext; aDataObj: TDataObj): boolean;
-  const
-    cHighCases: array[0..7] of char = ('I','N','F','I','N','I','T','Y');
-    cLowCases: array[0..7] of char = ('i','n','f','i','n','i','t','y');
-  var
-    lPtr: PChar;
-    lPtrHigh: PChar;
-    lPtrLow: PChar;
-    i: Cardinal;
-  begin
-    result := false;
-    if aContext.HasNumberOfChars(8) then
-    begin
-      lPtr := aContext.CurrentCharPtr;
-      lPtrHigh := cHighCases;
-      lPtrLow := cLowCases;
-
-      for i := low(cHighCases) to High(cHighCases) do
-      begin
-        if not ((lPtr^=lPtrLow^) or (lPtr^=lPtrHigh^)) then
-        begin
-          exit; // did not have a character to character match
-        end;
-        inc(lPtr);
-        inc(lPtrLow);
-        inc(lPtrHigh);
-      end;
-
-      result := true;   // if we did not exit above then we had a match to our constant string.
-      inc(aContext.CurrentCharPtr, 8);
-      aDataObj.AsDouble := Double.PositiveInfinity;    // Setting as INF         // Note that we do not support a Single version of Nan
-    end;
-  end;
-
-  // Try to parse the -INF identifier from fJSON to represent Negative Infinity.
-  // In order to call this function, aContext must already have been determined to point to a '-' character
-  function ParseNegativeInfinity(aContext: PParseContext; aDataObj: TDataObj): boolean;
-  const
-    cHighCases: array[0..8] of char = ('-','I','N','F','I','N','I','T','Y');
-    cLowCases: array[0..8] of char = ('-','i','n','f','i','n','i','t','y');
-  var
-    lPtr: PChar;
-    lPtrHigh: PChar;
-    lPtrLow: PChar;
-    i: Cardinal;
-  begin
-    result := false;
-    if aContext.HasNumberOfChars(9) then
-    begin
-      lPtr := aContext.CurrentCharPtr;
-      lPtrHigh := cHighCases;
-      lPtrLow := cLowCases;
-
-      for i := low(cHighCases) to High(cHighCases) do
-      begin
-        if not ((lPtr^=lPtrLow^) or (lPtr^=lPtrHigh^)) then
-        begin
-          exit; // did not have a character to character match
-        end;
-        inc(lPtr);
-        inc(lPtrLow);
-        inc(lPtrHigh);
-      end;
-
-      result := true;   // if we did not exit above then we had a match to our constant string.
-      inc(aContext.CurrentCharPtr, 9);
-      aDataObj.AsDouble := Double.NegativeInfinity;    // Setting as -INF         // Note that we do not support a Single version of Nan
-    end;
-  end;
-
-  // Try to parse the INF identifier from fJSON to represent Infinity.
-  // NOTE that parsing this is not really supported by the core JSON spec.  But we support it along with Nan
-  // This seems like a lot of code, but it is writting in such a way to be fast and efficient to execute.
-  // In order to call this function, aContext must already have been determined to point to a 'I' or 'i' character
-  function ParseInf(aContext: PParseContext; aDataObj: TDataObj): boolean;
-  const
-    cHighCases: array[0..2] of char = ('I','N','F');
-    cLowCases: array[0..2] of char = ('i','n','f');
-  var
-    lPtr: PChar;
-    lPtrHigh: PChar;
-    lPtrLow: PChar;
-    i: Cardinal;
-  begin
-    result := false;
-    if aContext.HasNumberOfChars(3) then
-    begin
-      lPtr := aContext.CurrentCharPtr;
-      lPtrHigh := cHighCases;
-      lPtrLow := cLowCases;
-
-      for i := low(cHighCases) to High(cHighCases) do
-      begin
-        if not ((lPtr^=lPtrLow^) or (lPtr^=lPtrHigh^)) then
-        begin
-          exit; // did not have a character to character match
-        end;
-        inc(lPtr);
-        inc(lPtrLow);
-        inc(lPtrHigh);
-      end;
-
-      result := true;   // if we did not exit above then we had a match to our constant string.
-      inc(aContext.CurrentCharPtr, 3);
-      aDataObj.AsDouble := Double.PositiveInfinity;    // Setting as INF         // Note that we do not support a Single version of Nan
-    end;
-  end;
-
-  // Try to parse the -INF identifier from fJSON to represent Negative Infinity.
-  // In order to call this function, aContext must already have been determined to point to a '-' character
-  function ParseNegativeInf(aContext: PParseContext; aDataObj: TDataObj): boolean;
-  const
-    cHighCases: array[0..3] of char = ('-','I','N','F');
-    cLowCases: array[0..3] of char = ('-','i','n','f');
-  var
-    lPtr: PChar;
-    lPtrHigh: PChar;
-    lPtrLow: PChar;
-    i: Cardinal;
-  begin
-    result := false;
-    if aContext.HasNumberOfChars(4) then
-    begin
-      lPtr := aContext.CurrentCharPtr;
-      lPtrHigh := cHighCases;
-      lPtrLow := cLowCases;
-
-      for i := low(cHighCases) to High(cHighCases) do
-      begin
-        if not ((lPtr^=lPtrLow^) or (lPtr^=lPtrHigh^)) then
-        begin
-          exit; // did not have a character to character match
-        end;
-        inc(lPtr);
-        inc(lPtrLow);
-        inc(lPtrHigh);
-      end;
-
-      result := true;   // if we did not exit above then we had a match to our constant string.
-      inc(aContext.CurrentCharPtr, 4);
-      aDataObj.AsDouble := Double.NegativeInfinity;    // Setting as -INF         // Note that we do not support a Single version of Nan
-    end;
-  end;
-
-
-
-
-  function ParseNegative(aContext: PParseContext; aDataObj: TDataObj): boolean;
-  begin
-    result := ParseNumber(aContext, aDataObj);              // Most likely, a '-' sign will give us a number so try that first.
-    if not result then
-      result := ParseNegativeInfinity(aContext, aDataObj);
-    if not result then
-      result := ParseNegativeInf(aContext, aDataObj);
-  end;
-
-  // NOTE:  the following code blocks are coded a bit wierdly considering the individual character comparisons.  Turns out, when looking for specific
-  //        strings like this, this logic is faster than doing calls like "sameText", "Pos", etc.  So, this code looks a little goofy but it's all done this way for performance.
-
-  // Try to parse the true identifier from fJSON
-  // Prerequisite to calling this function is that the current Character we are processing must have already been determined to be a 't' or 'T', which is what the caller is doing.  So, we skip that check in here because it is redundant.
-  function ParseTrue(aContext: PParseContext; aDataObj: TDataObj): Boolean;
-  const
-    cHighCases: array[0..2] of char = ('R','U','E');
-    cLowCases: array[0..2] of char = ('r','u','e');
-  var
-    lPtr: PChar;
-    lPtrHigh: PChar;
-    lPtrLow: PChar;
-    i: Cardinal;
-  begin
-    result := false;
-    if aContext.HasNumberOfChars(4) then
-    begin
-      lPtr := aContext.CurrentCharPtr;
-      inc(lPtr);                           // we can skip the first character that we are not checking.
-      lPtrHigh := cHighCases;
-      lPtrLow := cLowCases;
-
-      for i := low(cHighCases) to High(cHighCases) do
-      begin
-        if not ((lPtr^=lPtrLow^) or (lPtr^=lPtrHigh^)) then
-        begin
-          exit;    // did not have a character to character match so we must break out with a fail.
-        end;
-        inc(lPtr);
-        inc(lPtrLow);
-        inc(lPtrHigh);
-      end;
-
-      result := true;   // if we did not exit above then we had a match to our constant string.
-      inc(aContext.CurrentCharPtr, 4);
-      aDataObj.AsBoolean := true;
-    end;
-  end;
-
-
-  // Try to parse the false identifier from fJSON
-  // Prerequisite to calling this function is that aContext.CurrentCharPtr must have already been determined to be a 'f' or 'F', which is what the caller is doing.  So, we skip that check in here because it is redundant.
-  function ParseFalse(aContext: PParseContext; aDataObj: TDataObj): boolean;
-  const
-    cHighCases: array[0..3] of char = ('A','L','S', 'E');
-    cLowCases: array[0..3] of char = ('a','l','s', 'e');
-  var
-    lPtr: PChar;
-    lPtrHigh: PChar;
-    lPtrLow: PChar;
-    i: Cardinal;
-  begin
-    result := false;
-    if aContext.HasNumberOfChars(5) then
-    begin
-      lPtr := aContext.CurrentCharPtr;
-      inc(lPtr);                           // we can skip the first character that we are not checking.
-      lPtrHigh := cHighCases;
-      lPtrLow := cLowCases;
-
-      for i := low(cHighCases) to High(cHighCases) do
-      begin
-        if not ((lPtr^=lPtrLow^) or (lPtr^=lPtrHigh^)) then
-        begin
-          exit;    // did not have a character to character match so we must break out with a fail.
-        end;
-        inc(lPtr);
-        inc(lPtrLow);
-        inc(lPtrHigh);
-      end;
-
-      result := true;   // if we did not exit above then we had a match to our constant string.
-      inc(aContext.CurrentCharPtr, 5);
-      aDataObj.AsBoolean := false;
-    end;
-  end;
-
-  // Try to parse the null identifier from fJSON
-  // Prerequisite to calling this function is that fJSON[aIndex] must have already been determined to be a 'n' or 'N', which is what the caller is doing.  So, we skip that check in here because it is redundant.
-  // This seems like a lot of code, but it is writting in such a way to be fast and efficient to execute.
-  function ParseNull(aContext: PParseContext; aDataObj: TDataObj): boolean;
-  const
-    cHighCases: array[0..2] of char = ('U','L','L');
-    cLowCases: array[0..2] of char = ('u','l','l');
-  var
-    lPtr: PChar;
-    lPtrHigh: PChar;
-    lPtrLow: PChar;
-    i: Cardinal;
-  begin
-    result := false;
-    if aContext.HasNumberOfChars(4) then
-    begin
-      lPtr := aContext.CurrentCharPtr;
-      inc(lPtr);                           // we can skip the first character that we are not checking.
-      lPtrHigh := cHighCases;
-      lPtrLow := cLowCases;
-
-      for i := low(cHighCases) to High(cHighCases) do
-      begin
-        if not ((lPtr^=lPtrLow^) or (lPtr^=lPtrHigh^)) then
-        begin
-          exit;    // did not have a character to character match so we must break out with a fail.
-        end;
-        inc(lPtr);
-        inc(lPtrLow);
-        inc(lPtrHigh);
-      end;
-
-      result := true;   // if we did not exit above then we had a match to our constant string.
-      inc(aContext.CurrentCharPtr, 4);
-      aDataObj.Clear;   // should already be clear, but let's just be explicit.
-    end;
-  end;
-
-  // Try to parse the NAN identifier from fJSON
-  // NOTE that parsing NaN as an identifier for a floating point number value is not really supported by the core JSON spec.  But we support it along with -INF and +INF
-  // Prerequisite to calling this function is that aContext.CurrentCharPtr must have already been determined to be a 'n' or 'N', which is what the caller is doing.  So, we skip that check in here because it is redundant.
-  function ParseNan(aContext: PParseContext; aDataObj: TDataObj): boolean;
-  const
-    cHighCases: array[0..1] of char = ('A','N');
-    cLowCases: array[0..1] of char = ('a','n');
-  var
-    lPtr: PChar;
-    lPtrHigh: PChar;
-    lPtrLow: PChar;
-    i: Cardinal;
-  begin
-    result := false;
-    if aContext.HasNumberOfChars(3) then
-    begin
-      lPtr := aContext.CurrentCharPtr;
-      inc(lPtr);                           // we can skip the first character that we are not checking.
-      lPtrHigh := cHighCases;
-      lPtrLow := cLowCases;
-
-      for i := low(cHighCases) to High(cHighCases) do
-      begin
-        if not ((lPtr^=lPtrLow^) or (lPtr^=lPtrHigh^)) then
-        begin
-          exit;    // did not have a character to character match so we must break out with a fail.
-        end;
-        inc(lPtr);
-        inc(lPtrLow);
-        inc(lPtrHigh);
-      end;
-
-      result := true;   // if we did not exit above then we had a match to our constant string.
-      inc(aContext.CurrentCharPtr, 3);
-      aDataObj.AsDouble := 0/0;    // Setting as Nan         // Note that we do not support a Single version of Nan
-    end;
-  end;
-
-  function ParseN(aContext:  PParseContext; aDataObj: TDataObj): boolean;
-  begin
-    result := ParseNull(aContext, aDataObj);
-    if not result then
-      // We have one other situation that may start with a "N" character and that is when sometimes someone produces NaN for a Not-A-Number floating point number.  We check for that extremely rare ( and technically non-JSON compliant ) case here.
-      result := ParseNan(aContext, aDataObj);
-  end;
-
-
-
-
-
-  //0=nothing applicable so no parsing done, 1=successful parse, 2=Applicable, but error in parsing.
-  function ParseObjectID(aContext: PParseContext; aDataObj: TDataObj): boolean;
-  const
-    cHighCases: array[0..9] of char = ('O','B','J','E','C','T','I','D','(','"');
-    cLowCases: array[0..9] of char = ('o','b','j','e','c','t','i','d','(','"');
-  var
-    lPtr: PChar;
-    lPtrHigh: PChar;
-    lPtrLow: PChar;
-    i: Cardinal;
-    lBuffer: array[0..11] of BYTE;
-    lPtr2: PChar;
-  begin
-    // Example:  ObjectId("51e80190324277f418000008")
-    result := false;
-    if aContext.AllowParsingExtendedTypes and aContext.HasNumberOfChars(36) then
-    begin
-      lPtr := aContext.CurrentCharPtr;
-      lPtrHigh := cHighCases;
-      lPtrLow := cLowCases;
-
-      for i := low(cHighCases) to High(cHighCases) do
-      begin
-        if not ((lPtr^=lPtrLow^) or (lPtr^=lPtrHigh^)) then
-        begin
-          exit;    // did not have a character to character match so we must break out with a fail.
-        end;
-        inc(lPtr);
-        inc(lPtrLow);
-        inc(lPtrHigh);
-      end;
-
-      // check that our finalizing " and ) are there correctly.
-      lPtr2 := lPtr;   // should be pointing at the first character of the hex objectID value.
-
-      inc(lPtr2, 24);  // move our 2nd pointer to point to the finalizing " character
-      if (lPtr2^='"') then
-      begin
-        inc(lPtr2);
-        if (lPtr2^=')') then
-        begin
-          // we have the structure of an objectID so now try and parse out the string representation of the objectID
-          if HexToBin(lPtr, lBuffer, sizeof(lBuffer)) = 0 then
+          // choose the smallest integer data type to hold this value.
+          if (lWholeInt64 > 2147483647) or (lWholeInt64 < -2147483648) then
           begin
-            inc(aContext.CurrentCharPtr,36);
-            result := true;
-            Move(lBuffer, aDataObj.AsObjectID.Data, sizeof(lBuffer));
+            aDataObj.AsInt64 := lWholeInt64;
+          end
+          else if (lWholeInt64 >= 0) and (lWholeInt64<=255) then
+          begin
+            aDataObj.AsByte := lWholeInt64;
           end
           else
           begin
-            raise exception.Create('Error Parsing ObjectID at '+InttoStr(aContext.CurrentCharacterIndex));
+            aDataObj.AsInt32 := lWholeInt64;
           end;
         end;
-      end;
-    end;
-  end;
 
-  function ParseISODate(aContext: PParseContext; aDataObj: TDataObj): boolean;
-  const
-    cHighCases: array[0..8] of char = ('I','S','O','D','A','T','E','(','"');
-    cLowCases: array[0..8] of char = ('i','s','o','d','a','t','e','(','"');
-  var
-    lPtr: PChar;
-    lPtrHigh: PChar;
-    lPtrLow: PChar;
-    i: Cardinal;
-    lPtr2: PChar;
-    lDateTime: TDateTime;
-
-    function ParseISODateString: boolean;
-    begin
-      //FINISH
-      lDateTime := 0;
-      result := false;
-    end;
-  begin
-    // Example:  ISODate("2021-01-27T00:19:08.862Z")
-    result := false;
-    if aContext.AllowParsingExtendedTypes and aContext.HasNumberOfChars(35) then
-    begin
-      lPtr := aContext.CurrentCharPtr;
-      lPtrHigh := cHighCases;
-      lPtrLow := cLowCases;
-
-      for i := low(cHighCases) to High(cHighCases) do
-      begin
-        if not ((lPtr^=lPtrLow^) or (lPtr^=lPtrHigh^)) then
-        begin
-          exit;    // did not have a character to character match so we must break out with a fail.
-        end;
-        inc(lPtr);
-        inc(lPtrLow);
-        inc(lPtrHigh);
+        fCurrentCharPtr := lChPtr;    // move up our parsing context to the new current character that is after processing number string
       end;
 
-      // check that our finalizing " and ) are there correctly.
-      lPtr2 := lPtr;   // should be pointing at the first character of the hex objectID value.
-
-      inc(lPtr2, 24);  // move our 2nd pointer to point to the finalizing " character
-      if (lPtr2^='"') then
-      begin
-        inc(lPtr2);
-        if (lPtr2^=')') then
-        begin
-          // we have the structure of an ISODate() so now try and parse out the string representation of it
-          if ParseISODateString then
-          begin
-            inc(aContext.CurrentCharPtr,35);
-            result := true;
-            aDataObj.AsDateTime := lDateTime;
-          end
-          else
-          begin
-            exception.Create('Error Parsing ISODate at '+IntToStr(aContext.CurrentCharacterIndex));  //  the ISODate("") structure was correct, but the contents had characters that were invalid hex.
-          end;
-        end;
-      end;
+      lContinue := false;
     end;
   end;
+end;
 
-  function ParseI(aContext: PParseContext; aDataObj: TDataObj): boolean;
+
+//Try to parse an array from fJSON.  Needs to start with "["
+// return 0 if this is not the start of an array
+// return 1 if this is an array and all the items in the array serialized and completed the array correctly
+// return 2 if there is an error where we could not reach the end of the array.
+function TJsonStreamer.ParseArray(aDataObj: TDataObj): boolean;
+var
+  lArray: TDataArray;
+begin
+  result := false;
+  if eof then exit;
+  if not (CurrentChar = '[') then exit;   // not the start of an array so get out.
+
+  result := true;
+  IncIndex;
+
+  SkipSpaces;
+  lArray := aDataObj.AsArray;
+  while not (eof) and (CurrentChar <> ']') do
   begin
-    result := ParseInfinity(aContext, aDataObj);      // formally JSON5 compliant
-    if not result then
-      result := ParseINF(aContext, aDataObj);         // shortcut INF
-    if not result then
-      result := ParseISODate(aContext, aDataObj);     // will only do an ISO date if the feature is turned on.
-  end;
-
-
-
-  // Try to parse a slotname from fJSON string.  We are expecting a slotname, so we should be seeing "somename" and a : should be following it.
-  function ParseSlotname(aContext: PParseContext; var oSlotname: string): boolean;
-  begin
-    // Slotnames must be surrounded by " so really it's the same as string data. The slotname must also end with a :
-    // Also, any amount of white space can be after the string and before the colon or after the colon and before the next data content.
-    // Examples:  "Name" : null, "Name":"Sean", "First Name" : "billy", "Name": 1
-
-    result := ParseString(aContext, oSlotName);
-    if result then
+    if ParseAnyType(lArray.NewSlot) then
     begin
-      // consume up to the ":"
-      aContext.SkipSpaces;
-      if aContext.CurrentChar = ':' then
+      SkipSpaces;
+      if (not eof) and (CurrentChar = ',') then
       begin
-        aContext.IncIndex;
+        IncIndex;
       end
       else
       begin
-        result := false;  // We did parse the slotname, but the ":" is not next and thus the slotname is not really valid.
+        break; // we are done reading the elements in this array.  The current byte could be the ending ] character or it could be invalid data that we error out on next.
       end;
+    end
+    else
+    begin
+      // We were not able to parse this item in the array. Maybe nothing was parsed, or maybe an item was paritally parsed.
+      // However, there was something there that could not be parsed.  So, the code below will handle that.
     end;
   end;
 
-  //Try to parse a frame (in JSON terminoloty, it's called an object) from fJSON.  Needs to start with "{"
-  function ParseFrame(aContext: PParseContext; aDataObj: TDataObj): boolean;  //0=nothing applicable ie) didn't start with "}" character, 1=successful parse, 2=Applicable, but error in parsing.
-  var
-    lFrame: TDataFrame;
-    lSlotName: string;
+  if not (eof) and (CurrentChar <> ']') then
   begin
-    result := false;
-    if aContext.eof then exit;
-    if not (aContext.CurrentChar = '{') then exit;
+    RaiseParsingException('Error parsing an array.  Expected ]', fCurrentCharPtr);    // We parsed some stuff, but errored out here because we are not getting the end of array marker.
+  end;
 
-    result := true;  // we are a frame and although we didn't load much yet, we are valid so far.
-    aContext.IncIndex;
-    aContext.SkipSpaces;
-    lFrame := aDataObj.AsFrame;
+  IncIndex;   // get moved past the ] chracter.
+end;
 
-    while (not aContext.eof) and (aContext.CurrentChar <> '}') do
+// Try to parse the INF identifier from fJSON to represent Infinity.
+// NOTE that parsing this is not really supported by the core JSON spec.  But we support it along with Nan
+// This seems like a lot of code, but it is writting in such a way to be fast and efficient to execute.
+// In order to call this function, our parsing context must already have been determined to point to a 'I' or 'i' character
+function TJsonStreamer.ParseInfinity(aDataObj: TDataObj): boolean;
+const
+  cHighCases: array[0..7] of char = ('I','N','F','I','N','I','T','Y');
+  cLowCases: array[0..7] of char = ('i','n','f','i','n','i','t','y');
+var
+  lPtr: PChar;
+  lPtrHigh: PChar;
+  lPtrLow: PChar;
+  i: Cardinal;
+begin
+  result := false;
+  if HasNumberOfChars(8) then
+  begin
+    lPtr := fCurrentCharPtr;
+    lPtrHigh := cHighCases;
+    lPtrLow := cLowCases;
+
+    for i := low(cHighCases) to High(cHighCases) do
     begin
-      if ParseSlotName(aContext, lSlotName) then
+      if not ((lPtr^=lPtrLow^) or (lPtr^=lPtrHigh^)) then
       begin
-        if ParseAnyType(aContext, lFrame.NewSlot(lSlotName)) then
-        begin
-          aContext.SkipSpaces;
-          if (not aContext.eof) and (aContext.CurrentChar = ',') then
-          begin
-            aContext.IncIndex;
-          end
-          else
-          begin
-            break;
-          end;
-        end
-        else
-        begin
-          raise Exception.Create('Unable to parse JSON at '+InttoStr(aContext.CurrentCharacterIndex));
-        end;
-      end
-      else
-      begin
-        raise Exception.Create('Unable to parse JSON at '+InttoStr(aContext.CurrentCharacterIndex));
-        // Error reading the slotname.
+        exit; // did not have a character to character match
       end;
+      inc(lPtr);
+      inc(lPtrLow);
+      inc(lPtrHigh);
     end;
 
-    // check for properly frame ending.
-    if not(aContext.eof) and (aContext.CurrentChar <> '}') then
-    begin
-      raise Exception.Create('Error parsing. Missing closeing } at '+InttoStr(aContext.CurrentCharacterIndex));
-    end;
-
-    aContext.IncIndex; // consume closing '}'
+    result := true;   // if we did not exit above then we had a match to our constant string.
+    inc(fCurrentCharPtr, 8);
+    aDataObj.AsDouble := Double.PositiveInfinity;    // Setting as INF         // Note that we do not support a Single version of Nan
   end;
+end;
 
-  function TryParsingSymbol(aContext: PParseContext; aDataObj: TDataObj): integer;  //0=nothing applicable, 1=successful parse, 2=Applicable, but error in parsing.
+// Try to parse the -INF identifier from fJSON to represent Negative Infinity.
+// In order to call this function, our parsing context must already have been determined to point to a '-' character
+function TJsonStreamer.ParseNegativeInfinity(aDataObj: TDataObj): boolean;
+const
+  cHighCases: array[0..8] of char = ('-','I','N','F','I','N','I','T','Y');
+  cLowCases: array[0..8] of char = ('-','i','n','f','i','n','i','t','y');
+var
+  lPtr: PChar;
+  lPtrHigh: PChar;
+  lPtrLow: PChar;
+  i: Cardinal;
+begin
+  result := false;
+  if HasNumberOfChars(9) then
   begin
-    result := 0;   // FINISH this with new implementation.
-  end;
+    lPtr := fCurrentCharPtr;
+    lPtrHigh := cHighCases;
+    lPtrLow := cLowCases;
 
-  // This function will parse whatever JSON data type it can find next and will put that data into aDataObj
-  function ParseAnyType(aContext: PParseContext; aDataObj: TDataObj): boolean;  // result 0=Not Parsed, 1=Successfully Parsed, 2=Partially Successfully parsed (example: an array was successfully parsing, but errored out on the nth item in the array)
-  var
-    lChar: Char;
-  begin
-    aContext.SkipSpaces;
-
-    // We want to look at the next character to quickly determine which direction we could "possibly" go to see if we are trying to load a particular "known" JSON keyword.
-    // By looking at this character, we can decide what possibility to check.
-    lChar := aContext.CurrentChar;
-//    result := aContext.vJumpTable[lChar](aContext, aDataObj);   // THIS IS THE MAGIC.  DO A JUMP TO
-    result := cJumpTable[lChar](aContext, aDataObj);   // THIS IS THE MAGIC.  DO A JUMP TO THE PARSING CODE THAT WILL MOST LIKELY BE THE RIGHT ONE TO HANDLE THE NEXT SEQUENCE OF CHARACTERS.
-
-    if not result then
+    for i := low(cHighCases) to High(cHighCases) do
     begin
-      // Was not able to parse any of the regular JSON data types at this point from either the above jump table to trying any of the options, or from those attempts not being successful.
-      // SO, see if we are accepting Symbols to be parsed.
-
-      if aContext.AllowParsingSymbols then
+      if not ((lPtr^=lPtrLow^) or (lPtr^=lPtrHigh^)) then
       begin
-        // We treat symbols as anything up to a possible ending case such as a "," or "]" or "}"
-        if TryParsingSymbol(aContext, aDataObj) = 1 then
+        exit; // did not have a character to character match
+      end;
+      inc(lPtr);
+      inc(lPtrLow);
+      inc(lPtrHigh);
+    end;
+
+    result := true;   // if we did not exit above then we had a match to our constant string.
+    inc(fCurrentCharPtr, 9);
+    aDataObj.AsDouble := Double.NegativeInfinity;    // Setting as -INF         // Note that we do not support a Single version of Nan
+  end;
+end;
+
+// Try to parse the INF identifier from fJSON to represent Infinity.
+// NOTE that parsing this is not really supported by the core JSON spec.  But we support it along with Nan
+// This seems like a lot of code, but it is writting in such a way to be fast and efficient to execute.
+// In order to call this function, our parsing context must already have been determined to point to a 'I' or 'i' character
+function TJsonStreamer.ParseInf(aDataObj: TDataObj): boolean;
+const
+  cHighCases: array[0..2] of char = ('I','N','F');
+  cLowCases: array[0..2] of char = ('i','n','f');
+var
+  lPtr: PChar;
+  lPtrHigh: PChar;
+  lPtrLow: PChar;
+  i: Cardinal;
+begin
+  result := false;
+  if HasNumberOfChars(3) then
+  begin
+    lPtr := fCurrentCharPtr;
+    lPtrHigh := cHighCases;
+    lPtrLow := cLowCases;
+
+    for i := low(cHighCases) to High(cHighCases) do
+    begin
+      if not ((lPtr^=lPtrLow^) or (lPtr^=lPtrHigh^)) then
+      begin
+        exit; // did not have a character to character match
+      end;
+      inc(lPtr);
+      inc(lPtrLow);
+      inc(lPtrHigh);
+    end;
+
+    result := true;   // if we did not exit above then we had a match to our constant string.
+    inc(fCurrentCharPtr, 3);
+    aDataObj.AsDouble := Double.PositiveInfinity;    // Setting as INF         // Note that we do not support a Single version of Nan
+  end;
+end;
+
+// Try to parse the -INF identifier from fJSON to represent Negative Infinity.
+// In order to call this function, our parsing context must already have been determined to point to a '-' character
+function TJsonStreamer.ParseNegativeInf(aDataObj: TDataObj): boolean;
+const
+  cHighCases: array[0..3] of char = ('-','I','N','F');
+  cLowCases: array[0..3] of char = ('-','i','n','f');
+var
+  lPtr: PChar;
+  lPtrHigh: PChar;
+  lPtrLow: PChar;
+  i: Cardinal;
+begin
+  result := false;
+  if HasNumberOfChars(4) then
+  begin
+    lPtr := fCurrentCharPtr;
+    lPtrHigh := cHighCases;
+    lPtrLow := cLowCases;
+
+    for i := low(cHighCases) to High(cHighCases) do
+    begin
+      if not ((lPtr^=lPtrLow^) or (lPtr^=lPtrHigh^)) then
+      begin
+        exit; // did not have a character to character match
+      end;
+      inc(lPtr);
+      inc(lPtrLow);
+      inc(lPtrHigh);
+    end;
+
+    result := true;   // if we did not exit above then we had a match to our constant string.
+    inc(fCurrentCharPtr, 4);
+    aDataObj.AsDouble := Double.NegativeInfinity;    // Setting as -INF         // Note that we do not support a Single version of Nan
+  end;
+end;
+
+
+
+
+function TJsonStreamer.ParseNegative(aDataObj: TDataObj): boolean;
+begin
+  result := ParseNumber(aDataObj);              // Most likely, a '-' sign will give us a number so try that first.
+  if not result then
+    result := ParseNegativeInfinity(aDataObj);
+  if not result then
+    result := ParseNegativeInf(aDataObj);
+end;
+
+// NOTE:  the following code blocks are coded a bit wierdly considering the individual character comparisons.  Turns out, when looking for specific
+//        strings like this, this logic is faster than doing calls like "sameText", "Pos", etc.  So, this code looks a little goofy but it's all done this way for performance.
+
+// Try to parse the true identifier from fJSON
+// Prerequisite to calling this function is that the current Character we are processing must have already been determined to be a 't' or 'T', which is what the caller is doing.  So, we skip that check in here because it is redundant.
+function TJsonStreamer.ParseTrue(aDataObj: TDataObj): Boolean;
+const
+  cHighCases: array[0..2] of char = ('R','U','E');
+  cLowCases: array[0..2] of char = ('r','u','e');
+var
+  lPtr: PChar;
+  lPtrHigh: PChar;
+  lPtrLow: PChar;
+  i: Cardinal;
+begin
+  result := false;
+  if HasNumberOfChars(4) then
+  begin
+    lPtr := fCurrentCharPtr;
+    inc(lPtr);                           // we can skip the first character that we are not checking.
+    lPtrHigh := cHighCases;
+    lPtrLow := cLowCases;
+
+    for i := low(cHighCases) to High(cHighCases) do
+    begin
+      if not ((lPtr^=lPtrLow^) or (lPtr^=lPtrHigh^)) then
+      begin
+        exit;    // did not have a character to character match so we must break out with a fail.
+      end;
+      inc(lPtr);
+      inc(lPtrLow);
+      inc(lPtrHigh);
+    end;
+
+    result := true;   // if we did not exit above then we had a match to our constant string.
+    inc(fCurrentCharPtr, 4);
+    aDataObj.AsBoolean := true;
+  end;
+end;
+
+
+// Try to parse the false identifier from fJSON
+// Prerequisite to calling this function is that our parsing context fCurrentCharPtr must have already been determined to be a 'f' or 'F', which is what the caller is doing.  So, we skip that check in here because it is redundant.
+function TJsonStreamer.ParseFalse(aDataObj: TDataObj): boolean;
+const
+  cHighCases: array[0..3] of char = ('A','L','S', 'E');
+  cLowCases: array[0..3] of char = ('a','l','s', 'e');
+var
+  lPtr: PChar;
+  lPtrHigh: PChar;
+  lPtrLow: PChar;
+  i: Cardinal;
+begin
+  result := false;
+  if HasNumberOfChars(5) then
+  begin
+    lPtr := fCurrentCharPtr;
+    inc(lPtr);                           // we can skip the first character that we are not checking.
+    lPtrHigh := cHighCases;
+    lPtrLow := cLowCases;
+
+    for i := low(cHighCases) to High(cHighCases) do
+    begin
+      if not ((lPtr^=lPtrLow^) or (lPtr^=lPtrHigh^)) then
+      begin
+        exit;    // did not have a character to character match so we must break out with a fail.
+      end;
+      inc(lPtr);
+      inc(lPtrLow);
+      inc(lPtrHigh);
+    end;
+
+    result := true;   // if we did not exit above then we had a match to our constant string.
+    inc(fCurrentCharPtr, 5);
+    aDataObj.AsBoolean := false;
+  end;
+end;
+
+// Try to parse the null identifier from fJSON
+// Prerequisite to calling this function is that fJSON[aIndex] must have already been determined to be a 'n' or 'N', which is what the caller is doing.  So, we skip that check in here because it is redundant.
+// This seems like a lot of code, but it is writting in such a way to be fast and efficient to execute.
+function TJsonStreamer.ParseNull(aDataObj: TDataObj): boolean;
+const
+  cHighCases: array[0..2] of char = ('U','L','L');
+  cLowCases: array[0..2] of char = ('u','l','l');
+var
+  lPtr: PChar;
+  lPtrHigh: PChar;
+  lPtrLow: PChar;
+  i: Cardinal;
+begin
+  result := false;
+  if HasNumberOfChars(4) then
+  begin
+    lPtr := fCurrentCharPtr;
+    inc(lPtr);                           // we can skip the first character that we are not checking.
+    lPtrHigh := cHighCases;
+    lPtrLow := cLowCases;
+
+    for i := low(cHighCases) to High(cHighCases) do
+    begin
+      if not ((lPtr^=lPtrLow^) or (lPtr^=lPtrHigh^)) then
+      begin
+        exit;    // did not have a character to character match so we must break out with a fail.
+      end;
+      inc(lPtr);
+      inc(lPtrLow);
+      inc(lPtrHigh);
+    end;
+
+    result := true;   // if we did not exit above then we had a match to our constant string.
+    inc(fCurrentCharPtr, 4);
+    aDataObj.Clear;   // should already be clear, but let's just be explicit.
+  end;
+end;
+
+// Try to parse the NAN identifier from fJSON
+// NOTE that parsing NaN as an identifier for a floating point number value is not really supported by the core JSON spec.  But we support it along with -INF and +INF
+// Prerequisite to calling this function is that our parsing context fCurrentCharPtr must have already been determined to be a 'n' or 'N', which is what the caller is doing.  So, we skip that check in here because it is redundant.
+function TJsonStreamer.ParseNan(aDataObj: TDataObj): boolean;
+const
+  cHighCases: array[0..1] of char = ('A','N');
+  cLowCases: array[0..1] of char = ('a','n');
+var
+  lPtr: PChar;
+  lPtrHigh: PChar;
+  lPtrLow: PChar;
+  i: Cardinal;
+begin
+  result := false;
+  if HasNumberOfChars(3) then
+  begin
+    lPtr := fCurrentCharPtr;
+    inc(lPtr);                           // we can skip the first character that we are not checking.
+    lPtrHigh := cHighCases;
+    lPtrLow := cLowCases;
+
+    for i := low(cHighCases) to High(cHighCases) do
+    begin
+      if not ((lPtr^=lPtrLow^) or (lPtr^=lPtrHigh^)) then
+      begin
+        exit;    // did not have a character to character match so we must break out with a fail.
+      end;
+      inc(lPtr);
+      inc(lPtrLow);
+      inc(lPtrHigh);
+    end;
+
+    result := true;   // if we did not exit above then we had a match to our constant string.
+    inc(fCurrentCharPtr, 3);
+    aDataObj.AsDouble := 0/0;    // Setting as Nan         // Note that we do not support a Single version of Nan
+  end;
+end;
+
+function TJsonStreamer.ParseN(aDataObj: TDataObj): boolean;
+begin
+  result := ParseNull(aDataObj);
+  if not result then
+    // We have one other situation that may start with a "N" character and that is when sometimes someone produces NaN for a Not-A-Number floating point number.  We check for that extremely rare ( and technically non-JSON compliant ) case here.
+    result := ParseNan(aDataObj);
+end;
+
+
+
+
+
+//0=nothing applicable so no parsing done, 1=successful parse, 2=Applicable, but error in parsing.
+function TJsonStreamer.ParseObjectID(aDataObj: TDataObj): boolean;
+const
+  cHighCases: array[0..9] of char = ('O','B','J','E','C','T','I','D','(','"');
+  cLowCases: array[0..9] of char = ('o','b','j','e','c','t','i','d','(','"');
+var
+  lPtr: PChar;
+  lPtrHigh: PChar;
+  lPtrLow: PChar;
+  i: Cardinal;
+  lBuffer: array[0..11] of BYTE;
+  lPtr2: PChar;
+begin
+  // Example:  ObjectId("51e80190324277f418000008")
+  result := false;
+  if AllowParsingExtendedTypes and HasNumberOfChars(36) then
+  begin
+    lPtr := fCurrentCharPtr;
+    lPtrHigh := cHighCases;
+    lPtrLow := cLowCases;
+
+    for i := low(cHighCases) to High(cHighCases) do
+    begin
+      if not ((lPtr^=lPtrLow^) or (lPtr^=lPtrHigh^)) then
+      begin
+        exit;    // did not have a character to character match so we must break out with a fail.
+      end;
+      inc(lPtr);
+      inc(lPtrLow);
+      inc(lPtrHigh);
+    end;
+
+    // check that our finalizing " and ) are there correctly.
+    lPtr2 := lPtr;   // should be pointing at the first character of the hex objectID value.
+
+    inc(lPtr2, 24);  // move our 2nd pointer to point to the finalizing " character
+    if (lPtr2^='"') then
+    begin
+      inc(lPtr2);
+      if (lPtr2^=')') then
+      begin
+        // we have the structure of an objectID so now try and parse out the string representation of the objectID
+        if HexToBin(lPtr, lBuffer, sizeof(lBuffer)) = 0 then
         begin
-          // successfully parsed a symbol
+          inc(fCurrentCharPtr,36);
           result := true;
+          Move(lBuffer, aDataObj.AsObjectID.Data, sizeof(lBuffer));
+        end
+        else
+        begin
+          RaiseParsingException('Error Parsing ObjectID', fCurrentCharPtr);
         end;
       end;
     end;
+  end;
+end;
 
-    if not result then
+function TJsonStreamer.ParseISODate(aDataObj: TDataObj): boolean;
+const
+  cHighCases: array[0..8] of char = ('I','S','O','D','A','T','E','(','"');
+  cLowCases: array[0..8] of char = ('i','s','o','d','a','t','e','(','"');
+var
+  lPtr: PChar;
+  lPtrHigh: PChar;
+  lPtrLow: PChar;
+  i: Cardinal;
+  lPtr2: PChar;
+  lDateTime: TDateTime;
+
+  function ParseISODateString: boolean;
+  begin
+    //FINISH
+    lDateTime := 0;
+    result := false;
+  end;
+begin
+  // Example:  ISODate("2021-01-27T00:19:08.862Z")
+  result := false;
+  if AllowParsingExtendedTypes and HasNumberOfChars(35) then
+  begin
+    lPtr := fCurrentCharPtr;
+    lPtrHigh := cHighCases;
+    lPtrLow := cLowCases;
+
+    for i := low(cHighCases) to High(cHighCases) do
     begin
-      raise exception.Create('Unable to parse JSON at '+IntToStr(aContext.CurrentCharacterIndex));
+      if not ((lPtr^=lPtrLow^) or (lPtr^=lPtrHigh^)) then
+      begin
+        exit;    // did not have a character to character match so we must break out with a fail.
+      end;
+      inc(lPtr);
+      inc(lPtrLow);
+      inc(lPtrHigh);
+    end;
+
+    // check that our finalizing " and ) are there correctly.
+    lPtr2 := lPtr;   // should be pointing at the first character of the hex objectID value.
+
+    inc(lPtr2, 24);  // move our 2nd pointer to point to the finalizing " character
+    if (lPtr2^='"') then
+    begin
+      inc(lPtr2);
+      if (lPtr2^=')') then
+      begin
+        // we have the structure of an ISODate() so now try and parse out the string representation of it
+        if ParseISODateString then
+        begin
+          inc(fCurrentCharPtr,35);
+          result := true;
+          aDataObj.AsDateTime := lDateTime;
+        end
+        else
+        begin
+          RaiseParsingException('Error Parsing ISODate', fCurrentCharPtr);  // The ISODate("") structure was correct, but the contents had characters that were invalid hex.
+        end;
+      end;
     end;
   end;
+end;
+
+function TJsonStreamer.ParseI(aDataObj: TDataObj): boolean;
+begin
+  result := ParseInfinity(aDataObj);      // formally JSON5 compliant
+  if not result then
+    result := ParseINF(aDataObj);         // shortcut INF
+  if not result then
+    result := ParseISODate(aDataObj);     // will only do an ISO date if the feature is turned on.
+end;
+
+
+
+// Try to parse a slotname from fJSON string.  We are expecting a slotname, so we should be seeing "somename" and a : should be following it.
+function TJsonStreamer.ParseSlotname(var oSlotname: string): boolean;
+begin
+  // Slotnames must be surrounded by " so really it's the same as string data. The slotname must also end with a :
+  // Also, any amount of white space can be after the string and before the colon or after the colon and before the next data content.
+  // Examples:  "Name" : null, "Name":"Sean", "First Name" : "billy", "Name": 1
+
+  result := ParseString(oSlotName);
+  if result then
+  begin
+    // consume up to the ":"
+    SkipSpaces;
+    if CurrentChar = ':' then
+    begin
+      IncIndex;
+    end
+    else
+    begin
+      result := false;  // We did parse the slotname, but the ":" is not next and thus the slotname is not really valid.
+    end;
+  end;
+end;
+
+//Try to parse a frame (in JSON terminology, it's called an object) from fJSON.  Needs to start with "{"
+//It is already expected that before making a call here that the currentChar is = "}"
+function TJsonStreamer.ParseFrame(aDataObj: TDataObj): boolean;
+var
+  lFrame: TDataFrame;
+  lSlotName: string;
+begin
+//  result := false;
+//  if eof then exit;
+//  if not (CurrentChar = '{') then exit;
+
+  result := true;  // we are a frame and although we didn't load much yet, we at least already know that we have started a frame.
+  IncIndex;   // move past the }
+  SkipSpaces;
+  lFrame := aDataObj.AsFrame;
+
+  while (not eof) and (CurrentChar <> '}') do
+  begin
+    if ParseSlotName(lSlotName) then
+    begin
+      if ParseAnyType(lFrame.NewSlot(lSlotName)) then
+      begin
+        SkipSpaces;
+        if (not eof) and (CurrentChar = ',') then
+        begin
+          IncIndex;
+        end
+        else
+        begin
+          break;
+        end;
+      end
+      else
+      begin
+        RaiseParsingException('Invalid token parsing JSON', fCurrentCharPtr);
+      end;
+    end
+    else
+    begin
+        RaiseParsingException('Invalid token parsing JSON', fCurrentCharPtr);
+      // Error reading the slotname.
+    end;
+  end;
+
+  // check for proper frame ending.
+  if not(eof) and (CurrentChar <> '}') then
+  begin
+    RaiseParsingException('Error Parsing JSON. Missing closing }', fCurrentCharPtr);
+  end;
+
+  IncIndex; // consume closing '}'
+end;
+
+function TJsonStreamer.TryParsingSymbol(aDataObj: TDataObj): integer;  //0=nothing applicable, 1=successful parse, 2=Applicable, but error in parsing.
+begin
+  result := 0;   // FINISH this with new implementation.
+end;
+
+// This function will parse whatever JSON data type it can find next and will put that data into aDataObj
+function TJsonStreamer.ParseAnyType( aDataObj: TDataObj): boolean;  // result 0=Not Parsed, 1=Successfully Parsed, 2=Partially Successfully parsed (example: an array was successfully parsing, but errored out on the nth item in the array)
+var
+  lChar: Char;
+  lJump: TJumpFunction;
+begin
+  SkipSpaces;
+
+  // We want to look at the next character to quickly determine which direction we could "possibly" go to see if we are trying to load a particular "known" JSON keyword.
+  // By looking at this character, we can decide what possibility to check.
+  lChar := CurrentChar;
+  if CurrentChar>#127 then
+    RaiseParsingException('Invalid token parsing JSON', fCurrentCharPtr);
+
+{$R-}  // can turn off range checking because we just checked it above.  NOTE:  turning this off only saves us two CPU instructions.
+  TMethod(lJump).Code := cJumpTable[lChar];
+  TMethod(lJump).Data := self;
+  result := lJump(aDataObj);                         // THIS IS THE MAGIC.  DO A JUMP TO THE PARSING CODE THAT WILL MOST LIKELY BE THE RIGHT ONE TO HANDLE THE NEXT SEQUENCE OF CHARACTERS.
+{$R+}
+
+  if not result then
+  begin
+    // Was not able to parse any of the regular JSON data types at this point from either the above jump table to trying any of the options, or from those attempts not being successful.
+    // SO, see if we are accepting Symbols to be parsed.
+    if AllowParsingSymbols then
+    begin
+      // We treat symbols as anything up to a possible ending case such as a "," or "]" or "}"
+      if TryParsingSymbol(aDataObj) = 1 then
+      begin
+        // successfully parsed a symbol
+        result := true;
+      end;
+    end;
+  end;
+
+  if not result then
+  begin
+    RaiseParsingException('Invalid token parsing JSON', fCurrentCharPtr);
+  end;
+end;
 
 
 {$R-}  // turn off range checking so we can maximize speed.  the bit-shifting and binary operations below will keep our indexes in range already.
 
 // This will write out a string to the fStringBuilder and it will escape any characters in the aString that need to be escaped for proper JSON.
 // It will also behave according to the fEncodeNonAsciiCharacters property to also escape characters above 127 if it is set to true.
-procedure TJsonStreamer.WriteStringEncodingSpecialJSONCharacters(aString: string);
+procedure TJsonStreamer.WriteStringEncodingSpecialJSONCharacters(const aString: string);
 var
   lChar: char;
   lUnicodeValue: Cardinal;
@@ -1330,7 +1400,7 @@ begin
   TJSONStreamer.JsonToDataObj(Value, self);
 end;
 
-{ TJsonStreamContext }
+{ TJsonStreamer }
 constructor TJsonStreamer.Create(aStream: TStream);
 begin
   inherited Create(aStream);
@@ -1361,6 +1431,17 @@ end;
 
 
 
+class function TJsonStreamer.CreateDataObjFromJSON(const aJson: string): TDataObj;
+begin
+  result := TDataObj.Create;
+  try
+    JsonToDataObj(aJSON, result);
+  except
+    FreeAndNil(result);
+    raise;
+  end;
+end;
+
 function TJsonStreamer.DecInd: string;
 begin
   if Style = cJsonHumanReadable then
@@ -1375,13 +1456,10 @@ end;
 
 destructor TJsonStreamer.Destroy;
 begin
-  //NOTE:  do not free the fEncoding becuase that is management globally.  we just have a reference to it.
-  if assigned(fStringBuilder) then
-    FreeAndNil(fStringBuilder);
+  //NOTE:  do not free the fEncoding because that is management globally.  we just have a reference to it.
+  FreeAndNil(fStringBuilder);
   inherited;
 end;
-
-
 
 function TJsonStreamer.IncInd: string;
 begin
@@ -1390,7 +1468,13 @@ begin
   result := StringOfChar(' ',fIndent);
 end;
 
-
+procedure TJsonStreamer.RaiseParsingException(aMsg: string; aCharacterPos: PChar);
+var
+  lInt: NativeInt;
+begin
+  lInt := NativeInt(aCharacterPos) - NativeInt(@JSON[1]);
+  raise EJSONParsingException.CreateFmt(SJsonParseMessageAt,[aMsg, lInt]);
+end;
 
 procedure TJsonStreamer.ReadFromDataObjInternal(aDataObj: TDataObj);
 var
@@ -1696,8 +1780,8 @@ end;
 
 
 
-// Read a dataObject from the stream that this JSONStreamContext is linked to.
-procedure TJsonStreamer.parseFromJson(aObj: TDataObj);
+// Read a dataObject from the stream that this TJsonStreamer is linked to.
+procedure TJsonStreamer.ParseFromJson(aObj: TDataObj);
 { NOTE:  Notes from me (Sean Solberg) about this method.
 
          It's really unfortunate that I had to write a JSON parser because really that task should be perfected by now.  However, I wasn't
@@ -1741,7 +1825,7 @@ procedure TJsonStreamer.parseFromJson(aObj: TDataObj);
          happy with the results.  I'm sure it can be improved with a good eye, but it's definitely good enough for now.
 
          There are two downsides to this code that I hope to improve upon in the future:
-           1.  With TJsonStreamContext, The code is written to expect that the entire source stream is going to be parsed into aDataObj.  This might not be the case in some people's implementations.
+           1.  With TJsonStreamer, The code is written to expect that the entire source stream is going to be parsed into aDataObj.  This might not be the case in some people's implementations.
                I would rather read and parse the JSON from the stream and once a full JSON payload is loaded, leave the stream untouched and at the right position.  However,
                we are supporting the different possible text encodings (really Unicode, ASCII and UTF8) and that decoding happens before the JSON parsing actually begins.  I would
                need to be able to pull one "character" at a time from any type of encoding and that's just too much work for me to do right now.   Maybe delphi has a way to
@@ -1756,46 +1840,37 @@ procedure TJsonStreamer.parseFromJson(aObj: TDataObj);
 
 
 
-  (*  This is one of the types of JSON produced from MongoDB for ObjectID fields
+(* NOTE:  This is one of the types of JSON produced from MongoDB for ObjectID fields
   "user": {
     "$oid": "543d60369ed7fea94a0e6089"
   }
 
   "user": ObjectID("543d60369ed7fea94a0e6089")     is another variation.
-  *)
+*)
 
 
-  (*  This is how binary is represented in JSON from MongoDB
+(* NOTE:  This is how binary is represented in JSON from MongoDB
   {
     "$binary": {
       "base64": "8RNdyah ... "
     }
   }
-  *)
+*)
 
-
-
-
-var
-  lContext: TParseContext;    // We use this record for our parsing context and we pass around a pointer to it for faster method calling.
 begin
   if fJSON = '' then exit;
 
-  // Setup the parsing context that is used by all the parsing procedures
-  lContext.JSON := fJSON;
-  lContext.CurrentCharPtr:=pchar(lContext.JSON);
-  lContext.EndPtr := @pchar(lContext.JSON)[length(lContext.JSON)];    // Address of the last character in the JSON string.
-  lContext.formatSettings := fFormatSettings;
-  lContext.AllowParsingExtendedTypes := fAllowParsingExtendedTypes;
-  lContext.AllowParsingSymbols := fAllowParsingSymbols;
+  // Setup our parsing context with the character pointers we will need.
+  fCurrentCharPtr:=pchar(JSON);
+  fEndPtr := @pchar(JSON)[length(JSON)];    // Address of the last character in the JSON string.
 
-  if not ParseAnyType(@lContext, aObj) then
+  if not ParseAnyType(aObj) then
   begin
     //Getting here means we were not able to parse the JSON completely.
-    raise exception.Create('Error parsing JSON at '+intToStr(lContext.CurrentCharacterIndex));
+    RaiseParsingException('Error parsing JSON', fCurrentCharPtr);
   end;
 
-  // NOTE that there could be more characters to be processed in fJSON.  the only way to know would be to look at the lContext.CurrentCharPtr and see where it is in relation to the EndPtr.
+  // NOTE that there could be more characters to be processed in fJSON.  The only way to know would be to look at the lContext.CurrentCharPtr and see where it is in relation to the EndPtr.
   // Do we need to do something if there are more chars available?
 end;
 
@@ -1804,7 +1879,7 @@ var
   lContext: TJsonStreamer;
 begin
   result := '';
-  // Notice that we are creating a TJsonStringContext and leaving it with the default serialization options which is cTightJSON and EncodeNonAsciiCharacters=false.
+  // Note that we are creating a TJsonStreamer and leaving it with the default serialization options which is cTightJSON and EncodeNonAsciiCharacters=false.
   lContext:=TJsonStreamer.Create(aStyle, aIndent);
   try
     lContext.EncodeNonAsciiCharacters := aEncodeNonAsciiCharacters;
@@ -1815,7 +1890,7 @@ begin
   end;
 end;
 
-class procedure TJsonStreamer.JsonToDataObj(aJson: string; aDataObj: TDataObj);
+class procedure TJsonStreamer.JsonToDataObj(const aJson: string; aDataObj: TDataObj);
 var
   lContext: TJsonStreamer;
 begin
@@ -1827,7 +1902,6 @@ begin
     lContext.Free;
   end;
 end;
-
 
 class function TJsonStreamer.GetFileFilter: string;
 begin
@@ -1972,7 +2046,6 @@ begin
     // If we have ascii or ansi encoding, then we MUST have all unicode characters above $7F be escaped.  Hmmm, Is it above $7F or above $FF?
     fEncodeNonAsciiCharacters := true;
   end;
-
 
   // First, get the aDataObj serialized into a JSON string (Full Unicode Delphi string)
   fStringBuilder:=TStringBuilder.Create(fInitialBufferCapacity);         // This will hold the produced json as it is being created.

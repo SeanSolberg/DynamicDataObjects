@@ -50,8 +50,6 @@ procedure RegisterDataObjStreamer(aStreamer: TDataObjStreamerClass);
 
 implementation
 
-//uses LoggerUnit;
-
 { TDataObjStreamer }
 
 class function TDataObjStreamer.ClipboardPriority: cardinal;
@@ -68,7 +66,6 @@ var
   lStore: PTDataStore;
   lDataObj: TDataObj;
   lValue: byte;
-//  lDataType: TDataType;
 
   // Read a Unsigned UVarInt from the stream.
   function ReadUVarInt: UInt64;
@@ -122,16 +119,15 @@ begin
   lStore := aDataObj.getStore;
 
   fStream.Read(lValue, 1);
-  aDataObj.SetDataTypeByValue(lValue);
-//  lDataType.Value := lValue;
-//  aDataObj.DataType := lDataType;
 
+  aDataObj.SetDataTypeParts(TDataTypeCode(lValue and $1F), // 5  bits for the datatype code}
+                           (lValue shr 5) and $03,        // 2  bits for the subClass
+                           (lValue and $80)<>0);          // 1  bit for Has Attributes
 
   case aDataObj.DataType.Code of
     cDataTypeNull: begin end;
 
     cDataTypeBoolean: begin end;
-//    cDataTypeBooleanTrue: begin end;
 
     cDataTypeByte: begin
       lReadCount := fStream.Read(lStore.fDataByte, 1);
@@ -147,11 +143,6 @@ begin
       lReadCount := fStream.Read(lStore.fDataInt64, 8);
       if lReadCount <> 8 then DoException;
     end;
-
-(*    cDataTypeVarInt: begin
-      lVarInt.ReadFromStream(fStream);
-      lStore.dataInt64 := lVarInt;
-    end; *)
 
     cDataTypeSingle: begin
       lReadCount := fStream.Read(lStore.fDataSingle, 4);
@@ -196,10 +187,6 @@ begin
       lReadCount := fStream.Read(TDataObjectID(lStore.dataObjectID).Data, 12);
       if lReadCount <> 12 then DoException;
     end;
-
-(*    cDataTypeUTF8String: begin
-      UTF8string(lStore.dataUTF8String) := ReadUTF8String;
-    end; *)
 
     cDataTypeString: begin
       lStore.fdataString := ReadUnicodeString;
@@ -335,36 +322,6 @@ var
     lVarInt.WriteToStream(fStream);
   end;
 
-(*  procedure WriteString(aString: String);
-  var
-    lUTF8String: UTF8String;
-    lSize: TUVarInt64;                                  // Notice that since string lengths can't possibly be a negative number, we are using an Unsigned VarInt instead which is faster.
-    lStr: AnsiString;
-    lX: LongInt;
-  begin
-    //Writes an ANSI version of the string
-    lStr := aString;
-    lX:=Length(lStr);
-    aStream.Write(lX,4);   // write 4 bytes representing the size of the string
-    if lX > 0 then
-      aStream.Write(lStr[1],lX);  // write the string data. Not Including the Null Byte.
-  end;*)
-
-
-
-  // This writes a UTF8 version of the unicode string with UVarInt length
-(*  procedure WriteString(aString: String);
-  var
-    lUTF8String: UTF8String;
-    lSize: TUVarInt64;                                  // Notice that since string lengths can't possibly be a negative number, we are using an Unsigned VarInt instead which is faster.
-  begin
-    lUTF8String := aString;                             // converts to UTF8 AnsiString
-    lSize := length(lUTF8String);                       // returns the number of bytes used in the string.
-    lSize.WriteToStream(aStream);
-    aStream.Write(lUTF8String[1], length(lUTF8String));    // FINISH this - decide on null terminator or starting size.
-  end;  *)
-
-
   procedure WriteUTF8String(aUTF8String: UTF8String);
   var
     lSize: TUVarInt64;                                      // Notice that since string lengths can't possibly be a negative number, we are using an Unsigned VarInt instead which is faster.
@@ -383,35 +340,16 @@ var
     fStream.Write(aString[1], lSize);       // Unicode is two bytes per character.
   end;
 
-
-
-{  // This writes a UTF8 version of the unicode string but with a 4 byte length
-  procedure WriteString(aString: String);
-  var
-    lUTF8String: UTF8String;
-    lSize: integer;
-  begin
-    lUTF8String := aString;                             // converts to UTF8 AnsiString
-    lSize := length(lUTF8String);                       // returns the number of bytes used in the string.
-    aStream.Write(lSize,4);
-    aStream.Write(lUTF8String[1], length(lUTF8String));    // FINISH this - decide on null terminator or starting size.
-  end;}
-
-
-  // This option writes a fully unicode string
-{  procedure WriteString(aString: String);
-  var
-    lSize: TUVarInt64;                                  // Notice that since string lengths can't possibly be a negative number, we are using an Unsigned VarInt instead which is faster.
-  begin
-    lSize := length(aString);                       // returns the number of bytes used in the string.
-    lSize.WriteToStream(aStream);
-    aStream.Write(aString[1], lSize);    // FINISH this - decide on null terminator or starting size.
-  end;  }
-
-
 begin
   lStore := aDataObj.getStore;
-  lValue := aDataObj.DataType.Value;
+
+  // make a dataType value byte for transmission by bit smashing some things together.
+  lValue := (ord(aDataObj.DataType.Code) and $1F) or          // 5  bits for the datatype code.
+            ((aDataObj.DataType.SubClass and $03) shl 5);     // 2  bits for the subClass
+  if aDataObj.DataType.HasAttributes then
+    lValue := lValue or $80;                                  // 1  bit for Has Attributes
+
+
   fStream.Write(lValue, 1);
   case aDataObj.DataType.Code of
     cDataTypeNull: begin end;
@@ -419,7 +357,6 @@ begin
     cDataTypeByte: fStream.Write(lStore.fDataByte,1);
     cDataTypeInt32: fStream.Write(lStore.fDataInt32,4);
     cDataTypeInt64: fStream.Write(lStore.fDataInt64,8);
-//    cDataTypeVarInt: WriteVarInt(lStore.dataInt64);
     cDataTypeSingle: fStream.Write(lStore.fDataSingle,4);
     cDataTypeDouble: fStream.Write(lStore.fDataDouble,8);
 //    cDataTypeDecimal128:    not implemented yet.
@@ -429,9 +366,6 @@ begin
     cDataTypeTime: fStream.Write(lStore.fDataDateTime,8);
     cDataTypeGUID: fStream.Write(lStore.dataGUID.GUID, 16);
     cDataTypeObjectID: fStream.Write(lStore.dataObjectID.Data, 12);
-{    cDataTypeUTF8String: begin
-      WriteUTF8String(UTF8string(lStore.dataUTF8String));
-    end; }
     cDataTypeString: begin
       WriteUnicodeString(lStore.DataString);
     end;
@@ -495,19 +429,12 @@ begin
   result := 'DataObj';
 end;
 
-{ TDataObjStreamer }
-
-
-
-
-{ TStreamerRegistry }
 
 procedure RegisterDataObjStreamer(aStreamer: TDataObjStreamerClass);
 begin
   if not assigned(gStreamerRegistry) then
     gStreamerRegistry := TStreamerRegistry.Create;
   gStreamerRegistry.Add(aStreamer);
- // TLogger.Add('Reg '+aStreamer.ClassName);
 end;
 
 

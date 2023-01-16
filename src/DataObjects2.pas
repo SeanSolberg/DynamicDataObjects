@@ -93,23 +93,25 @@ unit DataObjects2;
     Messagepack
     ION - binary and text (json superset)
 
-    YAML - text (json superset) }
-
     { Planned Internal Improvements
       Finish all the details around the sparse array.
-      Simplify the internal DataType-Code mechanism.  It was done for memory compactness but we can expand memory a bit to get simplification and a tiny perfomance increase.
       Internal support for the WKB Geometry data type so that DDO can be fully serialized.
       Internal support for the Half Float (Float16)
       Internal support for the Extended Float
       Internal support for the full unsigned set of integers (UInt16, UInt32, Uint64) and the signed byte.
       Either get the concept of "Attributes" working correctly or remove it entirely.
+      Support JSON5 serialization
+      Support YAML serialization
+      Support the ability for TDataFrame to have an option for case-sensitive fieldnames.  This is needed for more correct support of JSON, although pascal object properties are case insensitive, so....
     }
 
 
 interface
 
-uses SysUtils, DateUtils, Generics.collections, Classes, VarInt, StreamCache, Rtti, typInfo, System.NetEncoding,
-     windows {for outputdebugString};
+uses SysUtils, DateUtils, Generics.collections, Classes, VarInt, StreamCache, Rtti, typInfo, System.RTLConsts, System.NetEncoding
+{$ifdef MSWINDOWS}
+   ,windows
+{$endif};
 
 // If you enable cMakeMoreCompatibleWithOldDataObjects then it makes this code more compatible with the old dataObjects library I used to use.
 {$Define cMakeMoreCompatibleWithOldDataObjects}
@@ -161,11 +163,12 @@ const
  //                                     code = 2,3: future reserved.
  cSubCodeGeneric = 0;
  cSubCodeSymbol = 1;
-// cSubCodeUnicode = 2;
-// cSubCodeUnicodeSymbol = 3;
+// cSubCodeUnicode = 2;       Not used yet
+// cSubCodeUnicodeSymbol = 3; Not used yet
 
  cFalseStr = 'False';
  cTrueStr = 'True';
+ // Future ideas...
  // For an array for example:  subclass code = 0: Generic element array where each element in the array is a TDataObj
  //                                     code = 1: Specific type array where each element in the array is the same data type.  So, the next byte
  //                                               serialized is the dataType and every object serialized then must have the exact same dataType (including flags)
@@ -242,89 +245,20 @@ type
   );
 
 
-
   TDataType = packed record
   private
     fCode: TDataTypeCode;
     fSubClass: Byte;
     fHasAttributes: Boolean;
-//    fValue: byte;
-//    function getCode: TDataTypeCode;
-//    function getHasAttributes: boolean;
-//    function getSubClass: byte;
     procedure setCode(const aValue: TDataTypeCode);
     procedure setHasAttributes(const aValue: boolean);
     procedure setSubClass(const aValue: byte);
-    function getValue: Byte;
-    procedure setValue(const aValue: Byte);
   public
-//    property Value: byte read fValue write fValue;
-//    property Code: TDataTypeCode read getCode write setCode;
-//    property SubClass: byte read getSubClass write setSubClass;
-//    property HasAttributes: boolean read getHasAttributes write setHasAttributes;
     property Code: TDataTypeCode read fCode write setCode;
     property HasAttributes: boolean read fHasAttributes write setHasAttributes;
     property SubClass: Byte read fSubClass write SetSubClass;
-    property Value: Byte read getValue write setValue;
   end;
 
-
-  (*  TDataType = packed record
-  private
-    fValue: byte;
-    function getCode: byte;
-    function getHasAttributes: boolean;
-    function getSubClass: byte;
-    procedure setCode(const aValue: byte);
-    procedure setHasAttributes(const aValue: boolean);
-    procedure setSubClass(const aValue: byte);
-  public
-    property Value: byte read fValue write fValue;
-    property Code: byte read getCode write setCode;
-    property SubClass: byte read getSubClass write setSubClass;
-    property HasAttributes: boolean read getHasAttributes write setHasAttributes;
-  end;
-
-const
-  cDataTypeNull = 0;
-  cDataTypeBooleanFalse = 1;
-  cDataTypeBooleanTrue = 2;
-  cDataTypeByte = 3;        // One byte number
-  cDataTypeInt32 = 4;       // 4 byte number
-  cDataTypeInt64 = 5;       // 8 byte number
-  cDataTypeVarInt = 6;      // variable byte (zig-zag for signed, non-zig-zag for non-signed) VarInt streaming capable up to 64 bit integer.
-  cDataTypeSingle = 7;      // single floating point
-  cDataTypeDouble = 8;      // double floating point
-  cDataTypeDecimal128 = 9;  // Reserved to be compatible with BSON, but probably not going to implement this data type.
-  cDataTypeDateTime = 10;   // Delphi's TDateTime 8 byte value.
-  cDataTypeUTCDateTime = 11; //The int64 is UTC milliseconds since the Unix epoch.
-  cDataTypeDate = 12;
-  cDataTypeTime = 13;
-  cDataTypeGUID = 14;       // Stored and streamed as the 16 byte data that makes up a GUID.
-  cDataTypeObjectID = 15;   // equivalent to the BSON ObjectID  12 bytes.   https://docs.mongodb.com/manual/reference/method/ObjectId/
-  cDataTypeUTF8String = 16;      // UTF-8 encoded string.  Note that each string data type can have flags
-  cDataTypeUnicodeString = 17;   // Unicode encode string.   always 2 bytes per character.
-  cDataTypeStringList = 18;
-  cDataTypeFrame = 19;           // Each slot in the frame is identified by a case-insensitive
-  cDataTypeArray = 20;           //
-  cDataTypeSparseArray = 21;
-  cDataTypeBinary = 22;
-  cDataTypeObject = 23;          // Note that this means that TDataObj holds an object instance where that object instance is serialized/deserialzed to/from the stream
-                                 // directly.  The streaming still complies by using all the other core data types except that by convention, the Frame Object that is
-                                 // serialized must have an attribute with the "_className" name.  That value is then used to instantiate the right object owned by TDataObj
-                                 // which will then read the rest of the frame.  If that object can't be instantiated, then the TDataObj is a frame as normal with the attribute in place.
-                                 // This lets us have a real object that we want to serialize in dataObject form without having to make a full copy of the data in DataObject
-                                 // form first before we can serialize to a stream.  It means we are not doubling up the memory when reading from and writing from a stream.
-
-  cDataTypeTag = 24;             // a tag is an unsigned number (up to 32 bit).  The tag data type, then holds exactly one child dataObject that can be of any time (including another tag).
-                                 // This tag gives the functionality of defining some sort of meaning to the contained dataObject.  Although any tag number can be used from a generic sense,
-                                 // certain tag numbers are only defined to have meaning
-*)
-//const
-//  cDataTypeAttributedStore = $80; // This identifies the container in memory to use to hold the TDataFrame for the attributes/dataStore that actually holds the data.
-                                  // This mechanism lets us not waste a null pointer for every dataObject that we have in memory that doesn't have any attributes.
-                                  // Most won't have attributes so this saves a bunch of memory.
-                                  // Also, this bit coding b10000000 means that the "hasAttributes" bit is set but the data is NULL with no subclass codes.  This value is not a real dataType value.  It's just used for a case on the TDataStore.
 const
   cDataTypeStrings: array[0..22] of string = (
      'null',
@@ -334,14 +268,13 @@ const
      'Int64',
      'Single',
      'Double',
-     'Decimal128',
+     'Decimal128',  // Not implemented yet, but this is the plan to be compatible with BSON
      'DateTime',
      'UTCDateTime',
      'Date',
      'Time',
      'GUID',
      'ObjectID',
-//     'UTF8 String',
      'String',
      'StringList',
      'Frame',
@@ -377,130 +310,31 @@ type
   PTObject = pointer;
 
 
-
-
-(*  TDataStore = packed record
-  private
-    function getDataGUID: TDataGUID;
-    procedure setDataGUID(aValue: TDataGUID);
-    function getDataFrame: TDataFrame;
-    procedure setDataFrame(const aValue: TDataFrame);
-    function getDataArray: TDataArray;
-    procedure setDataArray(const Value: TDataArray);
-    function getDataSparseArray: TDataSparseArray;
-    procedure setDataSparseArray(const Value: TDataSparseArray);
-    function getDataBinary: TDataBinary;
-    procedure setDataBinary(const Value: TDataBinary);
-    function getDataTab: TDataTag;
-    procedure setDataTag(const Value: TDataTag);
-    function getDataObjectID: TDataObjectID;
-    function getDataStringList: TDataStringList;
-    procedure setDataObjectID(const Value: TDataObjectID);
-    procedure setDataStringList(const Value: TDataStringList);
-    function GetObject: TObject;
-    procedure SetObject(const Value: TObject);
-    function getDataAttributeStore: TDataAttributeStore;
-    procedure setDataAttributeStore(const Value: TDataAttributeStore);
-  public
-    procedure ClearData(aDataType: TDataType);
-
-    property DataGUID: TDataGUID read getDataGUID write setDataGUID;
-    property DataFrame: TDataFrame read getDataFrame write setDataFrame;
-    property DataArray: TDataArray read getDataArray write setDataArray;
-    property DataSparseArray: TDataSparseArray read getDataSparseArray write setDataSparseArray;
-    property DataBinary: TDataBinary read getDataBinary write setDataBinary;
-    property DataTag: TDataTag read getDataTab write setDataTag;
-    property DataObjectID: TDataObjectID read getDataObjectID write setDataObjectID;
-    property DataObject: TObject read getObject write setObject;
-    property DataStringList: TDataStringList read getDataStringList write setDataStringList;
-    property DataAttributeStore: TDataAttributeStore read getDataAttributeStore write setDataAttributeStore;
-  var
-    // Note that the biggest size of any of these storage values should be 8 bytes (pointer on 64 bit systems, or Double).  Anything that is bigger than this will have an object that is intantiated to hold it.
-    case byte of
-      ord(cDataTypeByte): (dataByte: byte;);
-//      ord(cDataTypeBoolean): (dataBoolean: boolean;);
-      ord(cDataTypeInt32), ord(cDataTypeDate): (dataInt32: Integer;);       // always 32 bit signed on every platform.  for Date, it's the number of days since 1899.
-      ord(cDataTypeInt64), {cDataTypeVarInt,} ord(cDataTypeUTCDateTime): (dataInt64: int64;);
-      ord(cDataTypeSingle): (dataSingle: single;);
-      ord(cDataTypeDouble): (dataDouble: double;);
-//      cDataTypeDecimal128:();                                  // Reserved to be compatible with BSON, but probably not going to implement this data type yet.
-      ord(cDataTypeDateTime): (dataDateTime: TDateTime;);             // Delphi's TDateTime 8 byte value.
-      ord(cDataTypeTime): (dataTime: TTime;);
-      ord(cDataTypeGUID): (PdataGUID: PTDataGUID;);                     // object that's allocated to store the GUID data.
-      ord(cDataTypeObjectID): (PdataObjectID: PTDataObjectID;);         // equivalent to the BSON ObjectID  12 bytes.   https://docs.mongodb.com/manual/reference/method/ObjectId/
-//      cDataTypeUTF8String: (dataUTF8String: PUTF8String;);     // Storing and serializing here as a unicode string and serialized as a unicode string (Unicode with default UTF-16 characters in memory)
-      ord(cDataTypeString): (dataUnicodeString: PString;);            // Storing and serializing as a UTF8String (1-4 bytes per character, but typically going to be 1)
-      ord(cDataTypeStringList): (PdataStringList: PTDataStringList;);
-      ord(cDataTypeFrame): (PdataFrame: PTDataFrame;);
-      ord(cDataTypeArray): (PdataArray: PTDataArray;);
-      ord(cDataTypeSparseArray): (PdataSparseArray: PTDataSparseArray;);
-      ord(cDataTypeBinary): (PdataBinary: PTDataBinary;);
-      ord(cDataTypeObject): (PdataObject: PTObject;);     // Note that this means that TDataObj holds an object instance where that object instance is serialized/deserialzed to/from the stream using RTTI
-      ord(cDataTypeTag): (PdataTag: PTDataTag;);
-      $80: (PDataAttributeStore: PTDataAttributeStore);
-//      cDataTypeAttributedStore: (dataAttributeStore: TDataAttributeStore);
-
-  end;  *)
-
-(* This is the original version that works in VCL but not android because of ARC
-  TDataStore = packed record
-  public
-    procedure ClearData(aDataType: TDataType);
-  var
-    // Note that the biggest size of any of these storage values should be 8 bytes (pointer on 64 bit systems, or Double).  Anything that is bigger than this will have an object that is intantiated to hold it.
-    case byte of
-      ord(cDataTypeByte): (dataByte: byte;);
-//      ord(cDataTypeBoolean): (dataBoolean: boolean;);
-      ord(cDataTypeInt32), ord(cDataTypeDate): (dataInt32: Integer;);       // always 32 bit signed on every platform.  for Date, it's the number of days since 1899.
-      ord(cDataTypeInt64), {cDataTypeVarInt,} ord(cDataTypeUTCDateTime): (dataInt64: int64;);
-      ord(cDataTypeSingle): (dataSingle: single;);
-      ord(cDataTypeDouble): (dataDouble: double;);
-//      cDataTypeDecimal128:();                                  // Reserved to be compatible with BSON, but probably not going to implement this data type yet.
-      ord(cDataTypeDateTime): (dataDateTime: TDateTime;);             // Delphi's TDateTime 8 byte value.
-      ord(cDataTypeTime): (dataTime: TTime;);
-      ord(cDataTypeGUID): (dataGUID: TDataGUID;);                     // object that's allocated to store the GUID data.
-      ord(cDataTypeObjectID): (dataObjectID: TDataObjectID;);         // equivalent to the BSON ObjectID  12 bytes.   https://docs.mongodb.com/manual/reference/method/ObjectId/
-//      cDataTypeUTF8String: (dataUTF8String: PUTF8String;);     // Storing and serializing here as a unicode string and serialized as a unicode string (Unicode with default UTF-16 characters in memory)
-      ord(cDataTypeString): (dataUnicodeString: PString;);            // Storing and serializing as a UTF8String (1-4 bytes per character, but typically going to be 1)
-      ord(cDataTypeStringList): (dataStringList: TDataStringList;);
-      ord(cDataTypeFrame): (dataFrame: TDataFrame;);
-      ord(cDataTypeArray): (dataArray: TDataArray;);
-      ord(cDataTypeSparseArray): (dataSparseArray: TDataSparseArray;);
-      ord(cDataTypeBinary): (dataBinary: TDataBinary;);
-      ord(cDataTypeObject): (dataObject: TObject;);     // Note that this means that TDataObj holds an object instance where that object instance is serialized/deserialzed to/from the stream using RTTI
-      ord(cDataTypeTag): (dataTag: TDataTag;);
-      $80: (dataAttributeStore: TDataAttributeStore);
-//      cDataTypeAttributedStore: (dataAttributeStore: TDataAttributeStore);
-
-  end;
-*)
-
+  // The TDataStore's job is to be the container that "Holds" the actually data that is contianed within the TDataObject.
   TDataStore = packed record
   private
-    function getDataGUID: TDataGUID;
-    procedure setDataGUID(aValue: TDataGUID);
-    function getDataFrame: TDataFrame;
-    procedure setDataFrame(const aValue: TDataFrame);
-    function getDataArray: TDataArray;
-    procedure setDataArray(const Value: TDataArray);
-    function getDataSparseArray: TDataSparseArray;
-    procedure setDataSparseArray(const Value: TDataSparseArray);
-    function getDataBinary: TDataBinary;
-    procedure setDataBinary(const Value: TDataBinary);
-    function getDataTag: TDataTag;
-    procedure setDataTag(const Value: TDataTag);
-    function getDataObjectID: TDataObjectID;
-    function getDataStringList: TDataStringList;
-    procedure setDataObjectID(const Value: TDataObjectID);
-    procedure setDataStringList(const Value: TDataStringList);
-    function GetObject: TObject;
-    procedure SetObject(const Value: TObject);
-    function getDataAttributeStore: TDataAttributeStore;
-    procedure setDataAttributeStore(const Value: TDataAttributeStore);
-    function getDataString: string;
-    procedure setDataString(const Value: string);
+    function getDataGUID: TDataGUID; inline;
+    procedure setDataGUID(aValue: TDataGUID); inline;
+    function getDataFrame: TDataFrame; inline;
+    procedure setDataFrame(const aValue: TDataFrame); inline;
+    function getDataArray: TDataArray; inline;
+    procedure setDataArray(const Value: TDataArray); inline;
+    function getDataSparseArray: TDataSparseArray; inline;
+    procedure setDataSparseArray(const Value: TDataSparseArray); inline;
+    function getDataBinary: TDataBinary; inline;
+    procedure setDataBinary(const Value: TDataBinary); inline;
+    function getDataTag: TDataTag; inline;
+    procedure setDataTag(const Value: TDataTag); inline;
+    function getDataObjectID: TDataObjectID; inline;
+    function getDataStringList: TDataStringList; inline;
+    procedure setDataObjectID(const Value: TDataObjectID); inline;
+    procedure setDataStringList(const Value: TDataStringList); inline;
+    function GetObject: TObject; inline;
+    procedure SetObject(const Value: TObject); inline;
+    function getDataString: string; inline;
+    procedure setDataString(const Value: string); inline;
   public
-    procedure ClearData(aDataType: TDataType);
+    procedure ClearData; inline;
 
     property DataGUID: TDataGUID read getDataGUID write setDataGUID;
     property DataFrame: TDataFrame read getDataFrame write setDataFrame;
@@ -511,7 +345,6 @@ type
     property DataObjectID: TDataObjectID read getDataObjectID write setDataObjectID;
     property DataObject: TObject read getObject write setObject;
     property DataStringList: TDataStringList read getDataStringList write setDataStringList;
-    property DataAttributeStore: TDataAttributeStore read getDataAttributeStore write setDataAttributeStore;
     property DataString: string read getDataString write setDataString;
   var
     fDataObject: TObject;         // If this data object holds a datatype that requires an object to hold it, that is stored/owned here.  Note, depending on the compiler, this may use arc or may not use arc.
@@ -583,8 +416,9 @@ type
 
   TDataObj = class
   strict private
-    fStore: TDataStore;      // most of the time, you should not access this directly.  use a call to GetStore to get it. This stores the actual data and it can vary what type of data it is holding.
-    fDataType: TDataType;    // most of the time, you should not access this directly.
+    fStore: TDataStore;                 // most of the time, you should not access this directly.  use a call to GetStore to get it. This stores the actual data and it can vary what type of data it is holding.
+    fDataType: TDataType;               // most of the time, you should not access this directly.
+    fAttributes: TDataAttributeStore;   // will be nil unless attributes have been added.
   private
     function getAsArray: TDataArray;
     function getAsBinary: TDataBinary;
@@ -611,7 +445,6 @@ type
     function getAsUTCDateTime: int64;
     function getDataType: TDataType;
     function getDataTypeString: String;
-//    function getAsUTF8String: UTF8String;
     function getAsTag: TDataTag;
 
     procedure setAsArray(const aValue: TDataArray);
@@ -633,7 +466,6 @@ type
     procedure setAsSingle(const aValue: Single);
     procedure setAsSparseArray(const aValue: TDataSparseArray);
     procedure setAsString(const aValue: String);
-//    procedure setAsUTF8String(const aValue: UTF8String);
     procedure setAsStringList(const aValue: TDataStringList);
     procedure setAsSymbol(const aValue: String);
     procedure setAsTime(const aValue: TTime);
@@ -645,9 +477,9 @@ type
   public
     destructor Destroy; override;
 
-    function getStore: PTDataStore;
+    function getStore: PTDataStore; inline;   // Provides a way for code outside this unit to get work directly with the fDataStore
 
-    procedure SetDataTypeByValue(aValue: byte);
+    procedure SetDataTypeParts(aCode: TDataTypeCode; aSubType: byte; aHasAttributes: boolean);
 
     // this will set this dataObj to the NULL value.  Any other data possibly held by this dataObject is freed including all attributes
     procedure Clear;
@@ -807,24 +639,24 @@ type
 
   // Started out using a Dictionary, but found that it is slower for case sensitive lookups when the number of slots is under 15 and
   // slower for case insensitive lookups when the number of slots is under about 50.   So, we just do brute force scanning to find a match.
-  TDataFrame = class
+  TDataFrame = class  //(TStringList)
   private
     fSlotList: TStringList;    //Owns the objects
     function getSlot(aIndex: integer): TDataObj;
-    function FindSlotIndex(aSlotName: string): integer;
-    function GetItem(aKey: string): TDataObj;
+    function FindSlotIndex(const aSlotName: string): integer;
+    function GetItem(const aKey: string): TDataObj;
   public
     constructor Create;
     destructor Destroy; override;
-    function FindSlot(aSlotName: string): TDataObj; overload;
-    function FindSlot(aSlotName: string; var oSlot: TDataObj): boolean; overload;
+    function FindSlot(const aSlotName: string): TDataObj; overload;
+    function FindSlot(const aSlotName: string; var oSlot: TDataObj): boolean; overload;
 
     // if aRaiseExceptionIfAlreadyExists is true, then an exception is raised if trying to add a new slot with the given aSlotName finds that this slot already exists.
     // the normal operation (when aRaiseExceptionIfAlreadyExists=false) when this occurs is to just return the slot that was found.
-    function NewSlot(aSlotName: string; aRaiseExceptionIfAlreadyExists: boolean = false): TDataObj;
-    procedure AppendSlot(aSlotName: string; aDataObj: TDataObj);
-    function SlotByName(aSlotName: string): TDataObj;
-    function DeleteSlot(aSlotName: string): boolean;   // returns true if the slot was found and deleted.
+    function NewSlot(const aSlotName: string; aRaiseExceptionIfAlreadyExists: boolean = false): TDataObj;
+    procedure AppendSlot(const aSlotName: string; aDataObj: TDataObj);
+    function SlotByName(const aSlotName: string): TDataObj;
+    function DeleteSlot(const aSlotName: string): boolean;   // returns true if the slot was found and deleted.
     function Delete(aIndex: integer): boolean;         // returns true if the slot was found and deleted.
     function RemoveSlot(aSlot: TDataObj): boolean;     // returns true if the slot was found and deleted.
     function IndexOfChildSlot(aSlot: TDataObj): integer;
@@ -840,7 +672,7 @@ type
     procedure Clear;
     procedure CopyFrom(aSource: TDataFrame);
 
-    property Items[aKey: string]: TDataObj read GetItem; default;
+    property Items[const aKey: string]: TDataObj read GetItem; default;
   end;
 
   TForEachProcedure = reference to procedure(aArray: TDataArray; aCurrentValue: TDataObj; aIndex: integer);
@@ -848,12 +680,24 @@ type
   TReduceProcedure = reference to procedure(aTotal: TDataObj; aArray: TDataArray; aCurrentValue: TDataObj; aIndex: integer);
   TMapProcedure = reference to procedure(aTargetObj: TDataObj; aCurrentArray: TDataArray; aCurrentValue: TDataObj; aIndex: integer);
 
-  // We are using our own type here so we can add methods to it.
-  TDataArray = class(TObjectList<TDataObj>)
+  TDataArray = class
+  const
+    cInitialCapacity = 16;
   private
+    fCount: integer;
+    fCapacity: integer;
+    fItems: array of TDataObj;
     function getSlot(aIndex: integer): TDataObj;
+    function getItem(aIndex: Cardinal): TDataObj;
+    procedure setItem(aIndex: Cardinal; const Value: TDataObj);
+    procedure CheckIndexInRange(aIndex: integer); inline;      // will raise exception if aIndex is invalid
   public
+    constructor Create(aInitialCapacity: Integer = 0);
+    destructor Destroy; override;
     function NewSlot: TDataObj;
+    function Add(aDataObj: TDataObj): Integer;
+    property Items[aIndex: Cardinal]: TDataObj read getItem write setItem;
+    procedure Clear;
 
     // The following set of methods are very similar to the set of methods you can call on a javaScript array
     function Find(aFindFunction: TForEachFunction): TDataObj;   // can return nil if not found.
@@ -875,6 +719,9 @@ type
 {$ifdef cMakeMoreCompatibleWithOldDataObjects}
     procedure CopyFrom(aArray: TDataArray);  deprecated 'Use AppendFrom instead';  // clones the slots in aArray and adds them to self.  same as AppendFrom.
 {$endif}
+
+    property Count: Integer read fCount;
+    property Capacity: Integer read fCapacity;
   end;
 
 
@@ -926,11 +773,7 @@ type
     property DataObj: TDataObj read getDataObj write setDataObj;
   end;
 
-  TDataAttributeStore = class(TDataFrame)  // this is here to hold the attributes along with the
-  private
-    fStore: TDataStore;    // this then holds the actual data storage for this dataObj.
-  public
-    procedure ClearData(aDataType: TDataType);   // This will clear the data in fStore.
+  TDataAttributeStore = class(TDataFrame)  // this is here to hold the attributes that might be applied to a DataObj.
   end;
 
 
@@ -972,49 +815,10 @@ begin
   Result := gRttiContext;
 end;
 
-procedure DebugMsg(const Msg: String);
-begin
-  OutputDebugString(PChar(Msg))
-end;
-
-
-{ TDataStore }
-
-(*procedure TDataStore.ClearData(aDataType: TDataType);
-begin
-  if aDataType.HasAttributes then
-  begin
-    TDataAttributeStore(dataAttributeStore).ClearData(aDataType);     // This is setting our attribute store's data to NULL, but keeping the attributes intact.
-  end
-  else
-  begin
-    case aDataType.Code of
-      cDataTypeGUID: begin DataGUID.Free; DataGUID := nil; end;
-      cDataTypeObjectID: begin DataObjectID.Free; DataObjectID := nil end;
-//      cDataTypeUTF8String: UTF8string(dataUTF8String) := '';
-      cDataTypeString: string(dataUnicodeString) := '';
-      cDataTypeStringList: begin dataStringList.Free; dataStringList := nil; end;
-      cDataTypeFrame: begin dataFrame.Free; dataFrame := nil; end;
-      cDataTypeArray: begin dataArray.Free; dataArray := nil; end;
-      cDataTypeSparseArray: begin dataSparseArray.Free; dataSparseArray := nil; end;
-      cDataTypeBinary: begin dataBinary.Free; dataBinary := nil; end;
-      cDataTypeObject: begin dataObject:=nil; end;                    // Note:  This clears the objectReference but it does NOT free the object.
-      cDataTypeTag: begin dataTag.Free; dataTag := nil; end;
-    else
-      // clear the FDataStore so that the contents don't get accidentally reused later   Note that we do not want to clear the flags on the dataType byte.
-      dataInt64 := 0;
-    end;  // case
-  end;
-end;*)
 
 function TDataStore.getDataArray: TDataArray;
 begin
   result := TDataArray(fDataObject);
-end;
-
-function TDataStore.getDataAttributeStore: TDataAttributeStore;
-begin
-  result := TDataAttributeStore(fDataObject);
 end;
 
 function TDataStore.getDataBinary: TDataBinary;
@@ -1058,11 +862,6 @@ begin
 end;
 
 procedure TDataStore.setDataArray(const Value: TDataArray);
-begin
-  fDataObject := Value;
-end;
-
-procedure TDataStore.setDataAttributeStore(const Value: TDataAttributeStore);
 begin
   fDataObject := Value;
 end;
@@ -1131,7 +930,6 @@ var
 type
   PTGuid = ^TGuid;
 begin
-//  DebugMsg(aRttiProp.Name);
   try
     case aValue.Kind of
       tkInteger: begin
@@ -1813,24 +1611,14 @@ begin
 end;
 
 procedure TDataObj.ClearAttributes;
-var
-  lStore: TDataStore;
 begin
-  // if the data has attributes, then we need to clear out the attributes hold and move any data it contains to fStore
-  if fDataType.HasAttributes then
-  begin
-    // we have attributes so move the data from the attribute's fStore container to self's fStore container.
-    lStore := fStore.dataAttributeStore.fStore;
-    // since fDataStore is a record, the contents of that record were copied to lStore and freeing dataAttributeStore does nothing.
-    fStore.dataAttributeStore.Free;
-    fStore := lStore;                               // now move the data that was owned by the dataAttributeStore to self's fStore.
-    fDataType.HasAttributes := false;
-  end;
+  FreeAndNil(fAttributes);
+  fDataType.HasAttributes := false;
 end;
 
 procedure TDataObj.ClearData;
 begin
-  fStore.ClearData(fDataType);
+  fStore.ClearData;
   fDataType.Code:= cDataTypeNULL;
 end;
 
@@ -1845,15 +1633,11 @@ begin
 
     cDataTypeBoolean: self.AsBoolean := aSrcDataObj.AsBoolean;
 
-//    cDataTypeBooleanTrue: self.AsBoolean := true;
-
     cDataTypeByte: self.AsByte := aSrcDataObj.AsByte;
 
     cDataTypeInt32: self.AsInt32 := aSrcDataObj.AsInt32;
 
     cDataTypeInt64: self.AsInt64 := aSrcDataObj.AsInt64;
-
-//    cDataTypeVarInt: self.AsInteger := aSrcDataObj.AsInteger;
 
     cDataTypeSingle: self.AsSingle := aSrcDataObj.AsSingle;
 
@@ -1872,8 +1656,6 @@ begin
     cDataTypeGUID: Self.AsGUID.GUID := aSrcDataObj.AsGUID.GUID;
 
     cDataTypeObjectID: self.AsObjectID.Data := aSrcDataObj.AsObjectID.Data;
-
-//    cDataTypeUTF8String: self.AsUTF8String := aSrcDataObj.AsUTF8String;
 
     cDataTypeString: self.AsString := aSrcDataObj.AsString;
 
@@ -1906,6 +1688,7 @@ end;
 
 
 
+
 destructor TDataObj.Destroy;
 begin
   Clear;
@@ -1914,7 +1697,6 @@ end;
 
 function TDataObj.getAsArray: TDataArray;
 var
-  lStore: PTDataStore;
   i: Integer;
 
   // used for temp moving
@@ -1924,44 +1706,41 @@ var
   lDataType: TDataType;
   lNewSlot: TDataObj;
 begin
-  lStore := getStore;
   case fDataType.Code of
     cDataTypeArray: begin
-      result:=lStore.dataArray;
+      result:=fStore.dataArray;
     end;
     cDataTypeFrame: begin
       // we can convert a frame to an array by simply using the natural order of the frame slots.
       result := TDataArray.Create;
-      for i := 0 to lStore.dataFrame.Count-1 do
+      for i := 0 to fStore.dataFrame.Count-1 do
       begin
         // instead of doing copy operations from the original collection of TDataObjs, we can leave them in place and take those objects off the original collection and put them on the new collection.
-        result.Add(lStore.dataFrame.Slots[i]);           // add the old TDataObj item to the new collection
-        lStore.dataFrame.fSlotList.Objects[i] := nil;    // set it to nil so that when we free the TDataFrame, it doesn't free the TDataObj item.
+        result.Add(fStore.dataFrame.Slots[i]);           // add the old TDataObj item to the new collection
+        fStore.dataFrame.fSlotList.Objects[i] := nil;    // set it to nil so that when we free the TDataFrame, it doesn't free the TDataObj item.
       end;
       setAsArray(result);                                // this will free the old TDataFrame and get this object to now be holding the new TDataArray.
     end;
     cDataTypeSparseArray: begin
-      // we can convert a sparse array to a regular array by simply taking the items in their natural order and applying them to the array
+      // we can convert a sparse array to a regular array by simply taking the items in their natural order and applying them to the array, of course we loose the original's Index value.
       result := TDataArray.Create;
-      lStore.dataSparseArray.OwnsObjects := false;
-      for i := 0 to lStore.dataSparseArray.Count-1 do
+      for i := 0 to fStore.dataSparseArray.Count-1 do
       begin
         // instead of doing copy operations from the original collection of TDataObjs, we can leave them in place and take those objects off the original collection and put them on the new collection.
-        result.Add(lStore.dataSparseArray.Items[i]);     // add the old TDataObj item to the new collection
-        lStore.dataSparseArray.Items[i] := nil;          // set it to nil so that when we free the TDataArray, it doesn't free the TDataObj item.
+        result.Add(fStore.dataSparseArray.Items[i]);     // add the old TDataObj item to the new collection
+        fStore.dataSparseArray.Items[i] := nil;          // set it to nil so that when we free the TDataArray, it doesn't free the TDataObj item.
       end;
-      lStore.dataSparseArray.OwnsObjects := true;
       setAsArray(result);            // this will free the old TDataSparseArray and get this object to now be holding the new TDataArray.
     end;
     cDataTypeStringList: begin
       // we can convert a stringList into an array of strings.
       result := TDataArray.Create;
-      for i := 0 to lStore.DataStringList.Count-1 do
+      for i := 0 to fStore.DataStringList.Count-1 do
       begin
         // instead of doing copy operations from the original collection of TDataObjs, we can leave them in place and take those objects off the original collection and put them on the new collection.
-        result.NewSlot.AsString := lStore.DataStringList[i];
+        result.NewSlot.AsString := fStore.DataStringList[i];
       end;
-      setAsArray(result);                                // this will free the old TDataStringList and get this object to now be holding the new TDataArray.
+      setAsArray(result);            // this will free the old TDataStringList and get this object to now be holding the new TDataArray.
     end;
   else
     // there's no data that can possibly be converted so set as a new empty TDataArray
@@ -1995,12 +1774,9 @@ begin
 end;
 
 function TDataObj.getAsBinary: TDataBinary;
-var
-  lStore: PTDataStore;
 begin
-  lStore := getStore;
   case fDataType.Code of
-    cDataTypeBinary: result:=lStore.dataBinary;
+    cDataTypeBinary: result:=fStore.dataBinary;
     // FINISH - could we possibly convert strings and stringList to a binary stream here?  What about encoding?  UTF-8?
   else
     // there's no data that can possibly be converted so set as a new empty TDataBinary
@@ -2010,8 +1786,6 @@ begin
 end;
 
 function TDataObj.getAsBoolean: Boolean;
-var
-  lStore: PTDataStore;
 
   function LocalStrToBool(aStr: string): boolean;     // default is false.
   const
@@ -2031,38 +1805,31 @@ var
   end;
 
 begin
-  lStore := getStore;
   case fDataType.Code of
     cDataTypeNull: result := false;
     cDataTypeBoolean: result := fDataType.SubClass <> 0;
-    cDataTypeByte: result := lStore.fDataByte <> 0;
-    cDataTypeInt32: result := lStore.fDataInt32 <> 0;
-    cDataTypeInt64, {cDataTypeVarInt,} cDataTypeUTCDateTime: result := lStore.fDataInt64 <> 0;
-    cDataTypeSingle: result := lStore.fDataSingle <> 0;
-    cDataTypeDouble: result := lStore.fDataDouble <> 0;
+    cDataTypeByte: result := fStore.fDataByte <> 0;
+    cDataTypeInt32: result := fStore.fDataInt32 <> 0;
+    cDataTypeInt64, cDataTypeUTCDateTime: result := fStore.fDataInt64 <> 0;
+    cDataTypeSingle: result := fStore.fDataSingle <> 0;
+    cDataTypeDouble: result := fStore.fDataDouble <> 0;
 //    cDataTypeDecimal128 = 9;
-    cDataTypeDateTime, cDataTypeDate, cDataTypeTime: result := lStore.fDataDateTime <> 0;
-//    cDataTypeUTF8String: result := LocalStrToBool(string(UTF8String(lStore.dataUTF8String)));
-    cDataTypeString: result := LocalStrToBool(lStore.DataString);
-    cDataTypeStringList: result := LocalStrToBool(lStore.dataStringList.text);
+    cDataTypeDateTime, cDataTypeDate, cDataTypeTime: result := fStore.fDataDateTime <> 0;
+    cDataTypeString: result := LocalStrToBool(fStore.DataString);
+    cDataTypeStringList: result := LocalStrToBool(fStore.dataStringList.text);
   else
     result := false;
   end;
 end;
 
 function TDataObj.getAsByte: Byte;
-var
-  lStore: PTDataStore;
 begin
-  lStore := getStore;
   case fDataType.Code of
-    cDataTypeByte: Result:=lStore.fDataByte;
-    cDataTypeInt32: Result := lStore.fDataInt32;
-    cDataTypeInt64: Result := lStore.fDataInt64;
-//    cDataTypeVarInt: Result:=lStore.fDataInt64;     // varInt Streaming is stored internally as a int64;
+    cDataTypeByte: Result:=fStore.fDataByte;
+    cDataTypeInt32: Result := fStore.fDataInt32;
+    cDataTypeInt64: Result := fStore.fDataInt64;
     cDataTypeBoolean: Result := fDataType.SubClass;
 //    cDataTypeBooleanTrue: Result := 1;
-//    cDataTypeUTF8String: Result:=Byte(GetAsInteger);
     cDataTypeString: Result:=Byte(getAsInt32);  // possible truncating
   else
     Result:=0;    // all other types are not convertable to a Byte
@@ -2075,16 +1842,14 @@ begin
 end;
 
 function TDataObj.getAsDateTime: TDateTime;
-var
-  lStore: PTDataStore;
 
   function TryConvertingStrToDateTime(aStr: string): TDatetime;   // this local function will try to convert string representations of a date into a TDatetime use a variety of possibilities.
   begin
-    result := StrToDateTimeDef(lStore.DataString, TDateTime(0));    // first, try a normal system local orientated dateTime string
+    result := StrToDateTimeDef(fStore.DataString, TDateTime(0));    // first, try a normal system local orientated dateTime string
     if result = 0 then
     begin
       try
-        result := ISO8601ToDate(lStore.DataString);      // Now try an ISODate string format   Example:  "2021-01-27T00:19:08.862Z"
+        result := ISO8601ToDate(fStore.DataString);      // Now try an ISODate string format   Example:  "2021-01-27T00:19:08.862Z"
       except
         result := 0;
       end;
@@ -2092,7 +1857,7 @@ var
       if result = 0 then
       begin
         try
-          result := HttpToDate(lStore.DataString);      // now try a HTTP Date: Example: "Apr 9 00:00:00 2015 GMT"
+          result := HttpToDate(fStore.DataString);      // now try a HTTP Date: Example: "Apr 9 00:00:00 2015 GMT"
         except
           result := 0;
         end;
@@ -2100,41 +1865,34 @@ var
     end;
   end;
 begin
-  lStore := getStore;
   case fDataType.Code of
-    cDataTypeInt32: result := lStore.fDataInt32;
-    cDataTypeInt64: result := lStore.fDataInt64;
-    cDataTypeDouble: result:=lStore.fDataDouble;    // convert double to tdateTime which is essentially a double.
-    cDataTypeSingle: result:=lStore.fDataSingle;    // convert single to tdateTime which is essentially a double.
-    cDataTypeDateTime, cDataTypeDate, cDataTypeTime: result:=lStore.fDataDateTime;
-    cDataTypeUTCDateTime: result := UnixToDateTime(lStore.fDataInt64);
-//    cDataTypeUTF8String: result := StrToDateTimeDef(string(UTF8string(lStore.fDataUTF8String)), TDateTime(0));
-    cDataTypeString: result := TryConvertingStrToDateTime(lStore.DataString);
-    cDataTypeStringList: result := TryConvertingStrToDateTime(lStore.DataStringList.text);
+    cDataTypeInt32: result := fStore.fDataInt32;
+    cDataTypeInt64: result := fStore.fDataInt64;
+    cDataTypeDouble: result:=fStore.fDataDouble;    // convert double to tdateTime which is essentially a double.
+    cDataTypeSingle: result:=fStore.fDataSingle;    // convert single to tdateTime which is essentially a double.
+    cDataTypeDateTime, cDataTypeDate, cDataTypeTime: result:=fStore.fDataDateTime;
+    cDataTypeUTCDateTime: result := UnixToDateTime(fStore.fDataInt64);
+    cDataTypeString: result := TryConvertingStrToDateTime(fStore.DataString);
+    cDataTypeStringList: result := TryConvertingStrToDateTime(fStore.DataStringList.text);
   else
     result:=0;
   end;
 end;
 
 function TDataObj.getAsDouble: Double;
-var
-  lStore: PTDataStore;
 begin
-  lStore := getStore;
   case fDataType.Code of
-    cDataTypeByte: Result := lStore.fDataByte;
-    cDataTypeInt32: Result := lStore.fDataInt32;
-    cDataTypeInt64: Result := lStore.fDataInt64;
-//    cDataTypeVarInt: Result := lStore.fDataInt64;     // varInt Streaming is stored internally as a int64;
+    cDataTypeByte: Result := fStore.fDataByte;
+    cDataTypeInt32: Result := fStore.fDataInt32;
+    cDataTypeInt64: Result := fStore.fDataInt64;
     cDataTypeBoolean: Result := fDataType.SubClass;
-//    cDataTypeBooleanTrue: Result := 1;
     cDataTypeString:
     begin //check for a normal floating point number in the string
       if not TryStrToFloat(getAsString, result) then
         result := 0;
     end;
-    cDataTypeSingle: Result:=lStore.fDataSingle;
-    cDataTypeDouble: Result:=lStore.fDataDouble;
+    cDataTypeSingle: Result:=fStore.fDataSingle;
+    cDataTypeDouble: Result:=fStore.fDataDouble;
   else
     Result:=0;    // all other types are not convertable to a Byte
   end;
@@ -2148,38 +1906,32 @@ end;
 
 function TDataObj.getAsFrame: TDataFrame;
 var
-  lStore: PTDataStore;
   i: Integer;
 begin
-  lStore := getStore;
   case fDataType.Code of
     cDataTypeFrame: begin
-      result:=lStore.DataFrame;
+      result:=fStore.DataFrame;
     end;
     cDataTypeArray: begin
       // we can convert an array to a frame by simply making each slotname be a string representation of the index values
       result := TDataFrame.Create;
-      for i := 0 to lStore.DataArray.Count-1 do
+      for i := 0 to fStore.DataArray.Count-1 do
       begin
         // instead of doing copy operations from the original collection of TDataObjs, we can leave them in place and take those objects off the original collection and put them on the new collection.
-        result.AppendSlot(intToStr(i), lStore.DataArray.Items[i]);     // add the old TDataObj item to the new collection
-        lStore.DataArray.OwnsObjects := false;                         // Need to turn off auto-disposing
-        lStore.DataArray.Items[i] := nil;                              // set it to nil so that when we free the TDataArray, it doesn't free the TDataObj item.
-        lStore.DataArray.OwnsObjects := true;                          // Need to turn back on auto-disposing
+        result.AppendSlot(intToStr(i), fStore.DataArray.Items[i]);     // add the old TDataObj item to the new collection
+        fStore.DataArray.Items[i] := nil;                              // set it to nil so that when we free the TDataArray, it doesn't free the TDataObj item.
       end;
       setAsFrame(result);            // this will free the old TDataArray and get this object to now be holding the new TDataFrame.
     end;
     cDataTypeSparseArray: begin
       // we can convert a sparse array to a frame by simply making each slotname be a string representation of the index values
       result := TDataFrame.Create;
-      lStore.DataSparseArray.OwnsObjects := false;
-      for i := 0 to lStore.DataSparseArray.Count-1 do
+      for i := 0 to fStore.DataSparseArray.Count-1 do
       begin
         // instead of doing copy operations from the original collection of TDataObjs, we can leave them in place and take those objects off the original collection and put them on the new collection.
-        result.AppendSlot(IntToStr(lStore.DataSparseArray.SlotIndex(i)), lStore.DataSparseArray.Items[i]);     // add the old TDataObj item to the new collection
-        lStore.DataSparseArray.Items[i] := nil;                                                               // set it to nil so that when we free the TDataSparseArray, it doesn't free the TDataObj item.
+        result.AppendSlot(IntToStr(fStore.DataSparseArray.SlotIndex(i)), fStore.DataSparseArray.Items[i]);     // add the old TDataObj item to the new collection
+        fStore.DataSparseArray.Items[i] := nil;                                                               // set it to nil so that when we free the TDataSparseArray, it doesn't free the TDataObj item.
       end;
-      lStore.DataSparseArray.OwnsObjects := true;
       setAsFrame(result);            // this will free the old TDataArray and get this object to now be holding the new TDataFrame.
     end;
   else
@@ -2190,12 +1942,9 @@ begin
 end;
 
 function TDataObj.getAsGuid: TDataGUID;
-var
-  lStore: PTDataStore;
 begin
-  lStore := getStore;
   case fDataType.Code of
-    cDataTypeGUID: Result:=lStore.DataGUID;
+    cDataTypeGUID: Result:=fStore.DataGUID;
     cDataTypeString: begin
       // try to convert a string of the format:  '{41E3188A-B2EE-4FDA-9D4C-4929CFFE3B6D}' to a TDataGUID.
       result := TDataGUID.Create;
@@ -2210,85 +1959,49 @@ begin
 end;
 
 function TDataObj.getAsInt32: integer;
-var
-  lStore: PTDataStore;
 begin
-  lStore := getStore;
   case fDataType.Code of
-    cDataTypeByte: Result:=lStore.fDataByte;
-    cDataTypeInt32: Result := lStore.fDataInt32;
-    cDataTypeInt64: Result := lStore.fDataInt64;
+    cDataTypeByte: Result:=fStore.fDataByte;
+    cDataTypeInt32: Result := fStore.fDataInt32;
+    cDataTypeInt64: Result := fStore.fDataInt64;
     cDataTypeBoolean: Result := fDataType.SubClass;
-//    cDataTypeUTF8String: Result:=StrToIntDef(string(UTF8string(lStore.fDataUTF8String)),0);
-    cDataTypeString: Result:=StrToIntDef(lStore.DataString,0);
-    cDataTypeSingle: Result:=Round(lStore.fDataSingle);
-    cDataTypeDouble: Result:=Round(lStore.fDataDouble);
+    cDataTypeString: Result:=StrToIntDef(fStore.DataString,0);
+    cDataTypeSingle: Result:=Round(fStore.fDataSingle);
+    cDataTypeDouble: Result:=Round(fStore.fDataDouble);
   else
     Result:=0;    // all other types are not convertable to a Byte
   end;
 end;
 
 function TDataObj.getAsInt64: Int64;
-var
-  lStore: PTDataStore;
 begin
-  lStore := getStore;
   case fDataType.Code of
-    cDataTypeByte: Result:=lStore.fDataByte;
-    cDataTypeInt32: Result := lStore.fDataInt32;
-    cDataTypeInt64: Result := lStore.fDataInt64;
-//    cDataTypeVarInt: Result:=lStore.fDataInt64;     // varInt Streaming is stored internally as a int64;
+    cDataTypeByte: Result:=fStore.fDataByte;
+    cDataTypeInt32: Result := fStore.fDataInt32;
+    cDataTypeInt64: Result := fStore.fDataInt64;
     cDataTypeBoolean: Result := fDataType.SubClass;
-//    cDataTypeBooleanTrue: Result := 1;
-//    cDataTypeUTF8String: Result:=StrToIntDef(string(UTF8string(lStore.fDataUTF8String)),0);
-    cDataTypeString: Result:=StrToIntDef(lStore.DataString,0);
-    cDataTypeSingle: Result:=Round(lStore.fDataSingle);
-    cDataTypeDouble: Result:=Round(lStore.fDataDouble);
+    cDataTypeString: Result:=StrToIntDef(fStore.DataString,0);
+    cDataTypeSingle: Result:=Round(fStore.fDataSingle);
+    cDataTypeDouble: Result:=Round(fStore.fDataDouble);
   else
     Result:=0;    // all other types are not convertable to a Byte
   end;
 end;
 
-(*function TDataObj.getAsInteger: Int64;
-var
-  lStore: PTDataStore;
-begin
-  lStore := getStore;
-  case fDataType.Code of
-    cDataTypeByte: Result:=lStore.fDataByte;
-    cDataTypeInt32: Result := lStore.fDataInt32;
-    cDataTypeInt64: Result := lStore.fDataInt64;
-//    cDataTypeVarInt: Result:=lStore.fDataInt64;     // varInt Streaming is stored internally as a int64;
-    cDataTypeBoolean: Result := fDataType.SubClass;
-//    cDataTypeBooleanTrue: Result := 1;
-//    cDataTypeUTF8String: Result:=StrToIntDef(string(UTF8string(lStore.fDataUTF8String)),0);
-    cDataTypeString: Result:=StrToIntDef(string(lStore.fDataUnicodeString),0);
-    cDataTypeSingle: Result:=Round(lStore.fDataSingle);
-    cDataTypeDouble: Result:=Round(lStore.fDataDouble);
-  else
-    Result:=0;    // all other types are not convertable to a Byte
-  end;
-end;  *)
 
 function TDataObj.getAsObject: TObject;
-var
-  lStore: PTDataStore;
 begin
-  lStore := getStore;
   case fDataType.Code of
-    cDataTypeObject: result := lStore.fDataObject;     // could also possibly return nil.
+    cDataTypeObject: result := fStore.fDataObject;     // could also possibly return nil.
   else
     result := nil;                                    // no possible conversions
   end;
 end;
 
 function TDataObj.getAsObjectID: TDataObjectID;
-var
-  lStore: PTDataStore;
 begin
-  lStore := getStore;
   case fDataType.Code of
-    cDataTypeObjectID: result := lStore.DataObjectID
+    cDataTypeObjectID: result := fStore.DataObjectID
   else
     result := TDataObjectID.Create;
     setAsObjectID(result);
@@ -2296,24 +2009,19 @@ begin
 end;
 
 function TDataObj.getAsSingle: Single;
-var
-  lStore: PTDataStore;
 begin
-  lStore := getStore;
   case fDataType.Code of
-    cDataTypeByte: Result:=lStore.fDataByte;
-    cDataTypeInt32: Result := lStore.fDataInt32;
-    cDataTypeInt64: Result := lStore.fDataInt64;
-//    cDataTypeVarInt: Result:=lStore.fDataInt64;     // varInt Streaming is stored internally as a int64;
+    cDataTypeByte: Result:=fStore.fDataByte;
+    cDataTypeInt32: Result := fStore.fDataInt32;
+    cDataTypeInt64: Result := fStore.fDataInt64;
     cDataTypeBoolean: Result := fDataType.SubClass;
-//    cDataTypeBooleanTrue: Result := 1;
-    {cDataTypeUTF8String, }cDataTypeString:
+    cDataTypeString:
     begin //check for a normal floating point number in the string
       if not TryStrToFloat(getAsString, result) then
          result := 0;
     end;
-    cDataTypeSingle: Result:=lStore.fDataSingle;
-    cDataTypeDouble: Result:=lStore.fDataDouble;
+    cDataTypeSingle: Result:=fStore.fDataSingle;
+    cDataTypeDouble: Result:=fStore.fDataDouble;
   else
     Result:=0;    // all other types are not convertable to a Byte
   end;
@@ -2322,37 +2030,33 @@ end;
 function TDataObj.getAsSparseArray: TDataSparseArray;
 var
   i: integer;
-  lStore: PTDataStore;
 begin
-  lStore := getStore;
   case fDataType.Code of
     cDataTypeSparseArray: begin
-      result:=lStore.DataSparseArray;
+      result:=fStore.DataSparseArray;
     end;
     cDataTypeFrame: begin
       // we can convert a frame to a sparse array, but the slotnames will be lost and replaced with array indexes.  Will start with zero index.
       result := TDataSparseArray.Create;
-      for i := 0 to lStore.DataFrame.fSlotList.Count-1 do
+      for i := 0 to fStore.DataFrame.fSlotList.Count-1 do
       begin
         // instead of doing copy operations from the original collection of TDataObjs, we can leave them in place and take those objects off the original collection and put them on the new collection.
         // NOTE:  should we try to convert the frame's slotnames to an integer or just use the natural order.
         // For now, decided to use the natural order cause it's the reliable way.
-        result.AppendSlot(i, lStore.DataFrame.Slots[i]);        // add the old TDataObj item to the new collection
-        lStore.DataFrame.fSlotList.Objects[i] := nil;           // set it to nil so that when we free the TDataFrame, it doesn't free the TDataObj item.
+        result.AppendSlot(i, fStore.DataFrame.Slots[i]);        // add the old TDataObj item to the new collection
+        fStore.DataFrame.fSlotList.Objects[i] := nil;           // set it to nil so that when we free the TDataFrame, it doesn't free the TDataObj item.
       end;
       setAsSparseArray(result);                                 // this will free the old TDataFrame and get this object to now be holding the new TDataFrame.
     end;
     cDataTypeArray: begin
       // we can convert an array to a sparse array by simply taking the items in their natural order and applying them to the array
       result := TDataSparseArray.Create;
-      lStore.DataArray.OwnsObjects := false;
-      for i := 0 to lStore.DataArray.Count-1 do
+      for i := 0 to fStore.DataArray.Count-1 do
       begin
         // instead of doing copy operations from the original collection of TDataObjs, we can leave them in place and take those objects off the original collection and put them on the new collection.
-        result.AppendSlot(i, lStore.DataArray.Items[i]);             // add the old TDataObj item to the new collection
-        lStore.DataArray.Items[i] := nil;  // set it to nil so that when we free the TDataArray, it doesn't free the TDataObj item.
+        result.AppendSlot(i, fStore.DataArray.Items[i]);             // add the old TDataObj item to the new collection
+        fStore.DataArray.Items[i] := nil;  // set it to nil so that when we free the TDataArray, it doesn't free the TDataObj item.
       end;
-      lStore.DataArray.OwnsObjects := true;
       setAsSparseArray(result);            // this will free the old TDataArray and get this object to now be holding the new TDataFrame.
     end;
   else
@@ -2365,50 +2069,45 @@ end;
 function TDataObj.getAsString: String;
 var
   lDateTime: TDateTime;
-  lStore: PTDataStore;
 begin
-  lStore := getStore;
 
   case fDataType.Code of
     cDataTypeNull: Result := '';
     cDataTypeBoolean: if fDataType.SubClass<>0 then Result := cTrueStr else Result := cFalseStr;
-//    cDataTypeBooleanTrue: Result := cTrueStr;
-    cDataTypeByte: Result := IntToStr(lStore.fDataByte);
-    cDataTypeInt32: result := IntToStr(lStore.fDataInt32);
-    cDataTypeInt64: result := IntToStr(lStore.fDataInt64);
-//    cDataTypeVarInt: Result:=IntToStr(lStore.fDataInt64);
-    cDataTypeSingle: Result := FloatToStr(lStore.fDataSingle);
-    cDataTypeDouble: Result := FloatToStr(lStore.fDataDouble);
+    cDataTypeByte: Result := IntToStr(fStore.fDataByte);
+    cDataTypeInt32: result := IntToStr(fStore.fDataInt32);
+    cDataTypeInt64: result := IntToStr(fStore.fDataInt64);
+    cDataTypeSingle: Result := FloatToStr(fStore.fDataSingle);
+    cDataTypeDouble: Result := FloatToStr(fStore.fDataDouble);
 //    cDataTypeDecimal128 = 9;  // Reserved to be compatible with BSON, but probably not going to implement this data type.
     cDataTypeDateTime: begin
-      lDateTime:=lStore.fDataDateTime;
+      lDateTime:=fStore.fDataDateTime;
       if lDateTime=0 then
         Result:=''         // is this really what we should do?  technically, this is a valid dateTime
       else
         Result:=DateTimeToStr(lDateTime);
     end;
     cDataTypeUTCDateTime: begin
-      result := DateTimetoStr(UnixToDateTime(lStore.fDataInt64));
+      result := DateTimetoStr(UnixToDateTime(fStore.fDataInt64));
     end;
     cDataTypeDate: begin
-      lDateTime:=lStore.fDataDateTime;
+      lDateTime:=fStore.fDataDateTime;
       if lDateTime=0 then
         Result:=''
       else
         Result:=DateToStr(lDateTime);
     end;
     cDataTypeTime: begin
-      lDateTime:=lStore.fDataTime;
+      lDateTime:=fStore.fDataTime;
       if lDateTime=0 then
         Result:=''
       else
         Result:=TimeToStr(lDateTime);
     end;
-    cDataTypeGUID: result := lStore.DataGUID.GUID.ToString;
-    cDataTypeObjectID: result := lStore.DataObjectID.AsString;
-//    cDataTypeUTF8String: Result := string(UTF8String(lStore.fDataUTF8String));        // Note, converting from UTF8string to String
-    cDataTypeString: Result := String(lStore.DataString);
-    cDataTypeStringList: result := lStore.DataStringList.Text;
+    cDataTypeGUID: result := fStore.DataGUID.GUID.ToString;
+    cDataTypeObjectID: result := fStore.DataObjectID.AsString;
+    cDataTypeString: Result := fStore.DataString;
+    cDataTypeStringList: result := fStore.DataStringList.Text;
   else
     Result:='';
   end;
@@ -2416,12 +2115,10 @@ end;
 
 function TDataObj.getAsStringList: TDataStringList;
 var
-  lStore: PTDataStore;
   lStringList: TDataStringList;
 begin
-  lStore := getStore;
   case fDataType.Code of
-    cDataTypeStringList: Result:=lStore.DataStringList;    // we are a stringList now so just return it.
+    cDataTypeStringList: Result:=fStore.DataStringList;    // we are a stringList now so just return it.
   else
     // Any other type, try to convert the existing string string representation of it to a stringList
     lStringList := TDataStringList.Create;
@@ -2437,22 +2134,18 @@ begin
 end;
 
 function TDataObj.getAsTag: TDataTag;
-var
-  lStore: PTDataStore;
 begin
   // the getAsTag call will return the TDataTag if this dataobject is holding a TDataTag ALREADY.  If this data object is not holding this type, but is instead
   // holding a different type, then this call will create a tag in this dataObject and whatever this dataObject used to hold will be put into the TagObject that this dataObject now holds.
-  lStore := getStore;
-
   if fDataType.Code = cDataTypeTag then
   begin
-    result := lStore.DataTag;
+    result := fStore.DataTag;
   end
   else
   begin
     result := TDataTag.Create;             // NOTE:  THIS CODE IS NOT TESTED YET.
-    result.DataObj.fStore := lStore^;      // copying the stored contents of whatever was in self DataObj to the new DataObj that is owned by the new tag we just created.   Basically, transferring that data from self to the new TDataTag.
-    lStore.DataTag := result;              // our store now hold our new TDataTag when then contains the contents of what this objects store used to have.
+    result.DataObj.fStore := fStore;      // copying the stored contents of whatever was in self DataObj to the new DataObj that is owned by the new tag we just created.   Basically, transferring that data from self to the new TDataTag.
+    fStore.DataTag := result;              // our store now hold our new TDataTag when then contains the contents of what this objects store used to have.
     fDataType.Code := cDataTypeTag;       // converting this dataObject to now hold a TDataTag and it also doesn't hold any attributes either, that's why we are calling value instead of code.
   end;
 end;
@@ -2466,73 +2159,16 @@ begin
 end;
 
 function TDataObj.getAsUTCDateTime: int64;
-var
-  lStore: PTDataStore;
 begin
-  lStore := getStore;
   case fDataType.Code of
-    cDataTypeInt64, cDataTypeUTCDateTime: result := lStore.fDataInt64;
+    cDataTypeInt64, cDataTypeUTCDateTime: result := fStore.fDataInt64;
     cDataTypeDateTime, cDataTypeDate, cDataTypeTime: begin
-      result := DateTimeToUnix(lStore.fDataDateTime);
+      result := DateTimeToUnix(fStore.fDataDateTime);
     end;
   else
     Result:=0;
   end;
 end;
-
-(*function TDataObj.getAsUTF8String: UTF8String;
-var
-  lDateTime: TDateTime;
-  lStore: PTDataStore;
-begin
-  // NOTE all the implicit conversion from string to UTF8String for the result.  Kinda wierd.  really, this probably wont be used much.
-  lStore := getStore;
-
-  case fDataType.Code of
-    cDataTypeNull: Result := '';
-    cDataTypeBooleanFalse: Result := cFalseStr;
-    cDataTypeBooleanTrue: Result := cTrueStr;
-    cDataTypeByte: Result := UTF8String(IntToStr(lStore.fDataByte));
-    cDataTypeInt32: result := UTF8String(IntToStr(lStore.fDataInt32));
-    cDataTypeInt64: result := UTF8String(IntToStr(lStore.fDataInt64));
-    cDataTypeVarInt: Result := UTF8String(IntToStr(lStore.fDataInt64));
-    cDataTypeSingle: Result := UTF8String(FloatToStr(lStore.fDataSingle));
-    cDataTypeDouble: Result := UTF8String(FloatToStr(lStore.fDataDouble));
-//    cDataTypeDecimal128 = 9;  // Reserved to be compatible with BSON, but probably not going to implement this data type yet.
-    cDataTypeDateTime: begin
-      lDateTime := lStore.fDataDateTime;
-      if lDateTime=0 then
-        Result := ''          // is this really what we should do?  technically, this is a valid dateTime
-      else
-        Result := UTF8String(DateTimeToStr(lDateTime));
-    end;
-    cDataTypeUTCDateTime: begin
-      result := UTF8String(DateTimetoStr(UnixToDateTime(lStore.fDataInt64)));
-    end;
-    cDataTypeDate: begin
-      lDateTime := lStore.fDataDateTime;
-      if lDateTime=0 then
-        Result := ''
-      else
-        Result := UTF8String(DateToStr(lDateTime));
-    end;
-    cDataTypeTime: begin
-      lDateTime := lStore.fDataTime;
-      if lDateTime=0 then
-        Result := ''
-      else
-        Result := UTF8String(TimeToStr(lDateTime));
-    end;
-    cDataTypeGUID: result := UTF8String(lStore.fDataGUID.GUID.ToString);
-    cDataTypeObjectID: result := UTF8String(lStore.fDataObjectID.AsString);
-    cDataTypeUTF8String: Result := UTF8String(lStore.fDataUTF8String);
-    cDataTypeUnicodeString: Result := UTF8String(String(lStore.fDataUnicodeString));
-    cDataTypeStringList: result := UTF8String(lStore.fDataStringList.Text);
-  else
-    Result:='';
-  end;
-
-end; *)
 
 function TDataObj.getDataType: TDataType;
 begin
@@ -2540,8 +2176,6 @@ begin
 end;
 
 function TDataObj.getDataTypeString: String;
-var
-  lStore: PTDataStore;
 begin
   if fDataType.Code = cDataTypeString then
   begin
@@ -2552,9 +2186,8 @@ begin
   end
   else if fDataType.Code = cDataTypeObject then
   begin
-    lStore := getStore;
-    if assigned(lStore.fDataObject) then
-      result := cDataTypeStrings[ord(fDataType.Code)] + ':'+lStore.fDataObject.ClassName
+    if assigned(fStore.fDataObject) then
+      result := cDataTypeStrings[ord(fDataType.Code)] + ':'+fStore.fDataObject.ClassName
     else
       result := cDataTypeStrings[ord(fDataType.Code)] + ':nil';
   end
@@ -2625,10 +2258,7 @@ end;
 function TDataObj.getStore: PTDataStore;
 begin
   //NOTE:  This should be the ONLY method that can ever access fStore.   Everywhere else should call this function to get it.
-  if fDataType.HasAttributes then
-    result := @(fStore.dataAttributeStore.fStore)
-  else
-    result := @fStore;
+  result := @fStore;
 end;
 
 // If you pass in nil for aStreamer then this function will try to find the right streamer class by the filename extension and aStreamer will be populated with that object.
@@ -2707,46 +2337,42 @@ begin
   end;
 end;
 
+// At first glance, this looks like it produces JSON, but it is NOT JSON, it's just a way to easily show a string representation of the data to a human.  Don't use it for transmitting data.
 procedure TDataObj.PrintToStringBuilder(aStringBuilder: TStringBuilder; aIndent: integer = 0);
 var
-  lStore: PTDataStore;
   i: Integer;
   lSpaces: string;
 begin
-  lStore := getStore;
   case fDataType.Code of
     cDataTypeNull: aStringBuilder.AppendLine('nil');
     cDataTypeBoolean: if fDataType.SubClass <> 0 then
                         aStringBuilder.AppendLine(cTrueStr)
                       else
                         aStringBuilder.AppendLine(cFalseStr);
-//    cDataTypeBooleanTrue: aStringBuilder.AppendLine(cTrueStr);
-    cDataTypeByte: aStringBuilder.Append(lStore.fDataByte).AppendLine;
-    cDataTypeInt32: aStringBuilder.Append(lStore.fDataInt32).AppendLine;
-    cDataTypeInt64: aStringBuilder.Append(lStore.fDataInt64).AppendLine;
-//    cDataTypeVarInt: aStringBuilder.Append(lStore.fDataInt64).AppendLine;
-    cDataTypeSingle: aStringBuilder.Append(lStore.fDataSingle).AppendLine;
-    cDataTypeDouble: aStringBuilder.Append(lStore.fDataDouble).AppendLine;
-//    cDataTypeDecimal128: aStringBuilder.Append(lStore.fDataInt64);
-    cDataTypeDateTime: aStringBuilder.AppendLine(DateTimeToStr(lStore.fDataDateTime));
-    cDataTypeUTCDateTime: aStringBuilder.AppendLine(DateTimeToStr(UnixToDateTime(lStore.fDataInt64)));
-    cDataTypeDate: aStringBuilder.AppendLine(DateToStr(lStore.fDataDateTime));
-    cDataTypeTime: aStringBuilder.AppendLine(TimeToStr(lStore.fDataDateTime));
-    cDataTypeGUID: aStringBuilder.AppendLine(lStore.DataGUID.AsString);
-    cDataTypeObjectID: aStringBuilder.AppendLine(lStore.DataObjectID.AsString);
-  //  cDataTypeUTF8String: aStringBuilder.AppendLine('"'+string(UTF8string(lStore.fDataUTF8String))+'"');
-    cDataTypeString: aStringBuilder.AppendLine('"'+lStore.DataString+'"');
+    cDataTypeByte: aStringBuilder.Append(fStore.fDataByte).AppendLine;
+    cDataTypeInt32: aStringBuilder.Append(fStore.fDataInt32).AppendLine;
+    cDataTypeInt64: aStringBuilder.Append(fStore.fDataInt64).AppendLine;
+    cDataTypeSingle: aStringBuilder.Append(fStore.fDataSingle).AppendLine;
+    cDataTypeDouble: aStringBuilder.Append(fStore.fDataDouble).AppendLine;
+//    cDataTypeDecimal128: aStringBuilder.Append(fStore.fDataInt64);
+    cDataTypeDateTime: aStringBuilder.AppendLine(DateTimeToStr(fStore.fDataDateTime));
+    cDataTypeUTCDateTime: aStringBuilder.AppendLine(DateTimeToStr(UnixToDateTime(fStore.fDataInt64)));
+    cDataTypeDate: aStringBuilder.AppendLine(DateToStr(fStore.fDataDateTime));
+    cDataTypeTime: aStringBuilder.AppendLine(TimeToStr(fStore.fDataDateTime));
+    cDataTypeGUID: aStringBuilder.AppendLine(fStore.DataGUID.AsString);
+    cDataTypeObjectID: aStringBuilder.AppendLine(fStore.DataObjectID.AsString);
+    cDataTypeString: aStringBuilder.AppendLine('"'+fStore.DataString+'"');
 
     cDataTypeStringList: begin
       aStringBuilder.AppendLine('[');
       aIndent := aIndent+2;
       lSpaces := StringOfChar(' ',aIndent);
-      for i := 0 to lStore.DataStringList.Count-1 do
+      for i := 0 to fStore.DataStringList.Count-1 do
       begin
-        if i<lStore.DataStringList.Count-1 then
-          aStringBuilder.AppendLine(lSpaces+'`'+lStore.DataStringList.Strings[i]+'`,')
+        if i<fStore.DataStringList.Count-1 then
+          aStringBuilder.AppendLine(lSpaces+'`'+fStore.DataStringList.Strings[i]+'`,')
         else
-          aStringBuilder.AppendLine(lSpaces+'`'+lStore.DataStringList.Strings[i]+'`');
+          aStringBuilder.AppendLine(lSpaces+'`'+fStore.DataStringList.Strings[i]+'`');
       end;
       lSpaces := StringOfChar(' ',aIndent-2);
       aStringBuilder.AppendLine(lSpaces+']');
@@ -2756,12 +2382,12 @@ begin
       aStringBuilder.Append('{ ');
       lSpaces := '';
       aIndent := aIndent+2;
-      for i := 0 to lStore.DataFrame.Count-1 do
+      for i := 0 to fStore.DataFrame.Count-1 do
       begin
         if i=1 then
           lSpaces := StringOfChar(' ',aIndent);
-        aStringBuilder.Append(lSpaces+lStore.DataFrame.slotName(i)+': ');
-        lStore.DataFrame.Slots[i].PrintToStringBuilder(aStringBuilder, aIndent);
+        aStringBuilder.Append(lSpaces+fStore.DataFrame.slotName(i)+': ');
+        fStore.DataFrame.Slots[i].PrintToStringBuilder(aStringBuilder, aIndent);
       end;
       lSpaces := StringOfChar(' ',aIndent-2);
       aStringBuilder.AppendLine(lSpaces+'}');
@@ -2771,12 +2397,12 @@ begin
       aStringBuilder.Append('[ ');
       lSpaces := '';
       aIndent := aIndent+2;
-      for i := 0 to lStore.DataArray.Count-1 do
+      for i := 0 to fStore.DataArray.Count-1 do
       begin
         if i=1 then
           lSpaces := StringOfChar(' ',aIndent);
         aStringBuilder.Append(lSpaces+IntToStr(i)+': ');
-        lStore.DataArray.items[i].PrintToStringBuilder(aStringBuilder, aIndent);
+        fStore.DataArray.items[i].PrintToStringBuilder(aStringBuilder, aIndent);
       end;
       lSpaces := StringOfChar(' ',aIndent-2);
       aStringBuilder.AppendLine(lSpaces+']');
@@ -2786,30 +2412,30 @@ begin
       aStringBuilder.Append('[ ');
       lSpaces := '';
       aIndent := aIndent+2;
-      for i := 0 to lStore.DataSparseArray.Count-1 do
+      for i := 0 to fStore.DataSparseArray.Count-1 do
       begin
         if i=1 then
           lSpaces := StringOfChar(' ',aIndent);
         aStringBuilder.Append(lSpaces+'0:');
-        lStore.DataSparseArray.items[i].PrintToStringBuilder(aStringBuilder, aIndent);
+        fStore.DataSparseArray.items[i].PrintToStringBuilder(aStringBuilder, aIndent);
       end;
       lSpaces := StringOfChar(' ',aIndent-2);
       aStringBuilder.AppendLine(lSpaces+']');
     end;
 
     cDataTypeBinary: begin
-      aStringBuilder.AppendFormat('<binary size=%d>',[lStore.DataBinary.Size]).AppendLine;
+      aStringBuilder.AppendFormat('<binary size=%d>',[fStore.DataBinary.Size]).AppendLine;
     end;
 
     cDataTypeObject: begin
-      aStringBuilder.AppendFormat('<TObject classname=%s>',[lStore.fDataObject.ClassName]).AppendLine;
+      aStringBuilder.AppendFormat('<TObject classname=%s>',[fStore.fDataObject.ClassName]).AppendLine;
     end;
 
     cDataTypeTag: begin
-      aStringBuilder.Append(IntToStr(lStore.DataTag.TagValue)+'(');
+      aStringBuilder.Append(IntToStr(fStore.DataTag.TagValue)+'(');
       lSpaces := '';
       aIndent := aIndent+2;
-      lStore.DataTag.DataObj.PrintToStringBuilder(aStringBuilder, aIndent);
+      fStore.DataTag.DataObj.PrintToStringBuilder(aStringBuilder, aIndent);
       lSpaces := StringOfChar(' ',aIndent-2);
       aStringBuilder.AppendLine(lSpaces+')');
     end;
@@ -2942,13 +2568,6 @@ begin
   FStore.fDataInt64:=aValue;
 end;
 
-(*procedure TDataObj.setAsInteger(const aValue: Int64);
-begin
-  ClearData;
-  fDataType.Code:=cDataTypeVarInt; // varInt serialized.
-  FStore.dataInt64:=aValue;
-end; *)
-
 procedure TDataObj.setAsObject(const aValue: TObject);
 begin
   ClearData;    // Note that this clears any existing data but it leaves attributes intact.
@@ -3016,29 +2635,18 @@ begin
   fStore.fDataInt64 := aValue;    //The int64 is UTC milliseconds since the Unix epoch. January 1, 1970.  See DateTimeToUnix(dt);
 end;
 
-
-(*procedure TDataObj.setAsUTF8String(const aValue: UTF8String);
+procedure TDataObj.SetDataTypeParts(aCode: TDataTypeCode; aSubType: byte; aHasAttributes: boolean);
 begin
-  ClearData;    // does not clear attributes if there are any.
-  fDataType.Code := cDataTypeUTF8String;
-  fDataType.SubClass := cSubCodeGeneric;
-  UTF8String(FStore.dataUTF8String) := aValue;
-end; *)
+  fDataType.Code := aCode;
+  fDataType.SubClass := aSubType;
+  fDataType.fHasAttributes := aHasAttributes;
+end;
 
 procedure TDataObj.setDataType(const Value: TDataType);
 begin
   fDataType := Value;
 end;
 
-procedure TDataObj.SetDataTypeByValue(aValue: byte);
-begin
-  fDataType.Value := aValue;
-end;
-
-(*procedure TDataObj.WriteToStream(aStreamer: TDataObjStreamerBase);
-begin
-  aStreamer.ReadFromDataObj(self);
-end; *)
 
 procedure TDataObj.WriteToFile(aFilename: string; aStreamerClass: TDataObjStreamerClass = nil);
 var
@@ -3127,29 +2735,6 @@ end;
 
 { TDataType }
 
-(*function TDataType.getCode: TDataTypeCode;  // possible 0-31
-begin
-  result := TDataTypeCode(fValue and $1F);
-end;
-
-function TDataType.getHasAttributes: boolean;
-begin
-  result := (fValue and $80) <> 0;
-end;
-
-function TDataType.getSubClass: byte;  // possible 0-3
-begin
-  result := (fValue and $60) shr 5;
-end; *)
-
-function TDataType.getValue: Byte;
-begin
-  result := (ord(Code) and $1F) or               // 5  bits for the datatype code.
-            ((SubClass and $03) shl 5);     // 2  bits for the subClass
-  if HasAttributes then
-    result := result or $80;                // 1  bit for Has Attributes
-end;
-
 procedure TDataType.setCode(const aValue: TDataTypeCode);
 begin
   fCode := aValue;
@@ -3163,40 +2748,6 @@ end;
 procedure TDataType.setSubClass(const aValue: byte);
 begin
   fSubClass := aValue;
-end;
-
-procedure TDataType.setValue(const aValue: Byte);
-begin
-  Code := TDataTypeCode(aValue and $1F);     // 5  bits for the datatype code.
-  SubClass := (aValue shr 5) and $03;        // 2  bits for the subClass
-  HasAttributes := (aValue and $80)<>0;          // 1  bit for Has Attributes
-end;
-
-(*
-procedure TDataType.setCode(const aValue: TDataTypeCode);
-begin
-  fValue := (fValue and $E0) or (Byte(ord(aValue)) and $1F);
-end;
-
-procedure TDataType.setHasAttributes(const aValue: boolean);
-begin
-  if aValue then
-    fValue := fValue or $80    // turn on the bit
-  else
-    fValue := fValue and $7F;  // turn off the bit
-end;
-
-procedure TDataType.setSubClass(const aValue: byte);
-begin
-  fValue := (fValue and $9F) or ((aValue and $03) shl 5);
-end;
-*)
-
-{ TDataAttributeStore }
-
-procedure TDataAttributeStore.ClearData(aDataType: TDataType);
-begin
-  fStore.ClearData(aDataType);
 end;
 
 { TDataGUID }
@@ -3217,7 +2768,7 @@ end;
 
 { TDataFrame }
 
-procedure TDataFrame.AppendSlot(aSlotName: string; aDataObj: TDataObj);
+procedure TDataFrame.AppendSlot(const aSlotName: string; aDataObj: TDataObj);
 begin
   // this will add a new slot as long as aSlotName is not already in this frame.  If it is, then the previous slot wil be removed first.
   DeleteSlot(aSlotName);
@@ -3267,7 +2818,7 @@ begin
   fSlotList.Duplicates := dupError;     // duplicates should never happen cause we are controlling it.
 end;
 
-function TDataFrame.DeleteSlot(aSlotName: string): boolean;   // returns true if the slot was found and deleted.
+function TDataFrame.DeleteSlot(const aSlotName: string): boolean;   // returns true if the slot was found and deleted.
 var
   lIndex: integer;
 begin
@@ -3294,7 +2845,7 @@ begin
   inherited Destroy;
 end;
 
-function TDataFrame.FindSlot(aSlotName: string; var oSlot: TDataObj): boolean;
+function TDataFrame.FindSlot(const aSlotName: string; var oSlot: TDataObj): boolean;
 var
   lIndex: integer;
 begin
@@ -3307,7 +2858,7 @@ begin
   end;
 end;
 
-function TDataFrame.FindSlot(aSlotName: string): TDataObj;
+function TDataFrame.FindSlot(const aSlotName: string): TDataObj;
 var
   lIndex: integer;
 begin
@@ -3319,10 +2870,14 @@ begin
   end;
 end;
 
-function TDataFrame.FindSlotIndex(aSlotName: string): integer;    // returns -1 if not found
+function TDataFrame.FindSlotIndex(const aSlotName: string): integer;    // returns -1 if not found
 var
   I: Integer;
 begin
+  // Doing brute force scanning to find the slotname.  Turns out to be faster than something more sophistocated such as using a dictionary.
+  // The reason is that there is overhead using a dictionary and in DataObjects, we treat slot names as case insensitive, so using a dictionary
+  // anyway would force a bunch of case shifting. This is faster for around 50 and under slotnames in the frame.  Which, most likely, we will always
+  // be below this level.  Maybe in the future, we will have some kind a slot count threshold that will shift to something other than a simple scan.
   result := -1;
   for I := 0 to fSlotList.Count-1 do
   begin
@@ -3334,7 +2889,7 @@ begin
   end;
 end;
 
-function TDataFrame.GetItem(aKey: string): TDataObj;
+function TDataFrame.GetItem(const aKey: string): TDataObj;
 begin
   result := NewSlot(aKey);
 end;
@@ -3349,10 +2904,9 @@ begin
   result := fSlotList.IndexOfObject(aSlot);
 end;
 
-function TDataFrame.NewSlot(aSlotName: string; aRaiseExceptionIfAlreadyExists: boolean = false): TDataObj;
+function TDataFrame.NewSlot(const aSlotName: string; aRaiseExceptionIfAlreadyExists: boolean = false): TDataObj;
 begin
-  result := FindSlot(aSlotName);
-  if not assigned(result) then
+  if not FindSlot(aSlotname, result) then
   begin
     result := TDataObj.Create;
     fSlotList.AddObject(aSlotName, result);
@@ -3378,7 +2932,7 @@ begin
   fSlotList.Strings[aIndex] := aSlotname;
 end;
 
-function TDataFrame.SlotByName(aSlotName: string): TDataObj;
+function TDataFrame.SlotByName(const aSlotName: string): TDataObj;
 begin
   result := FindSlot(aSlotName);
   if not assigned(result) then
@@ -3397,14 +2951,14 @@ end;
 // Fills self object with a newly generated ObjectID.
 procedure TDataObjectID.GenerateNewID;
 var
-  lSystemTime: TSystemTime;
+  lNow: TDatetime;
 begin
-  //juse one way of generating mongoDB objectID's
-  GetSystemTime(lSystemTime);
-  self.MachineID := gNewObjectID_MachineID; //see initialization
-  Self.ProcessID := GetCurrentThreadId;//GetCurrentProcessId;
-  Self.Counter := InterlockedIncrement(integer(gNewObjectID_Counter));
-  Self.Seconds := (((Round(EncodeDate(lSystemTime.wYear,lSystemTime.wMonth,lSystemTime.wDay))-UnixDateDelta)*24+lSystemTime.wHour)*60+lSystemTime.wMinute)*60+lSystemTime.wSecond;
+  //just one way of generating mongoDB objectID's
+  lNow := Now;
+  self.MachineID := gNewObjectID_MachineID;  //see initialization
+  Self.ProcessID := System.MainThreadID;  //  GetCurrentProcessId;  //GetCurrentThreadId;      //GetCurrentProcessId;
+  Self.Counter := AtomicIncrement(integer(gNewObjectID_Counter));
+  Self.Seconds := (((Round(EncodeDate(lNow.Year,lNow.Month,lNow.Day))-UnixDateDelta)*24+lNow.Hour)*60+lNow.Minute)*60+lNow.Second;
 end;
 
 
@@ -3413,8 +2967,6 @@ var
   i: Cardinal;
   lP: PCardinal;
 begin
-//  result := Inttohex(self.getSeconds,8)+IntTohex(self.getMachineID,6)+IntTohex(self.getProcessID,4)+IntToHex(self.getCounter,6);              // PRODUCES UPPERCASE.  NEED LOWER
-
   SetLength(result, 24);
   lP := Pointer(result);
   for i := low(Data) to high(Data) do
@@ -3502,7 +3054,7 @@ end;
 
 constructor TDataSparseArray.Create;
 begin
-  inherited;
+  inherited Create;
   fIndexKeyList := TList<Int64>.Create;
 end;
 
@@ -3580,6 +3132,34 @@ end;
 
 { TDataArray }
 
+function TDataArray.Add(aDataObj: TDataObj): Integer;
+var
+  lNewCapacity: Cardinal;
+begin
+  if fCount >= fCapacity then
+  begin
+    // Expand.  While our array is relatively small, we will start at 16 (arbitrary) and double each time we need more.
+    // Once we grow over 8192, we will increase each time by 50%
+    if fCapacity<cInitialCapacity then
+    begin
+      lNewCapacity := cInitialCapacity;
+    end
+    else if fCapacity>=8192 then
+    begin
+      lNewCapacity := (Capacity * 3) shr 1;  // shr is a divide by 2
+    end
+    else
+    begin
+      lNewCapacity := fCapacity * 2;
+    end;
+    SetLength(fItems, lNewCapacity);
+    fCapacity := lNewCapacity;
+  end;
+  fItems[fCount] := aDataObj;
+  result := fCount;
+  inc(fCount);
+end;
+
 procedure TDataArray.AppendFrom(aArray: TDataArray);
 var
   i: Integer;
@@ -3588,6 +3168,30 @@ begin
   begin
     NewSlot.CopyFrom(aArray.Items[i]);
   end;
+end;
+
+procedure TDataArray.CheckIndexInRange(aIndex: integer);
+begin
+  if (aIndex<0) or (aIndex>=fCount) then
+    raise EArgumentOutOfRangeException.CreateRes(@SArgumentOutOfRange) at ReturnAddress;
+end;
+
+procedure TDataArray.Clear;
+var
+  i: Integer;
+  lItem: TDataObj;
+begin
+  for i := 0 to Count-1 do
+  begin
+    lItem := fItems[i];
+    if assigned(lItem) then   // It is possible that sometimes an item could be in the array as nil.
+    begin
+      lItem.Destroy;
+      fItems[i] := nil;   // don't really need this, but it's a tad helpful to be able to see these nils in the debugger.
+    end;
+  end;
+  fCount := 0;   // Not reducing the capacity
+
 end;
 
 function TDataArray.Concat(aArray: TDataArray): TDataObj;
@@ -3605,9 +3209,44 @@ begin
   AppendFrom(aArray);
 end;
 
-procedure TDataArray.DeleteSlot(aIndex: integer);
+constructor TDataArray.Create(aInitialCapacity: Integer);
 begin
-  self.Delete(aIndex);
+  inherited Create;
+  if aInitialCapacity > 0 then
+    SetLength(fItems, aInitialCapacity);
+end;
+
+procedure TDataArray.DeleteSlot(aIndex: integer);
+var
+  lObj: TDataObj;
+begin
+  CheckIndexInRange(aIndex);
+{$R-}   // can turn off range checking because it was already checked.
+  lObj := fItems[aIndex];
+  lObj.Free;
+  move(fItems[aIndex+1], fItems[aIndex], fCount-aIndex-1);
+  dec(fCount);
+{$R+}
+
+  {Note about DeleteSlot...
+   If we are in a situation where a caller is going to do a lot of DeleteSlot calls on an array, then we have a performance problem because the
+   move call above is going to get called a lot and it's possible that it's called a lot on a large amount of items and thus larger amounts of memory to do the move on.
+   It's not efficient to delete a slot and move the back portion of the array after the slot that was deleted (to pack out the nil item) over and over again.
+   So, it would be nice to have a way to DeleteSlots without packing, and then followup with a .Pack() call that will intelligently do the set of moves that are
+   needed to get all the nils packed out.  Something like procedure TDataArray.DeleteSlot(aIndex: integer; aDoPack: boolean=true);
+                                                          lDataObj.DeleteSlot(10, false);
+                                                          lDataObj.DeleteSlot(11, false);
+                                                          lDataObj.DeleteSlot(12, false);
+                                                          lDataObj.DeleteSlot(20, false);
+                                                          lDataObj.DeleteSlot(21, false);
+                                                          lDataObj.Pack(); }
+end;
+
+destructor TDataArray.Destroy;
+begin
+  Clear;
+  SetLength(fItems,0);
+  inherited;
 end;
 
 function TDataArray.Every(aEveryFunction: TForEachFunction): boolean;
@@ -3735,6 +3374,11 @@ begin
   add(result);
 end;
 
+function TDataArray.getItem(aIndex: Cardinal): TDataObj;
+begin
+  result := fItems[aIndex];
+end;
+
 function TDataArray.getSlot(aIndex: integer): TDataObj;
 begin
   result := items[aIndex];
@@ -3782,8 +3426,17 @@ begin
 end;
 
 function TDataArray.IndexOfChildSlot(aSlot: TDataObj): integer;
+var
+  i: Integer;
 begin
-  result := self.IndexOfItem(aSlot, TDirection.FromBeginning);
+  for i := 0 to FCount - 1 do
+  begin
+    if fItems[i]=aSlot then
+    begin
+      Exit(i);
+    end;
+  end;
+  Result := -1;
 end;
 
 function TDataArray.Reduce(aReduceProcedure: TReduceProcedure): TDataObj;
@@ -3806,13 +3459,18 @@ begin
   begin
     if aEveryFunction(self, items[i], i) then
     begin
-      self.Delete(i);
+      self.DeleteSlot(i);
       inc(result);
     end;
   end;
 end;
 
 
+
+procedure TDataArray.setItem(aIndex: Cardinal; const Value: TDataObj);
+begin
+  fItems[aIndex] := Value;
+end;
 
 { TDataTag }
 
@@ -3842,10 +3500,17 @@ end;
 
 { TDataStore }
 
-procedure TDataStore.ClearData(aDataType: TDataType);
+procedure TDataStore.ClearData;
 begin
-  fDataString := '';
-  FreeAndNil(fDataObject);
+  if pointer(fDataString)<>nil then
+    fDataString := '';
+
+  if assigned(fDataObject) then   // This code block is a bit faster than calling FreeAndNil()
+  begin
+    fDataObject.Destroy;
+    fDataObject := nil;
+  end;
+
   fDataInt64 := 0;
 end;
 
@@ -4071,33 +3736,40 @@ end;
 
 procedure InitObjectIDGenerator;
 var
-  lComputerName:string;
-  i,l:integer;
+  lComputerName: string;
+  i,l: integer;
 begin
+  {$ifdef MSWINDOWS}
   // We need to setup the number that represents this Machine and the random starting value for the sequence number whenever we ask TDataObjectID to generate a new ID.
-  begin
-    l:=MAX_PATH;
+    l:=MAX_COMPUTERNAME_LENGTH;
     SetLength(lComputerName,l);
     if GetComputerName(PChar(lComputerName),cardinal(l)) then
       SetLength(lComputerName,l)
     else
       lComputerName:=GetEnvironmentVariable('COMPUTERNAME');
-
-    gNewObjectID_MachineID:=$10101;
-    for i:=1 to Length(lComputerName) do
+  {$else}
+    // How do we get a computer name from Android, IOS, Mac, Linux, etc?  for now, generate something random.  This needs to be fixed someday I think.
+    setLength(lComputerName,10);
+    for i := 1 to 10 do
     begin
-      case lComputerName[i] of
-        '0'..'9':
-          gNewObjectID_MachineID:=(gNewObjectID_MachineID*36+(byte(lComputerName[i]) and $0F)) and $FFFFFF;
-        'A'..'Z','a'..'z':
-          gNewObjectID_MachineID:=(gNewObjectID_MachineID*36+(byte(lComputerName[i]) and $1F)+9) and $FFFFFF;
-        //else ignore
-      end;
+      lComputerName[i] := chr(random(ord('Z')-ord('A'))+ord('A'));
+    end;
+  {$endif}
+
+  gNewObjectID_MachineID:=$10101;
+  for i:=1 to Length(lComputerName) do
+  begin
+    case lComputerName[i] of
+      '0'..'9':
+        gNewObjectID_MachineID:=(gNewObjectID_MachineID*36+(byte(lComputerName[i]) and $0F)) and $FFFFFF;
+      'A'..'Z','a'..'z':
+        gNewObjectID_MachineID:=(gNewObjectID_MachineID*36+(byte(lComputerName[i]) and $1F)+9) and $FFFFFF;
+      //else ignore
     end;
   end;
 
   //GetTickCount returns a cardinal and the gNewObjectID_Counter is an integer
-  gNewObjectID_Counter:=GetTickCount;  // Generate a random starting point.
+  gNewObjectID_Counter:=TThread.GetTickCount;  // Generate a random starting point.
 end;
 
 
