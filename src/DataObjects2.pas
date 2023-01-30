@@ -1,5 +1,34 @@
 unit DataObjects2;
 
+{********************************************************************************}
+{                                                                                }
+{                         Dynamic Data Objects Library                           }
+{                                                                                }
+{                                                                                }
+{ MIT License                                                                    }
+{                                                                                }
+{ Copyright (c) 2022 Sean Solberg                                                }
+{                                                                                }
+{ Permission is hereby granted, free of charge, to any person obtaining a copy   }
+{ of this software and associated documentation files (the "Software"), to deal  }
+{ in the Software without restriction, including without limitation the rights   }
+{ to use, copy, modify, merge, publish, distribute, sublicense, and/or sell      }
+{ copies of the Software, and to permit persons to whom the Software is          }
+{ furnished to do so, subject to the following conditions:                       }
+{                                                                                }
+{ The above copyright notice and this permission notice shall be included in all }
+{ copies or substantial portions of the Software.                                }
+{                                                                                }
+{ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR     }
+{ IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,       }
+{ FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE    }
+{ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER         }
+{ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,  }
+{ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE  }
+{ SOFTWARE.                                                                      }
+{                                                                                }
+{********************************************************************************}
+
 { This unit defines the core classes for using DataObjects2.
 
   DataObjects2 was written by Sean Solberg starting 2/28/2018 as a somewhat functional replace for the old original DataObjects that I used to use at a previous company.
@@ -290,24 +319,14 @@ type
 
   // forward declarations;
   TDataGUID = class;
-  PTDataGUID = pointer;
   TDataObjectID = class;
-  PTDataObjectID = pointer;
   TDataStringList = class;
-  PTDataStringList = pointer;
   TDataFrame = class;
-  PTDataFrame = pointer;
   TDataArray = class;
-  PTDataArray = pointer;
   TDataSparseArray = class;
-  PTDataSparseArray = pointer;
   TDataBinary = class;
-  PTDataBinary = pointer;
   TDataTag = class;
-  PTDataTag = pointer;
   TDataAttributeStore = class;
-  PTDataAttributeStore = pointer;
-  PTObject = pointer;
 
 
   // The TDataStore's job is to be the container that "Holds" the actually data that is contianed within the TDataObject.
@@ -696,7 +715,7 @@ type
     destructor Destroy; override;
     function NewSlot: TDataObj;
     function Add(aDataObj: TDataObj): Integer;
-    property Items[aIndex: Cardinal]: TDataObj read getItem write setItem;
+    property Items[aIndex: Cardinal]: TDataObj read getItem write setItem; default;
     procedure Clear;
 
     // The following set of methods are very similar to the set of methods you can call on a javaScript array

@@ -15,9 +15,14 @@ type
   TForm19 = class(TForm)
     Memo1: TMemo;
     Button1: TButton;
+    Button2: TButton;
+    Button3: TButton;
     procedure Button1Click(Sender: TObject);
+    procedure Button2Click(Sender: TObject);
+    procedure Button3Click(Sender: TObject);
   private
     procedure MakeTestObject(aObj: TDataObj);
+    procedure log(aStr: string);
     { Private declarations }
   public
     { Public declarations }
@@ -183,6 +188,61 @@ end;
 
 
 // MakeTestObject does just what it says.  It will fill aObj with a buch of test data.
+procedure TForm19.Button2Click(Sender: TObject);
+var
+  lDataObj: TDataObj;
+  lStreamer: TJSONStreamer;
+  lMemStream: TMemoryStream;
+  i: Integer;
+  lStart, lEnd: TDatetime;
+begin
+
+  lDataObj:=TDataObj.Create;
+  lMemStream:=TMemoryStream.Create;
+  try
+    lMemStream.LoadFromFile('C:\dev\DynamicDataObjects\SampleFiles\json\mesh.json');
+    lStreamer := TJSONStreamer.Create(lMemStream);
+
+    lStart := now;
+    for i := 1 to 100 do
+    begin
+      lMemStream.Seek(0,0);
+      lDataObj:=TDataObj.Create;
+      lStreamer.Decode(lDataObj);
+//      lDataObj.Free;
+    end;
+    lEnd := now;
+
+    log(FloatToStr((lEnd-lStart)*24*60*60));
+
+  finally
+    lMemStream.Free;
+  end;
+end;
+
+procedure TForm19.Button3Click(Sender: TObject);
+type
+  TArrayOfTDataobj = array of TDataObj;
+var
+  lItems: Array of TArrayOfTDataobj;
+  i: Integer;
+  lstart, lend: TDatetime;
+begin
+  setLength(lItems, 1000000);
+  lStart := now;
+  for i := 0 to 999999 do
+  begin
+    SetLength(lItems[i], 16);
+  end;
+  lend := now;
+  log(FloatToStr((lend-lStart)*24*60*60));
+end;
+
+procedure TForm19.log(aStr: string);
+begin
+  memo1.Lines.Add(aStr);
+end;
+
 procedure TForm19.MakeTestObject(aObj: TDataObj);
 var
   i: integer;

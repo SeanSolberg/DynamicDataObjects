@@ -31,4 +31,22 @@ object Form19: TForm19
     TabOrder = 1
     OnClick = Button1Click
   end
+  object Button2: TButton
+    Left = 216
+    Top = 8
+    Width = 75
+    Height = 25
+    Caption = 'Button2'
+    TabOrder = 2
+    OnClick = Button2Click
+  end
+  object Button3: TButton
+    Left = 392
+    Top = 8
+    Width = 75
+    Height = 25
+    Caption = 'Button3'
+    TabOrder = 3
+    OnClick = Button3Click
+  end
 end
