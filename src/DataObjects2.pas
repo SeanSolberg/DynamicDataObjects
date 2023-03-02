@@ -143,7 +143,7 @@ uses SysUtils, DateUtils, Generics.collections, Classes, VarInt, StreamCache, Rt
 {$endif};
 
 // If you enable cMakeMoreCompatibleWithOldDataObjects then it makes this code more compatible with the old dataObjects library I used to use.
-{$Define cMakeMoreCompatibleWithOldDataObjects}
+//{$Define cMakeMoreCompatibleWithOldDataObjects}
 
 
 
@@ -404,6 +404,7 @@ type
   TDataObjStreamerBase = class
   private
     fOwnsStream: boolean;
+    procedure setStream(const Value: TStream);
   protected
     fStream: TStream;   // reference only in most situations.   However, if you set OwnsStream to true, then when this object is freed, then fStream will be freed.
   public
@@ -426,7 +427,7 @@ type
     procedure ApplyOptionalParameters(aParams: TStrings); overload; virtual;
     procedure ApplyOptionalParameters(aParams: String); overload;
 
-    property Stream: TStream read fStream write fStream;
+    property Stream: TStream read fStream write setStream;
     property OwnsStream: boolean read fOwnsStream write fOwnsStream;
   end;
   TDataObjStreamerClass = class of TDataObjStreamerBase;
@@ -960,7 +961,7 @@ begin
         begin
           lInteger := aValue.AsInteger;
           if (lInteger <> aDefault) or (aAssignContext.DoNotSerializeDefaultValues = false) then  // note that Default values can only be up to 32 bit.
-            aGetObjProc.AsInteger := lInteger;
+            aGetObjProc.AsInt32 := lInteger;
         end;
       end;
 
@@ -985,7 +986,7 @@ begin
             begin
               case aValue.DataSize of
                 1: aGetObjProc.AsByte:=lInt64;
-                2, 4: aGetObjProc.AsInteger:=lInt64;
+                2, 4: aGetObjProc.AsInt32:=lInt64;
                 else
                   aGetObjProc.AsInt64:=lInt64;
               end;
@@ -1067,7 +1068,7 @@ begin
       tkWChar: begin
         lInteger := aValue.AsOrdinal;
         if (lInteger <> aDefault) or (aAssignContext.DoNotSerializeDefaultValues = false) then  // note that Default values can only be up to 32 bit.
-          aGetObjProc.AsInteger := lInteger;
+          aGetObjProc.AsInt32 := lInteger;
       end;
 
       tkVariant: begin
@@ -1240,7 +1241,7 @@ begin
             result := true;
           end;
           2, 4: begin
-            PInteger(aValue.GetReferenceToRawData)^ := aDataObj.AsInteger;
+            PInteger(aValue.GetReferenceToRawData)^ := aDataObj.AsInt32;
             result := true;
           end;
           // HMMM.  can a set be bigger than 32bit?  The RTTI suggests no, and if you try, you get a compiler error.
@@ -1918,10 +1919,12 @@ begin
 end;
 
 
+{$ifDef cMakeMoreCompatibleWithOldDataObjects}
 function TDataObj.getAsFloat: Double;
 begin
   result := getAsDouble;
 end;
+{$endif}
 
 function TDataObj.getAsFrame: TDataFrame;
 var
@@ -2300,6 +2303,7 @@ begin
     try
       if assigned(aStreamer) then
       begin
+        aStreamer.Stream := lRS;
         result := aStreamer;
       end
       else
@@ -2461,10 +2465,12 @@ begin
   end;
 end;
 
+{$ifDef cMakeMoreCompatibleWithOldDataObjects}
 procedure TDataObj.ReadFromFile(aFilename: string);
 begin
   LoadFromFile(aFilename);
 end;
+{$endif}
 
 procedure TDataObj.ReadFromMemoryBuffer(aBuffer: Pointer; aSize: NativeInt; aStreamerClass: TClass);
 var
@@ -2554,10 +2560,12 @@ begin
   FStore.fDataDouble:=aValue;
 end;
 
+{$ifDef cMakeMoreCompatibleWithOldDataObjects}
 procedure TDataObj.setAsFloat(const aValue: Double);
 begin
   SetAsDouble(aValue);
 end;
+{$endif}
 
 procedure TDataObj.setAsFrame(const aValue: TDataFrame);
 begin
@@ -3223,10 +3231,12 @@ begin
   end;
 end;
 
+{$ifDef cMakeMoreCompatibleWithOldDataObjects}
 procedure TDataArray.CopyFrom(aArray: TDataArray);
 begin
   AppendFrom(aArray);
 end;
+{$endif}
 
 constructor TDataArray.Create(aInitialCapacity: Integer);
 begin
@@ -3415,7 +3425,7 @@ begin
     lItem := Items[i];
     if lItem.DataType.Code = cDataTypeInt32 then
     begin
-      if lItem.AsInteger = aInteger then
+      if lItem.AsInt32 = aInteger then
       begin
         result := i;
         break;
@@ -3605,6 +3615,18 @@ end;
 class function TDataObjStreamerBase.IsFileExtension(aStr: string): boolean;
 begin
   result := SameText(aStr, FileExtension) or SameText(aStr, '.'+FileExtension);
+end;
+
+procedure TDataObjStreamerBase.setStream(const Value: TStream);
+begin
+  if assigned(fStream) then
+  begin
+    if (fStream<>Value) and (fOwnsStream) then   // we are being given a new stream to bind to and since we own the current one, we must free it or the reference will forever be lost.
+    begin
+      freeAndNil(fStream);
+    end;
+  end;
+  fStream := Value;
 end;
 
 class procedure TDataObjStreamerBase.GetParameterInfo(aParameterPurpose: TDataObjParameterPurposes; aStrings: TStrings);

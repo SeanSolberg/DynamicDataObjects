@@ -1022,7 +1022,7 @@ begin
         end;
         27: begin
           DoRead(lInt64, 8);
-          aDataObj.AsInt64 := -1-lInt64;     // 8 byte unsigned in64.  Problem we have here is that we natively model signed 64biters, so it's possible we get an incoming unsigned number that's too big here.
+          aDataObj.AsInt64 := -1-lInt64;     // 8 byte unsigned int64.  Problem we have here is that we natively model signed 64biters, so it's possible we get an incoming unsigned number that's too big here.
         end;
       end;
     end;
