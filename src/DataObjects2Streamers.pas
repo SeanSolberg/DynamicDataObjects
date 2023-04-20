@@ -48,6 +48,7 @@ type
     function FindStreamerClassByFilename(aFilename: string): TDataObjStreamerClass;
     function CreateStreamerByFilenameExtension(aExtension: string): TDataObjStreamerBase;
     function CreateStreamerByFilename(aFilename: string): TDataObjStreamerBase;
+    function AllStreamersFileDialogFilters: string;
   end;
 
   TStreamerRegistryComparer = class(TComparer<TDataObjStreamerClass>)
@@ -468,6 +469,22 @@ end;
 
 
 { TStreamerRegistry }
+
+function TStreamerRegistry.AllStreamersFileDialogFilters: string;
+var
+  i: integer;
+  lLine: string;
+begin
+  for i := 0 to count-1 do
+  begin
+    lLine := items[i].GetFileFilter;
+    if length(result)=0 then
+      result := lLine
+    else
+      result := result+'|'+lLine;
+  end;
+  result := result+'|All files (*.*)|*.*';
+end;
 
 function TStreamerRegistry.CreateStreamerByFilename(aFilename: string): TDataObjStreamerBase;
 var
