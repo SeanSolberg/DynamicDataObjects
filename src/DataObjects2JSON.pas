@@ -1219,8 +1219,39 @@ begin
 end;
 
 function TJsonStreamer.TryParsingSymbol(aDataObj: TDataObj): integer;  //0=nothing applicable, 1=successful parse, 2=Applicable, but error in parsing.
+var
+  lChPtr: PChar;
+  lchar: Char;
+  lString: String;
+  lCharCount: integer;
 begin
   result := 0;   // FINISH this with new implementation.
+
+  // If we are trying to parse a symbol, then the data that was tried so far by other code did not pick up a valid json value like a number or a true, false, etc.
+  // it is also not a string with valid starting quotes.   So, we can simply take all characters that come in up until an expected ending identifier.  These would
+  // be the , character or the } character or the ] character. There is no escaping possible with a symbol so really these characters cannot be in a symbol.
+
+  lChPtr := fCurrentCharPtr;
+  lCharCount := 0;
+  while (not eof) do
+  begin
+    lChar := lChPtr^;
+    if (lChar = ',') or (lChar = '}') or (lChar=']') then
+    begin
+      // We can end this symbol and take this string into aDataObj
+      SetString(lString, fCurrentCharPtr, lCharCount);    // everything from the original start position to the end of what we want will be extracted out in one swoop as no escaping needed to be handled.
+      aDataObj.AsSymbol := lString;
+      result := 1;       // now that we have received at least one digit, we can possibly have a true result.
+      break;
+    end
+    else
+    begin
+      inc(lChPtr);    // move up to the next character to test.
+      inc(lCharCount);
+    end;
+  end;
+
+  fCurrentCharPtr := lChPtr;    // move up our parsing context to the new current character that is after what we just processed out into a symbol leaving at a , } or ] or possibly the end of our input buffer
 end;
 
 // This function will parse whatever JSON data type it can find next and will put that data into aDataObj

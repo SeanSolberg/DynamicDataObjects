@@ -358,16 +358,18 @@ var
   begin
     lSize := length(aUTF8String);                           // returns the number of bytes used in the string.
     lSize.WriteToStream(fStream);
-    fStream.Write(aUTF8String[1], lSize);
+    if Integer(lSize) > 0 then
+      fStream.Write(aUTF8String[1], lSize);
   end;
 
   procedure WriteUnicodeString(aString: String);
   var
     lSize: TUVarInt64;                                  // Notice that since string lengths can't possibly be a negative number, we are using an Unsigned VarInt instead which is faster.
   begin
-    lSize := length(aString)*2;                         // returns the number of byres used in the string.  2 for each character.
+    lSize := length(aString)*2;                         // returns the number of bytes used in the string.  2 for each character.
     lSize.WriteToStream(fStream);
-    fStream.Write(aString[1], lSize);       // Unicode is two bytes per character.
+    if Integer(lSize) > 0 then
+      fStream.Write(aString[1], lSize);       // Unicode is two bytes per character.
   end;
 
 begin
