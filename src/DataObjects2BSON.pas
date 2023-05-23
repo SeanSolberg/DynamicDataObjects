@@ -64,7 +64,6 @@ type
 
 implementation
 
-//resourceString
 
 procedure TBSONStreamer.RaiseParsingException(aMessage: string);
 begin
@@ -465,7 +464,9 @@ var
   lByte: byte;
   lSlotName: UTF8String;
   lUTF8String: UTF8String;
+  lStreamSize: integer;
 begin
+  // NOTE:   BSon doesn't natively support a "StringList" data type so we have to send it as an "array of strings"
   lMemStream:=TMemoryStream.create;      // create a memory stream to serialize our contained document into because we need to learn the size as the size needs to be written first.
   try
     for i := 0 to aStrings.Count-1 do
@@ -484,16 +485,24 @@ begin
       lMemStream.Write(lSize, 4);
 
       // Now write the string bytes including the null terminator byte
-      lMemStream.Write(lUTF8String[1], lSize);
+      if lSize > 1 then
+      begin
+        lMemStream.Write(lUTF8String[1], lSize);     // this writes the string including the ending null byte of the string.
+      end
+      else
+      begin
+        lByte := 0;
+        lMemStream.WriteData(lByte);    // we are writing an empty string which only contains the ending null byte.
+      end;
     end;
 
-    // Write the size of the embedded document.
-    lSize := lMemStream.Size;
+    lStreamSize := lMemStream.Size;
+    lSize := lStreamSize+4+1;     // Write the size of the embedded document, plus 4 bytes for the size Int32 and 1 byte for the null terminator streamed below.
     aStream.Write(lSize, 4);
 
     // Now write the embedded document data.
     lMemStream.Seek(0,soBeginning);
-    aStream.CopyFrom(lMemStream, lSize);
+    aStream.CopyFrom(lMemStream, lStreamSize);
 
     // write null terminator for this document
     lByte := 0;
