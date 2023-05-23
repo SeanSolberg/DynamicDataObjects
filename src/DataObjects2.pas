@@ -823,7 +823,6 @@ type
     destructor Destroy; override;
   end;
 
-
 type
   TGetObjProc = reference to function: TDataObj;
 
@@ -833,6 +832,16 @@ var
 function GetRttiContext: TRttiContext;
 begin
   Result := gRttiContext;
+end;
+
+{ Unix date conversion support.  Note that the default Delphi code in System.DateUtils has these functions but they are WRONG.
+  They are doing SecondIncrements instead of Millisecond Increments }
+function UnixToDateTime(const AValue: Int64; AReturnUTC: Boolean = True): TDateTime;
+begin
+  if AReturnUTC then
+    Result := IncMilliSecond(UnixDateDelta, AValue)
+  else
+    Result := TTimeZone.Local.ToLocalTime(IncMilliSecond(UnixDateDelta, AValue));
 end;
 
 
@@ -2214,7 +2223,17 @@ begin
       result := cDataTypeStrings[ord(fDataType.Code)] + ':nil';
   end
   else
-    result := cDataTypeStrings[ord(fDataType.Code)];
+  begin
+    if fDataType.Code <= high(TDataTypeCode) then
+    begin
+      result := cDataTypeStrings[ord(fDataType.Code)];
+    end
+    else
+    begin
+      result := 'OutOfRange: '+intToStr(ord(fDataType.Code));
+    end;
+
+  end;
 end;
 
 function TDataObj.getItem(aKey: variant): TDataObj;
