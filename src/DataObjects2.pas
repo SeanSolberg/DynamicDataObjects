@@ -844,6 +844,16 @@ begin
     Result := TTimeZone.Local.ToLocalTime(IncMilliSecond(UnixDateDelta, AValue));
 end;
 
+function DateTimeToUnix(const AValue: TDateTime): Int64;
+begin
+  Result := MilliSecondsBetween(UnixDateDelta, AValue);
+  if AValue < UnixDateDelta then
+     Result := -Result;
+ end;
+
+
+
+
 
 function TDataStore.getDataArray: TDataArray;
 begin
@@ -1594,20 +1604,14 @@ begin
 
     cDataTypeFrame: begin
       lFrame := AsFrame;
-      if aSlotNameCaseChange <> cCaseChangeNone then
+      for i := 0 to lFrame.Count-1 do
       begin
-        for i := 0 to lFrame.Count-1 do
-        begin
-          if aSlotNameCaseChange = TCaseChangeOptions.cCaseChangeUpper then
-            lFrame.SetSlotname(i, UpperCase(lFrame.Slotname(i)))
-          else if aSlotNameCaseChange = TCaseChangeOptions.cCaseChangeLower then
-            lFrame.SetSlotname(i, LowerCase(lFrame.Slotname(i)));
+        if aSlotNameCaseChange = TCaseChangeOptions.cCaseChangeUpper then
+          lFrame.SetSlotname(i, UpperCase(lFrame.Slotname(i)))
+        else if aSlotNameCaseChange = TCaseChangeOptions.cCaseChangeLower then
+          lFrame.SetSlotname(i, LowerCase(lFrame.Slotname(i)));
 
-          if aContentCaseChange <> cCaseChangeNone then
-          begin
-            lFrame.Slots[i].ChangeCaseOnStrings(aContentCaseChange, aSlotNameCaseChange);    // recursion happening here.
-          end;
-        end;
+        lFrame.Slots[i].ChangeCaseOnStrings(aContentCaseChange, aSlotNameCaseChange);    // recursion happening here.
       end;
     end;
 
@@ -3043,36 +3047,50 @@ begin
 end;
 
 procedure TDataObjectID.setAsString(const Value: string);
+var
+  lBytes: TBytes;
+  I: Integer;
 begin
-  //FINISH - implement this
+  if Length(Value) <> 24 then
+    raise EDataObj.Create('Invalid ObjectId Length');
+
+  HexToBin(PChar(Value), @Data[0], 12);   // 12 for the amount of byes in a 24 hex string div 2
 end;
 
 procedure TDataObjectID.setCounter(const Value: Cardinal);
 begin
+  {$R-}
   Data[9] := Value shr 16;
   Data[10] := Value shr 8;
   Data[11] := Value;
+  {$R+}
 end;
 
 procedure TDataObjectID.setMachineID(const Value: Cardinal);
 begin
+  {$R-}
   Data[4] := Value shr 16;
   Data[5] := Value shr 8;
   Data[6] := Value;
+  {$R+}
 end;
 
 procedure TDataObjectID.setProcessID(const Value: Cardinal);
 begin
+  {$R-}
   Data[7] := Value shr 8;
   Data[8] := Value;
+  {$R+}
 end;
 
 procedure TDataObjectID.setSeconds(const Value: Cardinal);
 begin
+  {$R-}
   Data[0] := Value shr 24;
   Data[1] := Value shr 16;
   Data[2] := Value shr 8;
   Data[3] := Value;
+  {$R+}
 end;
 
 { TDataSparseArray }

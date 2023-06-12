@@ -654,7 +654,10 @@ begin
     end;
 
     cDataTypeString: begin
-      lByte := $2;             // String type code
+      if aDataObj.DataType.SubClass = cSubCodeSymbol then
+        lByte := $E         // Symbol type code.  This type is considered Depricated in Mongo.  So, maybe we should have a serialization setting that allows or disallows this.
+      else
+        lByte := $2;        // String type code
       aStream.Write(lByte,1);
 
       WriteSlotname;
