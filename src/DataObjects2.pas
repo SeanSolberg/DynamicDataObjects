@@ -3285,12 +3285,15 @@ end;
 procedure TDataArray.DeleteSlot(aIndex: integer);
 var
   lObj: TDataObj;
+  lSize: NativeInt;
 begin
   CheckIndexInRange(aIndex);
 {$R-}   // can turn off range checking because it was already checked.
   lObj := fItems[aIndex];
   lObj.Free;
-  move(fItems[aIndex+1], fItems[aIndex], fCount-aIndex-1);
+  lSize := SizeOf(TDataObj)*(fCount-aIndex-1);
+  if lSize>0 then
+    move(fItems[aIndex+1], fItems[aIndex], lSize);
   dec(fCount);
 {$R+}
 
