@@ -4,15 +4,17 @@ object Form15: TForm15
   Anchors = [akTop, akRight]
   Caption = 'JSON Decoding/Encoding Preformance Comparisons'
   ClientHeight = 807
-  ClientWidth = 1014
+  ClientWidth = 1181
   Color = clBtnFace
   Font.Charset = DEFAULT_CHARSET
   Font.Color = clWindowText
   Font.Height = -11
   Font.Name = 'Tahoma'
   Font.Style = []
+  OnCreate = FormCreate
+  OnDestroy = FormDestroy
   DesignSize = (
-    1014
+    1181
     807)
   TextHeight = 13
   object Label1: TLabel
@@ -25,17 +27,39 @@ object Form15: TForm15
       'of JSON files with a variety of different JSON libraries for del' +
       'phi.'
   end
+  object Label2: TLabel
+    Left = 1004
+    Top = 216
+    Width = 169
+    Height = 13
+    Anchors = [akTop, akRight]
+    Caption = 'Make Unicode Surrogate(>$10000)'
+  end
+  object lblSurrogatePair: TLabel
+    Left = 1004
+    Top = 262
+    Width = 76
+    Height = 13
+    Anchors = [akTop, akRight]
+    Caption = 'lblSurrogatePair'
+  end
   object Memo1: TMemo
     Left = 181
     Top = 39
-    Width = 657
+    Width = 780
     Height = 760
     Anchors = [akLeft, akTop, akRight, akBottom]
+    Font.Charset = DEFAULT_CHARSET
+    Font.Color = clWindowText
+    Font.Height = -11
+    Font.Name = 'Courier'
+    Font.Style = []
+    ParentFont = False
     ScrollBars = ssVertical
     TabOrder = 0
   end
   object Button4: TButton
-    Left = 844
+    Left = 1011
     Top = 39
     Width = 169
     Height = 25
@@ -72,7 +96,7 @@ object Form15: TForm15
     OnClick = btnNewDataObjLoadFromJSONClick
   end
   object Button24: TButton
-    Left = 844
+    Left = 1011
     Top = 70
     Width = 169
     Height = 25
@@ -82,7 +106,7 @@ object Form15: TForm15
     OnClick = Button24Click
   end
   object btnEscapeTest: TButton
-    Left = 844
+    Left = 1011
     Top = 101
     Width = 169
     Height = 25
@@ -105,7 +129,7 @@ object Form15: TForm15
     Top = 225
     Width = 169
     Height = 25
-    Caption = 'Json-Serializer Load from JSON'
+    Caption = 'CleverJSON Load from JSON'
     TabOrder = 8
     OnClick = Button2Click
   end
@@ -126,5 +150,24 @@ object Form15: TForm15
     Caption = 'Full Make Test'
     TabOrder = 10
     OnClick = Button3Click
+  end
+  object Button5: TButton
+    Left = 8
+    Top = 256
+    Width = 167
+    Height = 25
+    Caption = 'McJSON Load from JSON'
+    TabOrder = 11
+    OnClick = Button5Click
+  end
+  object Edit1: TEdit
+    Left = 1004
+    Top = 235
+    Width = 169
+    Height = 21
+    Anchors = [akTop, akRight]
+    TabOrder = 12
+    Text = '1F9D9'
+    OnChange = Edit1Change
   end
 end

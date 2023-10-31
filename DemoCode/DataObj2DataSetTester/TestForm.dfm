@@ -20,7 +20,7 @@ object Form41: TForm41
     Left = 8
     Top = 39
     Width = 839
-    Height = 744
+    Height = 730
     Anchors = [akLeft, akTop, akRight, akBottom]
     DataSource = DataSource1
     TabOrder = 0
@@ -354,6 +354,7 @@ object Form41: TForm41
       end
       object Application2: TMenuItem
         Caption = 'Exit'
+        OnClick = Application2Click
       end
     end
   end

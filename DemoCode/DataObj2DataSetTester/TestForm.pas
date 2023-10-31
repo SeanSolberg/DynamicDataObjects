@@ -6,7 +6,8 @@ uses
   Winapi.Windows, Winapi.Messages, System.SysUtils, System.Variants, System.Classes, Vcl.Graphics,
   Vcl.Controls, Vcl.Forms, Vcl.Dialogs, FireDAC.Stan.Intf, FireDAC.Stan.Option, FireDAC.Stan.Param, FireDAC.Stan.Error, FireDAC.DatS, FireDAC.Phys.Intf,
   FireDAC.DApt.Intf, FireDAC.Comp.DataSet, Data.DB, FireDAC.Comp.Client, Vcl.Grids, Vcl.DBGrids, Vcl.ExtCtrls, Vcl.DBCtrls, Vcl.Menus, FireDAC.Stan.StorageJSON,
-  FireDAC.Stan.StorageXML, FireDAC.Stan.StorageBin, DataObjects2, DataObjects2DataSet, DataObjects2Streamers, DataObjects2JSON, DataObjects2DDO, DataObjects2CBOR;
+  FireDAC.Stan.StorageXML, FireDAC.Stan.StorageBin, DataObjects2, DataObjects2DataSet, DataObjects2Streamers, DataObjects2JSON, DataObjects2DDO, DataObjects2CBOR,
+  Vcl.StdCtrls;
 
 type
   TForm41 = class(TForm)
@@ -64,6 +65,7 @@ type
     procedure SaveDataToFile1Click(Sender: TObject);
     procedure FormCreate(Sender: TObject);
     procedure SaveToDataObject1Click(Sender: TObject);
+    procedure Application2Click(Sender: TObject);
   private
     { Private declarations }
   public
@@ -76,6 +78,11 @@ var
 implementation
 
 {$R *.dfm}
+
+procedure TForm41.Application2Click(Sender: TObject);
+begin
+  application.Terminate;
+end;
 
 procedure TForm41.FormCreate(Sender: TObject);
 begin

@@ -657,9 +657,26 @@ type
     function GetAsArrayOfStrings: TArray<string>;
   end;
 
+  TDataFrameEnumeratorRec = record
+    DataObj: TDataObj;
+    Slotname: string;
+  end;
+
   // Started out using a Dictionary, but found that it is slower for case sensitive lookups when the number of slots is under 15 and
   // slower for case insensitive lookups when the number of slots is under about 50.   So, we just do brute force scanning to find a match.
   TDataFrame = class  //(TStringList)
+  type
+    TDataFrameEnumerator = class
+    private
+      FIndex: Integer;
+      FDataFrame: TDataFrame;
+    public
+      constructor Create(ADataFrame: TDataFrame);
+      function GetCurrent: TDataFrameEnumeratorRec;
+      function MoveNext: Boolean;
+      property Current: TDataFrameEnumeratorRec read GetCurrent;
+    end;
+
   private
     fSlotList: TStringList;    //Owns the objects
     function getSlot(aIndex: integer): TDataObj;
@@ -668,6 +685,7 @@ type
   public
     constructor Create;
     destructor Destroy; override;
+    function GetEnumerator: TDataFrameEnumerator;
     function FindSlot(const aSlotName: string): TDataObj; overload;
     function FindSlot(const aSlotName: string; var oSlot: TDataObj): boolean; overload;
 
@@ -701,6 +719,18 @@ type
   TMapProcedure = reference to procedure(aTargetObj: TDataObj; aCurrentArray: TDataArray; aCurrentValue: TDataObj; aIndex: integer);
 
   TDataArray = class
+  type
+    TDataArrayEnumerator = class
+    private
+      FIndex: Integer;
+      FDataArray: TDataArray;
+    public
+      constructor Create(ADataArray: TDataArray);
+      function GetCurrent: TDataObj;
+      function MoveNext: Boolean;
+      property Current: TDataObj read GetCurrent;
+    end;
+
   const
     cInitialCapacity = 16;
   private
@@ -710,10 +740,12 @@ type
     function getSlot(aIndex: integer): TDataObj;
     function getItem(aIndex: Cardinal): TDataObj;
     procedure setItem(aIndex: Cardinal; const Value: TDataObj);
-    procedure CheckIndexInRange(aIndex: integer); inline;      // will raise exception if aIndex is invalid
+    procedure CheckIndexInRange(aIndex: integer); inline;    // will raise exception if aIndex is invalid
+    procedure setCapacity(const aCapacity: Integer);
   public
     constructor Create(aInitialCapacity: Integer = 0);
     destructor Destroy; override;
+    function GetEnumerator: TDataArrayEnumerator;
     function NewSlot: TDataObj;
     function Add(aDataObj: TDataObj): Integer;
     property Items[aIndex: Cardinal]: TDataObj read getItem write setItem; default;
@@ -741,7 +773,7 @@ type
 {$endif}
 
     property Count: Integer read fCount;
-    property Capacity: Integer read fCapacity;
+    property Capacity: Integer read fCapacity write setCapacity;
   end;
 
 
@@ -2939,6 +2971,11 @@ begin
   end;
 end;
 
+function TDataFrame.GetEnumerator: TDataFrameEnumerator;
+begin
+  result := TDataFrameEnumerator.Create(self);
+end;
+
 function TDataFrame.GetItem(const aKey: string): TDataObj;
 begin
   result := NewSlot(aKey);
@@ -3047,9 +3084,6 @@ begin
 end;
 
 procedure TDataObjectID.setAsString(const Value: string);
-var
-  lBytes: TBytes;
-  I: Integer;
 begin
   if Length(Value) <> 24 then
     raise EDataObj.Create('Invalid ObjectId Length');
@@ -3368,6 +3402,11 @@ begin
   end;
 end;
 
+function TDataArray.GetEnumerator: TDataArrayEnumerator;
+begin
+  Result := TDataArrayEnumerator.Create(Self);
+end;
+
 function TDataArray.IndexOf(aString: string; aCaseInsensitive: boolean = false): integer;
 var
   i: Integer;
@@ -3535,6 +3574,15 @@ begin
 end;
 
 
+
+procedure TDataArray.setCapacity(const aCapacity: Integer);
+begin
+  if aCapacity > fCount then               // only accept a new capacity if it is larger than our current count.
+  begin
+    SetLength(fItems, aCapacity);
+    fCapacity := aCapacity;
+  end;
+end;
 
 procedure TDataArray.setItem(aIndex: Cardinal; const Value: TDataObj);
 begin
@@ -3853,6 +3901,48 @@ begin
   gNewObjectID_Counter:=TThread.GetTickCount;  // Generate a random starting point.
 end;
 
+
+{ TDataArray.TDataArrayEnumerator }
+
+constructor TDataArray.TDataArrayEnumerator.Create(ADataArray: TDataArray);
+begin
+  inherited Create;
+  FIndex := -1;
+  FDataArray := ADataArray;
+end;
+
+
+function TDataArray.TDataArrayEnumerator.GetCurrent: TDataObj;
+begin
+  Result := FDataArray.FItems[FIndex];
+end;
+
+function TDataArray.TDataArrayEnumerator.MoveNext: Boolean;
+begin
+  Inc(FIndex);
+  Result := FIndex < fDataArray.count;
+end;
+
+{ TDataFrame.TDataFrameEnumerator }
+
+constructor TDataFrame.TDataFrameEnumerator.Create(ADataFrame: TDataFrame);
+begin
+  inherited Create;
+  fDataFrame := aDataFrame;
+  FIndex := -1;
+end;
+
+function TDataFrame.TDataFrameEnumerator.GetCurrent: TDataFrameEnumeratorRec;
+begin
+  result.DataObj := FDataFrame.getSlot(FIndex);
+  result.Slotname := FDataFrame.Slotname(FIndex);
+end;
+
+function TDataFrame.TDataFrameEnumerator.MoveNext: Boolean;
+begin
+  Inc(FIndex);
+  Result := FIndex < fDataFrame.count;
+end;
 
 initialization
   gRttiContext := TRttiContext.Create;   // we make our own RttiContext to use for RTTI assignment.
