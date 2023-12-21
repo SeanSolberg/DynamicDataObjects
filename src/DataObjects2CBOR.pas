@@ -182,15 +182,17 @@ begin
   else if aCount <= 65535 then
   begin
     lBuffer[0] := 25 or (aMajorType shl 5);  // major = 0, additional=25 which means two bytes follows.  value = 256-65535
-    lBuffer[1] := aCount;         // truncate to one byte
-    lBuffer[2] := aCount shr 8;   // 2nd MSB
+    lBuffer[2] := aCount;         // truncate to one byte
+    lBuffer[1] := aCount shr 8;   // 2nd MSB
     aStream.Write(lBuffer[0],3);
   end
   else
   begin
     lBuffer[0] := 26 or (aMajorType shl 5);   // major = 0, additional=26 which means four bytes follows. value = 65536 - 4,294,967,295
-    lUint32 := SwapBytes(aCount);
-    move(lUint32, lBuffer[1], 4);
+    lBuffer[4] := aCount;         // Shift in each of the bytes to the buffer
+    lBuffer[3] := aCount shr 8;   //
+    lBuffer[2] := aCount shr 16;  //
+    lBuffer[1] := aCount shr 24;  //
     aStream.Write(lBuffer[0],5);
   end;
 

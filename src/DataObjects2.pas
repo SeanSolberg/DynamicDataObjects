@@ -44,7 +44,7 @@ unit DataObjects2;
     I want this core file to only support the core data modeling( so I can use it very compactly), and any extra serialization techniques must be implemented in other units to perform the streaming.  IE JSON, CBOR, etc.)
     I want the default built-in serialization to be a bit more compact.  (single byte for dataType and flags, VarInt Streaming if I can make it fast, etc.)
     I want to mostly support (and serialize) all the same data types that are supported by BSON (I say mostly cause some are deprecated or not really that useful)
-    I want to support the concept of having "attributes" on a value.  "attrbutes" will be available for each data type.
+    I want to support the concept of having "attributes" on a value.  "attributes" will be available for each data type.
       Note that serializing data that has attributes out to a medium that doesn't support attributes natively (such as BSON) will likely loose the content of those attributes cause there's not place to put them.
       The concept of attributes is something borrowed from XML and I think there's some value in supporting that when getting data from an XML source even if BSON, JSON, etc. doesn't support it.
     I will not use BSON serialization directly because there are certain aspects of BSON serialization that are geared for a different purpose.
@@ -177,12 +177,11 @@ type
 const
   cPublishedMembers = [TMemberVisibility.mvPublished];
   cPublicMembers = [TMemberVisibility.mvPublished, TMemberVisibility.mvPublic];
- 
+
  // data Type used for defining the type of data held by a TDataObj
  // The bottom 5 bits in this byte are used to determine the type of data held by a TDataObj as listed below
- // if the top MSB bit is set to 1, then that flag means this data has a set of attributes that precede the data.  These attributes
- //   are serialized as a Frame so that means after the dataType byte, a frame is serialized and then the data is serialized.
  // The next two MSB bits in this byte are used as a subclass mechanism for each of the data types and those 4 possible code values are specific to the data type (if used).
+ // The top MSB bit is not used and is reserved for either expanding the subClass or expanding the root dataType code.
  // For a string for example.  Subclass code = 0: String.  This is a normal text string that represents data.
  //                                     code = 1: Symbol.  A Symbol is similar to a string, but is considered a unique value in and of itself such as an identifier.
  //                                                        for example, we can have a string that is "visible" which is the literal text of those characters, or we can have a symbol "visible", which really is an identifer that really represents something is TRUE to "BE" visible.
@@ -190,22 +189,20 @@ const
  //                                                        for example:  {"test": "~template1~"}  is a string value
  //                                                                      {"test": ~template1~} is a symbol value, which is technically not JSON compliant, but might be used when a file that builds JSON from a template is used.
  //                                     code = 2,3: future reserved.
+ // Note that the SubCodes are intended to give variations to the meaning of the data, not to be used as serialization variation flags.
  cSubCodeGeneric = 0;
  cSubCodeSymbol = 1;
-// cSubCodeUnicode = 2;       Not used yet
-// cSubCodeUnicodeSymbol = 3; Not used yet
 
  cFalseStr = 'False';
  cTrueStr = 'True';
+
  // Future ideas...
  // For an array for example:  subclass code = 0: Generic element array where each element in the array is a TDataObj
  //                                     code = 1: Specific type array where each element in the array is the same data type.  So, the next byte
  //                                               serialized is the dataType and every object serialized then must have the exact same dataType (including flags)
  //                                               This means that as the subsequent array elements read themselves, they don't read their dataType byte individually
  //                                               from the stream because the container tells them what it's going to be.  This saves space and is a common pattern in real data situations.
- //                                               it saves about 25% space on an array of integers, 12.5% space on an array of doubles, 50% space on an array of bytes.  (although a binary slot would probably be better for that).
- // For the integer types:     subclass code = 0: Normal signed number
- //                                     code = 1: Treat as an unsigned number (which gives a larger number space)
+ //                                               it saves about 25% space on an array of integers, 12.5% space on an array of doubles, 50% space on an array of bytes.
  // for the int64 type:        subclass code = 3: Came in from BSON or a SQL Database as a TimeStamp (64bit timestamp) What the bits mean may depend on where it came from:  MongoDB, SQLServer, etc.
  // for the float types:       subclass code = 0: generic
  //                                     code = 1: currency
@@ -242,6 +239,7 @@ type
 
   EDataObj = class(Exception);
 
+  // Note that the code needs to fit in a 5 bit number so the limit is 31.
   TDataTypeCode = (
     cDataTypeNull = 0,
     cDataTypeBoolean = 1,
@@ -259,7 +257,7 @@ type
     cDataTypeObjectID = 13,   // equivalent to the BSON ObjectID  12 bytes.   https://docs.mongodb.com/manual/reference/method/ObjectId/
     cDataTypeString = 14,     // Unicode encode string.   always 2 bytes per character.
     cDataTypeStringList = 15,
-    cDataTypeFrame = 16,           // Each slot in the frame is identified by a case-insensitive
+    cDataTypeFrame = 16,           // Each slot in the frame is identified by a case-insensitive UTF-8 string
     cDataTypeArray = 17,           //
     cDataTypeSparseArray = 18,
     cDataTypeBinary = 19,
@@ -270,26 +268,25 @@ type
                                    // This lets us have a real object that we want to serialize in dataObject form without having to make a full copy of the data in DataObject
                                    // form first before we can serialize to a stream.  It means we are not doubling up the memory when reading from and writing from a stream.
 
-    cDataTypeTag = 21             // a tag is an unsigned number (up to 32 bit).  The tag data type, then holds exactly one child dataObject that can be of any time (including another tag).
+    cDataTypeTag = 21              // a tag is an unsigned number (up to 32 bit).  The tag data type, then holds exactly one child dataObject that can be of any time (including another tag).
+
   );
+
 
 
   TDataType = packed record
   private
     fCode: TDataTypeCode;
     fSubClass: Byte;
-    fHasAttributes: Boolean;
     procedure setCode(const aValue: TDataTypeCode);
-    procedure setHasAttributes(const aValue: boolean);
     procedure setSubClass(const aValue: byte);
   public
     property Code: TDataTypeCode read fCode write setCode;
-    property HasAttributes: boolean read fHasAttributes write setHasAttributes;
     property SubClass: Byte read fSubClass write SetSubClass;
   end;
 
 const
-  cDataTypeStrings: array[0..22] of string = (
+  cDataTypeStrings: array[0..21] of string = (
      'null',
      'Boolean',
      'Byte',
@@ -311,8 +308,7 @@ const
      'SparseArray',
      'Binary',
      'Object',
-     'Tag',
-     'Attributes');
+     'Tag');
 
 
 type
@@ -329,7 +325,7 @@ type
   TDataAttributeStore = class;
 
 
-  // The TDataStore's job is to be the container that "Holds" the actually data that is contianed within the TDataObject.
+  // The TDataStore's job is to be the container that "Holds" the actual data that is contained within the TDataObject.
   TDataStore = packed record
   private
     function getDataGUID: TDataGUID; inline;
@@ -391,8 +387,6 @@ type
 //      ord(cDataTypeBinary): (dataBinary: TDataBinary;);
 //      ord(cDataTypeObject): (dataObject: TObject;);     // Note that this means that TDataObj holds an object instance where that object instance is serialized/deserialzed to/from the stream using RTTI
 //      ord(cDataTypeTag): (dataTag: TDataTag;);
-//      $80: (dataAttributeStore: TDataAttributeStore);
-//      cDataTypeAttributedStore: (dataAttributeStore: TDataAttributeStore);
 
   end;
 
@@ -492,14 +486,17 @@ type
     procedure setAsUTCDateTime(const aValue: Int64);
     procedure setDataType(const Value: TDataType);
 
-    function getItem(aKey: variant): TDataObj;           // if aKey is a string, this will treat this dataObj as a Frame and do a newSlot on the frame
-                                                         // if aKey is an integer, will treat this dataObj as an array and do a newSlot on the array
+    function getItem(aKey: variant): TDataObj;  // if aKey is a string, this will treat this dataObj as a Frame and do a newSlot on the frame
+                                                // if aKey is an integer, will treat this dataObj as an array and do a newSlot on the array
+    function getHasAttributes: boolean;
+    procedure setHasAttributes(const Value: boolean);
+
   public
     destructor Destroy; override;
 
     function getStore: PTDataStore; inline;   // Provides a way for code outside this unit to get work directly with the fDataStore
 
-    procedure SetDataTypeParts(aCode: TDataTypeCode; aSubType: byte; aHasAttributes: boolean);
+    procedure SetDataTypeParts(aCode: TDataTypeCode; aSubType: byte);
 
     // this will set this dataObj to the NULL value.  Any other data possibly held by this dataObject is freed including all attributes
     procedure Clear;
@@ -577,6 +574,9 @@ type
 
     property DataType: TDataType read getDataType write setDataType;
     property DataTypeString: String read getDataTypeString;
+
+    property HasAttributes: boolean read getHasAttributes write setHasAttributes;
+
     function DataTypeIsAContainer: boolean;     // means that we can put one or more than one child item into this object.
                                                 // This returns false for items that contain a fixed number of child objects such as the tag type.
     function DataTypeCanHaveAChildObject: boolean;  // returns true for those data types that are containers and for those other types that could have a child data object such as a tag type.
@@ -629,6 +629,8 @@ type
     a 2-byte process id, and
     a 3-byte counter, starting with a random value.
   }
+  TDataObjectIDData = array[0..11] of byte;
+  PTDataObjectIDData = ^TDataObjectIDData;
   TDataObjectID = class
   private
     function getAsString: string;
@@ -642,7 +644,7 @@ type
     procedure setProcessID(const Value: Cardinal);
     procedure setSeconds(const Value: Cardinal);
   public
-    Data: array[0..11] of byte;
+    Data: TDataObjectIDData;
     property AsString: string read getAsString write setAsString;
     property Seconds: Cardinal read getSeconds write setSeconds;
     property MachineID: Cardinal read getMachineID write setMachineID;
@@ -1678,7 +1680,6 @@ end;
 procedure TDataObj.ClearAttributes;
 begin
   FreeAndNil(fAttributes);
-  fDataType.HasAttributes := false;
 end;
 
 procedure TDataObj.ClearData;
@@ -2272,6 +2273,11 @@ begin
   end;
 end;
 
+function TDataObj.getHasAttributes: boolean;
+begin
+  result := assigned(fAttributes);
+end;
+
 function TDataObj.getItem(aKey: variant): TDataObj;
 var
   lVT: word;
@@ -2717,11 +2723,25 @@ begin
   fStore.fDataInt64 := aValue;    //The int64 is UTC milliseconds since the Unix epoch. January 1, 1970.  See DateTimeToUnix(dt);
 end;
 
-procedure TDataObj.SetDataTypeParts(aCode: TDataTypeCode; aSubType: byte; aHasAttributes: boolean);
+procedure TDataObj.SetDataTypeParts(aCode: TDataTypeCode; aSubType: byte);
 begin
   fDataType.Code := aCode;
   fDataType.SubClass := aSubType;
-  fDataType.fHasAttributes := aHasAttributes;
+end;
+
+procedure TDataObj.setHasAttributes(const Value: boolean);
+begin
+  if Value then
+  begin
+    if not assigned(fAttributes) then
+    begin
+      fAttributes := TDataAttributeStore.Create;
+    end;
+  end
+  else
+  begin
+    FreeAndNil(fAttributes);          // if we had attributes, they are gone now.
+  end;
 end;
 
 procedure TDataObj.setDataType(const Value: TDataType);
@@ -2820,11 +2840,6 @@ end;
 procedure TDataType.setCode(const aValue: TDataTypeCode);
 begin
   fCode := aValue;
-end;
-
-procedure TDataType.setHasAttributes(const aValue: boolean);
-begin
-  fHasAttributes := aValue;
 end;
 
 procedure TDataType.setSubClass(const aValue: byte);

@@ -32,6 +32,8 @@ unit DataObjects2DDO;
 interface
 { This unit reads the traditional *.ddo file stream format.  This unit pretty much works although it has not been exhautively tested for streaming all the ddo
   data types and not all the data types have had code written to convert out to something in DDO format.
+  The Geometry datatypes that are possible within a ddo stream are not natively supported by this library, so we can read geometry into array and frame structures
+  but we cannot write back out geometry data types.
 
   NOTE:  this streamer cannot be used by android apps in its existing form because it uses ansiString for serialization.
 }

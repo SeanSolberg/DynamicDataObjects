@@ -49,8 +49,36 @@ uses sysUtils, classes, math;
    -8192 to 8191 within the 2 byte serialization, etc.
 *)
 
+
 type
+
   // signed VarInt with zig-zag encoding
+  TVarInt32 = record
+  private
+    Value: int32;
+  public
+    class function ZigZagEncode32(aValue: integer): Cardinal; static;
+    class function ZigZagDecode32(aValue: Cardinal): integer; static;
+
+    procedure WriteToStream(aStream: TStream);
+    procedure ReadFromStream(aStream: TStream);
+
+    class operator Implicit(aValue: integer): TVarInt32;
+    class operator Implicit(aValue: TVarInt32): integer;
+  end;
+
+  // Unsigned VarInt without zig-zag encoding
+  TUVarInt32 = record
+  private
+    Value: UInt32;
+  public
+    procedure WriteToStream(aStream: TStream);
+    procedure ReadFromStream(aStream: TStream);
+
+    class operator Implicit(aValue: UInt32): TUVarInt32;
+    class operator Implicit(aValue: TUVarInt32): UInt32;
+  end;
+
   TVarInt64 = record
   private
     Value: int64;
@@ -63,8 +91,6 @@ type
 
     class operator Implicit(aValue: Int64): TVarInt64;
     class operator Implicit(aValue: TVarInt64): Int64;
-    class operator Implicit(aValue: LongInt): TVarInt64;
-    class operator Implicit(aValue: TVarInt64): LongInt;
   end;
 
   // Unsigned VarInt without zig-zag encoding
@@ -77,10 +103,7 @@ type
 
     class operator Implicit(aValue: UInt64): TUVarInt64;
     class operator Implicit(aValue: TUVarInt64): UInt64;
-    class operator Implicit(aValue: Cardinal): TUVarInt64;
-    class operator Implicit(aValue: TUVarInt64): Cardinal;
   end;
-
 
   EVarIntException = class(Exception);
 
@@ -88,38 +111,55 @@ ResourceString
   strUnableToReadByte = 'Unable to read a byte from a stream when reading a VarInt.';
   strUnableToReadNumTooBig = 'Error reading VarInt from a stream.  Number is too big for Int64';
 
+{$define cUseASM}
 
 implementation
 
 { TVarInt64 }
 
+{$if defined(WIN64) and defined(cUseASM)}
 //Encode the signed int64 bit number into a zig-zag encoded unsigned 64 number.
-//NOTE:  This method can not handle one number and that is the largest negative number. (also considered negative zero)
-//       It's hexadecimal representation  $8000000000000000.  It can't be handled because there is no equivalent to a positive number possible.
-class function TVarInt64.ZigZagEncode64(aValue: int64): Uint64;
-begin
-(* Both of these methods produce the same results.
-  if aValue < 0 then
-  begin
-    result := ((not Uint64(aValue)+1) shl 1) or $1;    // flip the bits first, then shift and set the lsb "negative" bit
-  end
-  else
-  begin
-    result := aValue shl 1;                  // negative bit doesn't apply to this positive number so just shift.
-  end;    *)
+// Pseudocode: return (i >> 31) ^ (i << 1)   // the shift right here is an arithmatic shift right which delphi Pascal does not have, so we do the If below to make it.
 
-  //This method can not handle one number and that is the largest negative number. (also considered negative zero)
-  result := abs(aValue) shl 1;
-  if aValue < 0 then
-    result := result or $1;
+class function TVarInt64.ZigZagEncode64(aValue: int64): Uint64; Register;
+asm
+  mov rax, rcx
+  sar rcx, 63
+  shl rax, 1
+  xor rax, rcx
 end;
 
-class function TVarInt64.ZigZagDecode64(aValue: Uint64): int64;
-begin
-  result := (aValue shr 1);
-  if (aValue and $1) = 1 then
-    result := -result;
+class function TVarInt64.ZigZagDecode64(aValue: Uint64): int64; Register;  // aValue comes in on RCX, result goes out in RAX
+asm
+  mov rax, rcx
+  shr rcx, 1
+  and rax, 1
+  neg rax
+  xor rax, rcx
 end;
+
+{$else}
+
+class function TVarInt64.ZigZagEncode64(aValue: int64): Uint64; Register;
+var
+  lPart: UInt64;
+begin
+  lPart := $0;
+  if aValue<0 then
+    lPart := $FFFFFFFFFFFFFFFF;
+
+  result := lPart xor (aValue shl 1);
+end;
+
+class function TVarInt64.ZigZagDecode64(aValue: Uint64): int64; Register;
+begin
+  result := (aValue shr 1) xor -(aValue and 1);
+end;
+
+{$endif}
+
+
+
 
 class operator TVarInt64.Implicit(aValue: Int64): TVarInt64;
 begin
@@ -131,15 +171,6 @@ begin
   result := aValue.Value;
 end;
 
-class operator TVarInt64.Implicit(aValue: Integer): TVarInt64;
-begin
-  result.Value := aValue;
-end;
-
-class operator TVarInt64.Implicit(aValue: TVarInt64): Integer;
-begin
-  result := aValue.Value;
-end;
 
 procedure TVarInt64.ReadFromStream(aStream: TStream);
 var
@@ -211,15 +242,6 @@ begin
   result := aValue.Value;
 end;
 
-class operator TUVarInt64.Implicit(aValue: Cardinal): TUVarInt64;
-begin
-  result.Value := aValue;
-end;
-
-class operator TUVarInt64.Implicit(aValue: TUVarInt64): Cardinal;
-begin
-  result := aValue.Value;
-end;
 
 procedure TUVarInt64.ReadFromStream(aStream: TStream);
 var
@@ -274,5 +296,204 @@ begin
   end;
   aStream.write(lBuffer,i+1);
 end;
+
+{ TUVarInt32 }
+
+class operator TUVarInt32.Implicit(aValue: UInt32): TUVarInt32;
+begin
+  result.Value := aValue;
+end;
+
+class operator TUVarInt32.Implicit(aValue: TUVarInt32): UInt32;
+begin
+  result := aValue.Value;
+end;
+
+procedure TUVarInt32.ReadFromStream(aStream: TStream);
+var
+  lCount: byte;  //number of bytes read so far.
+  lByte: byte;
+  lShifter: byte;
+begin
+  lCount := 0;
+  Value := 0;
+  lShifter := 0;
+  repeat
+    if aStream.Read(lByte, 1) = 0 then
+      raise EVarIntException.Create(strUnableToReadByte);
+
+    if lCount<4 then
+    begin
+      Value := Value or (Uint32(lByte and $7F) shl lShifter);
+      lShifter := lShifter + 7;
+    end
+    else
+    begin
+      // read the final (5th) byte, but we can only use 5 bits from it.  5*7=35 bits, so we only need 5 more bit5 from the 5th byte.
+      if lByte > $FFFFF then
+        raise Exception.Create(strUnableToReadNumTooBig)
+      else
+        Value := Value or Uint32(lByte) shl 28;   // get the top 5 bits in place.
+    end;
+    inc(lCount);
+  until (lByte and $80) = 0;
+
+end;
+
+procedure TUVarInt32.WriteToStream(aStream: TStream);
+var
+  lBuffer: array[0..5] of byte;
+  lValue: UInt32;
+  i: byte;
+begin
+  i:=0;
+  lValue := Value;
+  while true do
+  begin
+    lBuffer[i] := lValue and $7F;    // take only 7 bits
+    if lValue < $80 then
+      break
+    else
+    begin
+      lBuffer[i] := lbuffer[i] or $80;  // set the msb of this byte to signal that there are more bytes to follow.
+      inc(i);
+      lValue := lValue shr 7;           // more bytes to follow so prepare to pickup the next 7 bits.
+    end;
+  end;
+  aStream.write(lBuffer,i+1);
+end;
+
+{ TVarInt32 }
+
+class operator TVarInt32.Implicit(aValue: integer): TVarInt32;
+begin
+  result.Value := aValue;
+end;
+
+class operator TVarInt32.Implicit(aValue: TVarInt32): integer;
+begin
+  result := aValue.Value;
+end;
+
+procedure TVarInt32.ReadFromStream(aStream: TStream);
+var
+  lCount: byte;  //number of bytes read so far.
+  lByte: byte;
+  lValue: Uint32;
+  lShifter: byte;
+begin
+  lCount := 0;
+  lValue := 0;
+  lShifter := 0;
+  repeat
+    if aStream.Read(lByte, 1) = 0 then
+      raise EVarIntException.Create(strUnableToReadByte);
+
+
+    if lCount=4 then
+    begin
+      // reading the final (5th) byte, but we can only use 4 bit from it.  4*7=28 bits. If we are given more, then we have error.
+      if lByte > $F then
+        raise Exception.Create(strUnableToReadNumTooBig)
+    end;
+
+    lValue := lValue or (Uint32(lByte and $7F) shl lShifter);
+    lShifter := lShifter + 7;
+
+    inc(lCount);
+  until (lByte and $80) = 0;
+
+  Value := ZigZagDecode32(lValue);
+end;
+
+procedure TVarInt32.WriteToStream(aStream: TStream);
+var
+  lBuffer: array[0..4] of byte;
+  lValue: Uint32;
+  i: byte;
+begin
+  i:=0;
+  lValue := ZigZagEncode32(Value);
+  while true do
+  begin
+    lBuffer[i] := lValue and $7F;    // take only 7 bits
+    if lValue < $80 then
+      break
+    else
+    begin
+      lBuffer[i] := lbuffer[i] or $80;  // set the msb of this byte to signal that there are more bytes to follow.
+      inc(i);
+      lValue := lValue shr 7;           // more bytes to follow so prepare to pickup the next 7 bits.
+    end;
+  end;
+  aStream.write(lBuffer,i+1);
+end;
+
+
+{$if defined(WIN64) and defined(cUseASM)}
+class function TVarInt32.ZigZagEncode32(aValue: int32): Uint32;  Register;  // For 64bit compiler, aValue comes in on ECX, result goes out in EAX
+asm
+  // For 64bit compiler only
+  mov eax, ecx
+  sar ecx, 31
+  shl eax, 1
+  xor eax, ecx
+end;
+
+class function TVarInt32.ZigZagDecode32(aValue: Uint32): int32;  Register; // For 64bit compiler, aValue comes in on ECX, result goes out in EAX
+asm
+  // For 64bit compiler only
+  mov eax, ecx
+  shr ecx, 1
+  and eax, 1
+  neg eax
+  xor eax, ecx
+end;
+
+{$elseif defined(WIN32) and defined(cUseASM)}
+
+class function TVarInt32.ZigZagEncode32(aValue: int32): Uint32;  Register;  // For 32bit compiler, // aValue comes in on EAX, result goes out in EAX
+asm
+  // For 32bit compiler only
+  mov ecx, eax
+  sar ecx, 31
+  shl eax, 1
+  xor eax, ecx
+end;
+
+class function TVarInt32.ZigZagDecode32(aValue: Uint32): int32;  Register;  // For 32bit compiler, // aValue comes in on EAX, result goes out in EAX
+asm
+  // For 32bit compiler only
+  mov ecx, eax
+  shr ecx, 1
+  and eax, 1
+  neg eax
+  xor eax, ecx
+end;
+
+{$else}
+
+// This section is for compilers where we don't have an assembly version.
+class function TVarInt32.ZigZagEncode32(aValue: int32): Uint32;  Register;  // For 32bit compiler, // aValue comes in on EAX, result goes out in EAX
+var
+  lPart: UInt32;
+begin
+  lPart := $0;
+  if aValue<0 then
+    lPart := $FFFFFFFF;
+
+  result := lPart xor (aValue shl 1);
+end;
+
+class function TVarInt32.ZigZagDecode32(aValue: Uint32): int32;  Register;  // For 32bit compiler, // aValue comes in on EAX, result goes out in EAX
+begin
+  result := (aValue shr 1) xor -(aValue and 1);
+end;
+
+{$endif}
+
+
+
+
 
 end.
