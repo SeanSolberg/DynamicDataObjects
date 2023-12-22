@@ -29,6 +29,19 @@
  McJSON       0.826        [0.163]         0.480           0.588           1.019        1.338             WINS on 1 test
 
 
+ // Updated timing statistics using Delphi 12.  12/22/2023.  Note that the majority of the timing is markedly faster with Delphi 12.
+ // I don't know why... maybe improvements in the memory allocation?
+
+             story.json-R  story.json-W  twitter.json-R  twitter.json-W  mesh.json-R  mesh.json-W
+DataObjects [0.355]        0.458         0.353          [0.197]          0.695        0.572
+Delphi       0.921         0.806         0.584           0.202           0.740       [0.088]
+Old DDO      10.460        0.541         3.023           0.441           5.536        0.531
+Grijjy       0.392         1.125        [0.318]          0.470          [0.533]       0.654
+Clever       3.695         3.015         34.139          0.954           169.785      1.104
+McJSON       0.777        [0.197]        0.424           0.526           0.943        1.484
+
+
+
 * Note:  The reason that Delphi's JSON writer wins on the mesh.json test is because this test contains pretty much all numbers
          and the Delphi serializer takes in json numbers and keeps them internally as the raw strings without actually doing the conversion to
          numbers and the corresponding error checking.  So, when reading, it does
@@ -40,10 +53,10 @@
          likely not a common situation as I'm sure most of the time an app that is taking in JSON is actually interested in using the data in that file.
 }
 
-//{$DEFINE cIncludeDDOTest}
-//{$DEFINE cIncludeGrijjyTest}
-//{$DEFINE cIncludeCleverJSON}
-//{$DEFINE cIncludeMcJSONtest}
+{$DEFINE cIncludeDDOTest}
+{$DEFINE cIncludeGrijjyTest}
+{$DEFINE cIncludeCleverJSON}
+{$DEFINE cIncludeMcJSONtest}
 
 
 interface
@@ -66,7 +79,10 @@ uses
     DataObjects2, DataObjects2JSON;
 
 const
-  cMakeTestSize = 1000;   // The number of rounds for making test data in the Makexxxxx tests.
+//  cMakeTestSize = 1000;   // The number of rounds for making test data in the Makexxxxx tests.
+//  cTestArrayCount = 999;  // the number of child arrays inside the test object being made in the Makexxxxxx tests.
+  cMakeTestSize = 1;   // The number of rounds for making test data in the Makexxxxx tests.
+  cTestArrayCount = 1;  // the number of child arrays inside the test object being made in the Makexxxxxx tests.
 
 type
   TPerson = class
@@ -132,12 +148,16 @@ type
     fTestCount: integer;
     fIndent: integer;
     fTestTimes: TDataObj;
+    fTestDateTime: TDateTime;
 
     procedure m(aStr: string);
+
+(*  These calls are not used, but I'm going to keep them around for reference
 {$ifdef cIncludeDDOTest}
     procedure MakeSampleData(aDataObj: DataObjects.TDataObj);  overload;
 {$endif}
     procedure MakeSampleData(aDataObj: DataObjects2.TDataObj); overload;
+*)
     procedure LoadTestFile(aFileName: string; aTestCount: integer);
 
     procedure LoadStoryJSON;
@@ -156,6 +176,7 @@ type
     function MakeTestDDO(aType: TTestType): string;
     function MakeTestGrijjy(aType: TTestType): string;
     function MakeTestDelphi(aType: TTestType): string;
+    function MakeTestMcJSON(aType: TTestType): string;
 
     procedure SaveTime(aTester, aReadOrWrite: string; aTime: double);
     procedure PublishFinalTestResults(aStrings: TStrings);
@@ -181,6 +202,21 @@ const
 
 
 {$R *.dfm}
+
+function DateTimeToISO8601Str(aDateTime: TDateTime): String;
+var
+  lYears: Word;
+  lMonths: Word;
+  lDays: Word;
+  lHours: Word;
+  lMinutes: Word;
+  lSeconds: Word;
+  lMilliSeconds: Word;
+begin
+  DecodeDateTime(aDateTime, lYears, lMonths, lDays, lHours, lMinutes, lSeconds, lMilliSeconds);
+  result := Format('%.4d-%.2d-%.2dT%.2d%s%.2d%s%.2d%s%.3dZ', [lYears, lMonths, lDays, lHours, ':', lMinutes, ':', lSeconds, '.', lMilliSeconds]);
+end;
+
 
 {$define cOldDDO}
 
@@ -317,9 +353,6 @@ end;
 procedure TForm15.PublishFinalTestResults(aStrings: TStrings);
 var
   lTech: TDataFrameEnumeratorRec;
-  i: Integer;
-  lLine: string;
-  lWidth: integer;
   lTestNo: integer;
   lStrings: TStringList;
   lContinue: boolean;
@@ -725,15 +758,18 @@ var
     SaveJSON('c:\temp\MakeTestGrijjy-'+lSuffix+'.json', lIsAscii);
     lJSON := MakeTestDelphi(aType);
     SaveJSON('c:\temp\MakeTestDelphi-'+lSuffix+'.json', lIsAscii);
+    lJSON := MakeTestMcJSON(aType);
+    SaveJSON('c:\temp\MakeTestMcJSON-'+lSuffix+'.json', lIsAscii);
     m('');
   end;
 
-
 begin
-  DoAroundOfTests(cttTightUTF8);
-  DoAroundOfTests(cttTightAscii);
-  DoAroundOfTests(cttFormattedUTF8);
-  DoAroundOfTests(cttFormattedAscii);
+  fTestDateTime := now;
+  ForceDirectories('c:\temp\');
+  DoARoundOfTests(cttTightUTF8);
+  DoARoundOfTests(cttTightAscii);
+  DoARoundOfTests(cttFormattedUTF8);
+  DoARoundOfTests(cttFormattedAscii);
 end;
 
 function TForm15.RunCleverJsonTest: string;
@@ -820,7 +856,8 @@ begin
   begin
     lDataObj := DataObjects2.TDataObj.Create;
   end;
-  m(FloatToStr((now-lStart)*24*60*60));
+  m('Creation Time: '+FloatToStr((now-lStart)*24*60*60));
+  // Yes this is a memory leak above. Tring to keep the time just to the .create time.
 
 
 
@@ -836,14 +873,14 @@ begin
   begin
     lUTF8String := lStr;
   end;
-  m(FloatToStr((now-lStart)*24*60*60));
+  m('UTF8 Conversion Time: '+FloatToStr((now-lStart)*24*60*60));
 
   lStart := now;
   for i := 1 to 1000000 do
   begin
     lAnsiString := lStr;
   end;
-  m(FloatToStr((now-lStart)*24*60*60));
+  m('AnsiString Conversion Time: '+FloatToStr((now-lStart)*24*60*60));
 end;
 
 procedure TForm15.Button5Click(Sender: TObject);
@@ -987,6 +1024,7 @@ begin
   memo1.lines.Add(StringOfChar(' ',fIndent)+aStr);
 end;
 
+(*
 {$ifdef cIncludeDDOTest}
 procedure TForm15.MakeSampleData(aDataObj: DataObjects.TDataObj);
 var
@@ -1058,6 +1096,7 @@ begin
     end;
 end;
 {$endif}
+*)
 
 procedure TForm15.LoadStoryJSON;
 begin
@@ -1092,8 +1131,7 @@ begin
   end;
 end;
 
-
-
+(*
 procedure TForm15.MakeSampleData(aDataObj: DataObjects2.TDataObj);
 var
   lStr: string;
@@ -1169,6 +1207,7 @@ begin
       end;
     end;
 end;
+*)
 
 function TForm15.MakeTestDataObj(aType: TTestType): string;
 var
@@ -1193,10 +1232,10 @@ begin
       lFrame.NewSlot('LastName').AsString := 'Solberg';
       lFrame.NewSlot('Age').AsInt32 := 18;
       lFrame.NewSlot('Height').AsDouble := 1234.56789;
-      lFrame.NewSlot('DateTime').AsDateTime := now;
+      lFrame.NewSlot('DateTime').AsDateTime := fTestDateTime;
       lFrame.NewSlot('Description').AsString := 'This text is intentionally including " characters that need to be escaped. '+#13+#10+'Plus line feed characters too.'+#13+#10+#9+'This line starts with a tab character'+#13+#10+'This line ends with a higher unicode character "RollingEyes" Face Character 🙄';
       lChildArray := lFrame.NewSlot('Numbers').AsArray;
-      for j := 0 to 999 do
+      for j := 0 to cTestArrayCount do
       begin
         lChildArray.NewSlot.AsInt32 := j;
         lChildArray.NewSlot.AsDouble := j*pi;
@@ -1216,6 +1255,57 @@ begin
   end;
 
   m('Make DataObj to JSON-> Length:'+InttoStr(length(result))+' Time: '+FloatToStrf((lEnd-lStart)*24*60*60, ffFixed, 10, 2));
+end;
+
+function TForm15.MakeTestMcJSON(aType: TTestType): string;
+{$ifdef cIncludeMcJSONtest}
+var
+   i,j: integer;
+   lTop: TMcJsonItem;
+   lFrame: TMcJsonItem;
+   lChildArray: TMcJsonItem;
+   lStart: TDatetime;
+   lEnd: TDatetime;
+{$endif}
+begin
+{$ifdef cIncludeMcJSONtest}
+  lStart := now;
+  lTop:=TMcJsonItem.Create(jitArray);
+  try
+    for i := 1 to cMakeTestSize do
+    begin
+      lFrame := lTop.Add(jitObject);
+      lFrame.Add('ID').AsInteger := i*1000000;
+      lFrame.Add('FirstName').AsString := 'Sean';
+      lFrame.Add('LastName').AsString := 'Solberg';
+      lFrame.Add('Age').AsInteger := 18;
+      lFrame.Add('Height').AsNumber := 1234.56789;
+      lFrame.Add('DateTime').AsString := DateTimeToISO8601Str(fTestDateTime);   // NOTE, McJSON doesn't model dates directly so we need to do a string.
+      lFrame.Add('Description').AsString := 'This text is intentionally including " characters that need to be escaped. '+#13+#10+'Plus line feed characters too.'+#13+#10+#9+'This line starts with a tab character'+#13+#10+'This line ends with a higher unicode character "RollingEyes" Face Character 🙄';
+
+      lChildArray := lFrame.Add('Numbers',jitArray);
+      for j := 0 to cTestArrayCount do
+      begin
+        lChildArray.Add.AsInteger := j;
+        lChildArray.Add.AsNumber := j*pi;
+        lChildArray.Add.AsString := 'CrazyStuff:#13+#10+"🙄"';
+      end;
+    end;
+
+    case aType of
+      cttTightUTF8: result := lTop.AsJSON;       // this mechanism doesn't distinguish on character encoding options.
+      cttTightAscii: result := lTop.AsJSON;
+      cttFormattedUTF8: result := lTop.AsJSON;  //PrintToJSONReadable;
+      cttFormattedAscii: result := lTop.AsJSON;   //PrintToJSONReadable;
+    end;
+    lEnd := now;
+  finally
+    lTop.Free;
+  end;
+
+  m('Make McJSON to JSON-> Length:'+InttoStr(length(result))+' Time: '+FloatToStrf((lEnd-lStart)*24*60*60, ffFixed, 10, 2));
+
+{$endif}
 end;
 
 function TForm15.MakeTestDDO(aType: TTestType): string;
@@ -1244,10 +1334,10 @@ begin
       lFrame.NewSlot('LastName').AsString := 'Solberg';
       lFrame.NewSlot('Age').AsInteger := 18;
       lFrame.NewSlot('Height').AsFloat := 1234.56789;
-      lFrame.NewSlot('DateTime').AsDateTime := now;
+      lFrame.NewSlot('DateTime').AsDateTime := fTestDateTime;
       lFrame.NewSlot('Description').AsString := 'This text is intentionally including " characters that need to be escaped. '+#13+#10+'Plus line feed characters too.'+#13+#10+#9+'This line starts with a tab character'+#13+#10+'This line ends with a higher unicode character "RollingEyes" Face Character 🙄';
       lChildArray := lFrame.NewSlot('Numbers').AsArray;
-      for j := 0 to 999 do
+      for j := 0 to cTestArrayCount do
       begin
         lChildArray.NewSlot.AsInteger := j;
         lChildArray.NewSlot.AsFloat := j*pi;
@@ -1284,8 +1374,8 @@ var
 
 begin
   lStart := now;
+  lTop := TJSONArray.Create;
   try
-    lTop := TJSONArray.Create;
     for i := 1 to cMakeTestSize do
     begin
       lFrame := TJSONObject.Create;
@@ -1296,11 +1386,11 @@ begin
       lFrame.AddPair('LastName', 'Solberg');
       lFrame.AddPair('Age', 18);
       lFrame.AddPair('Height', 1234.56789);
-      lFrame.AddPair('DateTime', now);
+      lFrame.AddPair('DateTime', DateTimeToISO8601Str(fTestDateTime));    // NOTE: Dephi doesn't handle Datetime natively with their JSON, so we must make it as a string.
       lFrame.AddPair('Description','This text is intentionally including " characters that need to be escaped. '+#13+#10+'Plus line feed characters too.'+#13+#10+#9+'This line starts with a tab character'+#13+#10+'This line ends with a higher unicode character "RollingEyes" Face Character 🙄');
       lChildArray := TJSONArray.Create;
       lFrame.AddPair('Numbers',lChildArray);
-      for j := 0 to 999 do
+      for j := 0 to cTestArrayCount do
       begin
         lChildArray.Add(j);
         lFloat := j*pi;
@@ -1341,8 +1431,8 @@ begin
 {$ifdef cIncludeGrijjyTest}
 
   lStart := now;
+  lTop := TgoBsonArray.Create;
   try
-    lTop := TgoBsonArray.Create;
     for i := 1 to cMakeTestSize do
     begin
       lFrame := TgoBsonDocument.Create;
@@ -1353,11 +1443,11 @@ begin
       lFrame.Add('LastName', 'Solberg');
       lFrame.Add('Age', 18);
       lFrame.Add('Height', 1234.56789);
-      lFrame.Add('DateTime', now);
+      lFrame.Add('DateTime', fTestDateTime);
       lFrame.Add('Description','This text is intentionally including " characters that need to be escaped. '+#13+#10+'Plus line feed characters too.'+#13+#10+#9+'This line starts with a tab character'+#13+#10+'This line ends with a higher unicode character "RollingEyes" Face Character 🙄');
       lChildArray := TgoBsonArray.Create;
       lFrame.Add('Numbers',lChildArray);
-      for j := 0 to 999 do
+      for j := 0 to cTestArrayCount do
       begin
         lChildArray.Add(j);
         lFloat := j*pi;
@@ -1376,7 +1466,7 @@ begin
     result := lTop.ToJson(lSettings);
     lEnd := now;
   finally
-//    lTop.Free;
+//    lTop.Free;   // no free cause it's a record.
   end;
 
   m('Make Grijjy to JSON-> Length:'+InttoStr(length(result))+' Time: '+FloatToStrf((lEnd-lStart)*24*60*60, ffFixed, 10, 2));

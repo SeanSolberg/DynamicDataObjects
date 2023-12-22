@@ -19,7 +19,7 @@ object Form41: TForm41
   object DBGrid1: TDBGrid
     Left = 8
     Top = 39
-    Width = 839
+    Width = 837
     Height = 730
     Anchors = [akLeft, akTop, akRight, akBottom]
     DataSource = DataSource1
@@ -33,7 +33,7 @@ object Form41: TForm41
   object DBNavigator1: TDBNavigator
     Left = 8
     Top = 8
-    Width = 830
+    Width = 820
     Height = 25
     DataSource = DataSource1
     Anchors = [akLeft, akTop, akRight]
@@ -320,7 +320,6 @@ object Form41: TForm41
     end
     object FDMemTable1FDAutoInc: TFDAutoIncField
       FieldName = 'FDAutoInc'
-      ReadOnly = True
     end
     object FDMemTable1FDSQLTimeInterval: TFDSQLTimeIntervalField
       FieldName = 'FDSQLTimeInterval'

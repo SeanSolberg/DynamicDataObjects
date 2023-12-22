@@ -27,7 +27,7 @@ object SimpleSample1Form: TSimpleSample1Form
   object Memo1: TMemo
     Left = 8
     Top = 64
-    Width = 874
+    Width = 872
     Height = 425
     Anchors = [akLeft, akTop, akRight, akBottom]
     Lines.Strings = (

@@ -176,6 +176,7 @@ begin
     if CompareTwoFiles('c:\temp\person-Published.dataObj', 'c:\temp\person-Published-Clone.dataObj') = false then
     begin
       log('Test #2 Failed');
+      log('This test was expected to fail because the DataObjects RTTI assignment is not yet written to fill array properties on objects.');
     end;
 
 

@@ -23,6 +23,8 @@ object Form19: TForm19
     Anchors = [akLeft, akTop, akRight, akBottom]
     ScrollBars = ssBoth
     TabOrder = 0
+    ExplicitWidth = 808
+    ExplicitHeight = 969
   end
   object Button1: TButton
     Left = 8

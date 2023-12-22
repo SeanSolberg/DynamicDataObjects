@@ -318,8 +318,15 @@ begin
     m(lDataObj.PrintToString);
 
 
-    //TEST 5 - This will generate an exception because we are trying to access an item in an array that doesn't exist.
-    lDataObj['MyArray1'][3].AsString := 'TRY TO ADD';
+    try
+      //TEST 5 - This will generate an exception because we are trying to access an item in an array that doesn't exist.
+      lDataObj['MyArray1'][3].AsString := 'TRY TO ADD';
+    except
+      on e: exception do
+      begin
+        m(e.ClassName+': '+e.Message);
+      end;
+    end;
   finally
     lDataObj.Free;
   end;

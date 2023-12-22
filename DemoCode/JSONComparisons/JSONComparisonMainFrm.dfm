@@ -28,25 +28,27 @@ object Form15: TForm15
       'phi.'
   end
   object Label2: TLabel
-    Left = 1004
+    Left = 1002
     Top = 216
     Width = 169
     Height = 13
     Anchors = [akTop, akRight]
     Caption = 'Make Unicode Surrogate(>$10000)'
+    ExplicitLeft = 1004
   end
   object lblSurrogatePair: TLabel
-    Left = 1004
+    Left = 1002
     Top = 262
     Width = 76
     Height = 13
     Anchors = [akTop, akRight]
     Caption = 'lblSurrogatePair'
+    ExplicitLeft = 1004
   end
   object Memo1: TMemo
     Left = 181
     Top = 39
-    Width = 780
+    Width = 778
     Height = 760
     Anchors = [akLeft, akTop, akRight, akBottom]
     Font.Charset = DEFAULT_CHARSET
@@ -57,9 +59,11 @@ object Form15: TForm15
     ParentFont = False
     ScrollBars = ssVertical
     TabOrder = 0
+    ExplicitWidth = 776
+    ExplicitHeight = 752
   end
   object Button4: TButton
-    Left = 1011
+    Left = 1009
     Top = 39
     Width = 169
     Height = 25
@@ -67,6 +71,7 @@ object Form15: TForm15
     Caption = 'AnsiString test'
     TabOrder = 1
     OnClick = Button4Click
+    ExplicitLeft = 1007
   end
   object btnDelphiLoadFromJSON: TButton
     Left = 8
@@ -96,7 +101,7 @@ object Form15: TForm15
     OnClick = btnNewDataObjLoadFromJSONClick
   end
   object Button24: TButton
-    Left = 1011
+    Left = 1009
     Top = 70
     Width = 169
     Height = 25
@@ -104,9 +109,10 @@ object Form15: TForm15
     Caption = 'Escape JSON File'
     TabOrder = 5
     OnClick = Button24Click
+    ExplicitLeft = 1007
   end
   object btnEscapeTest: TButton
-    Left = 1011
+    Left = 1009
     Top = 101
     Width = 169
     Height = 25
@@ -114,6 +120,7 @@ object Form15: TForm15
     Caption = 'JSON Escaped Chars test'
     TabOrder = 6
     OnClick = btnEscapeTestClick
+    ExplicitLeft = 1007
   end
   object Button1: TButton
     Left = 8
@@ -161,7 +168,7 @@ object Form15: TForm15
     OnClick = Button5Click
   end
   object Edit1: TEdit
-    Left = 1004
+    Left = 1002
     Top = 235
     Width = 169
     Height = 21
@@ -169,5 +176,6 @@ object Form15: TForm15
     TabOrder = 12
     Text = '1F9D9'
     OnChange = Edit1Change
+    ExplicitLeft = 1000
   end
 end

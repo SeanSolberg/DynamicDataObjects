@@ -47,7 +47,8 @@ begin
     log('');
     lDataObj.Clear;
 
-    // Run a test on the Frame Iterator
+    // Run a test on the Frame Iterator.
+    // Since each item in a frame has two pieces:  a Slotname and a contained TDataObj, we need TDataFrameEnumeratorRec to hold these two pieces for us.
     lDataObj.AsFrame.NewSlot('One').AsString :='One Data';
     lDataObj.AsFrame.NewSlot('Two').AsString :='Two Data';
     lDataObj.AsFrame.NewSlot('Three').AsString :='Three Data';

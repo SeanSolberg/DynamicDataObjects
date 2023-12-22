@@ -31,6 +31,7 @@ type
     { Private declarations }
   public
     { Public declarations }
+    procedure ForceMakeDirectories(aDir: string);
   end;
 
 var
@@ -126,7 +127,7 @@ var
       lEncodeTime := now;
 
       // Save this last test stream to a file.
-      ForceDirectories('./TestOutputs');
+      ForceMakeDirectories('./TestOutputs');
       lMemStream.SaveToFile('./TestOutputs/'+aStreamer.ClassName+'.'+aStreamer.FileExtension);
       lEncodeSize := lMemStream.Size;
     except
@@ -245,7 +246,7 @@ var
       lEncodeTime := now;
 
       // Save this last test stream to a file.
-//        ForceDirectories('./TestOutputs');
+//        ForceMakeDirectories('./TestOutputs');
 //        lMemStream.SaveToFile('./TestOutputs/'+lStreamer.ClassName+'.'+lStreamer.FileExtension);
       lEncodeSize := lMemStream.Size;
     except
@@ -1108,7 +1109,7 @@ begin
 
       // Testing finding in the BinaryTree
       lStart:=now;
-      for i := 0 to 1000 do
+      for i := 0 to 10000 do
       begin
         lNode := lSB.FindNode('THIS IS MY TEST STRING');
         if not assigned(lNode) then
@@ -1133,7 +1134,7 @@ begin
 
       // Testing finding in the StringList
       lStart:=now;
-      for i := 0 to 1000 do
+      for i := 0 to 10000 do
       begin
         lIndex := lList.indexof('THIS IS MY TEST STRING');
         if lIndex=-1 then
@@ -1153,6 +1154,14 @@ begin
 
     n := n*2;
   end;
+end;
+
+procedure TForm19.ForceMakeDirectories(aDir: string);
+var
+  lPath: string;
+begin
+  lPath := ExpandFileName(aDir);
+  ForceDirectories(lPath);
 end;
 
 procedure TForm19.log(aStr: string);

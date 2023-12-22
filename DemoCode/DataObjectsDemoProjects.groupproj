@@ -18,6 +18,12 @@
         <Projects Include="SimpleSample1\SimpleSample1.dproj">
             <Dependencies/>
         </Projects>
+        <Projects Include="IteratorTester\IteratorTestApp.dproj">
+            <Dependencies/>
+        </Projects>
+        <Projects Include="DataObj2DataSetTester\DataObjToDataSetTtester.dproj">
+            <Dependencies/>
+        </Projects>
     </ItemGroup>
     <ProjectExtensions>
         <Borland.Personality>Default.Personality.12</Borland.Personality>
@@ -71,14 +77,32 @@
     <Target Name="SimpleSample1:Make">
         <MSBuild Projects="SimpleSample1\SimpleSample1.dproj" Targets="Make"/>
     </Target>
+    <Target Name="IteratorTestApp">
+        <MSBuild Projects="IteratorTester\IteratorTestApp.dproj"/>
+    </Target>
+    <Target Name="IteratorTestApp:Clean">
+        <MSBuild Projects="IteratorTester\IteratorTestApp.dproj" Targets="Clean"/>
+    </Target>
+    <Target Name="IteratorTestApp:Make">
+        <MSBuild Projects="IteratorTester\IteratorTestApp.dproj" Targets="Make"/>
+    </Target>
+    <Target Name="DataObjToDataSetTtester">
+        <MSBuild Projects="DataObj2DataSetTester\DataObjToDataSetTtester.dproj"/>
+    </Target>
+    <Target Name="DataObjToDataSetTtester:Clean">
+        <MSBuild Projects="DataObj2DataSetTester\DataObjToDataSetTtester.dproj" Targets="Clean"/>
+    </Target>
+    <Target Name="DataObjToDataSetTtester:Make">
+        <MSBuild Projects="DataObj2DataSetTester\DataObjToDataSetTtester.dproj" Targets="Make"/>
+    </Target>
     <Target Name="Build">
-        <CallTarget Targets="AndroidSample1;AssignToAssignFromTestApp;JSONComparisons;PerformanceTester;SimpleSample1"/>
+        <CallTarget Targets="AndroidSample1;AssignToAssignFromTestApp;JSONComparisons;PerformanceTester;SimpleSample1;IteratorTestApp;DataObjToDataSetTtester"/>
     </Target>
     <Target Name="Clean">
-        <CallTarget Targets="AndroidSample1:Clean;AssignToAssignFromTestApp:Clean;JSONComparisons:Clean;PerformanceTester:Clean;SimpleSample1:Clean"/>
+        <CallTarget Targets="AndroidSample1:Clean;AssignToAssignFromTestApp:Clean;JSONComparisons:Clean;PerformanceTester:Clean;SimpleSample1:Clean;IteratorTestApp:Clean;DataObjToDataSetTtester:Clean"/>
     </Target>
     <Target Name="Make">
-        <CallTarget Targets="AndroidSample1:Make;AssignToAssignFromTestApp:Make;JSONComparisons:Make;PerformanceTester:Make;SimpleSample1:Make"/>
+        <CallTarget Targets="AndroidSample1:Make;AssignToAssignFromTestApp:Make;JSONComparisons:Make;PerformanceTester:Make;SimpleSample1:Make;IteratorTestApp:Make;DataObjToDataSetTtester:Make"/>
     </Target>
     <Import Project="$(BDS)\Bin\CodeGear.Group.Targets" Condition="Exists('$(BDS)\Bin\CodeGear.Group.Targets')"/>
 </Project>
