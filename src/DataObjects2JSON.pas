@@ -175,9 +175,11 @@ type
     class function CreateDataObjFromJSON(const aJson: string): TDataObj;
   end;
 
-  resourceString
-    SJsonParseMessageAt = '%s at %d';
+resourceString
+  SJsonParseMessageAt = '%s at %d';
 
+var
+  gJSONFormatSettings: TFormatSettings;
 
 implementation
 
@@ -1548,6 +1550,23 @@ var
   lDataObjectID: TDataObjectID;
   lStr: string;
   lP: PCardinal;
+
+  function FloatToJson(const Value: Extended): string;
+  var
+    Buffer: array[0..63] of Char;
+    L: Integer;
+  begin
+    L := FloatToText(Buffer, Value, fvExtended, ffGeneral, 17, 0, gJSONFormatSettings);
+    Buffer[L] := #0;
+    if StrScan(Buffer, '.') = nil then
+    begin
+      Buffer[L] := '.';
+      Buffer[L + 1] := '0';
+      Inc(L, 2);
+    end;
+    SetString(Result, Buffer, L);
+  end;
+
 begin
   case aDataobj.DataType.Code of
     cDataTypeNull:
@@ -1582,8 +1601,8 @@ begin
       if fSupportJSON5 then
       begin
         case aDataObj.AsDouble.SpecialType of
-          fsZero: fStringBuilder.Append('0');
-          fsNZero: fStringBuilder.Append('-0');
+          fsZero: fStringBuilder.Append('0.0');
+          fsNZero: fStringBuilder.Append('-0.0');
   //        fsDenormal
   //        fsNDenormal
   //        fsPositive
@@ -1592,14 +1611,14 @@ begin
           fsNInf: fStringBuilder.Append('-Infinity');
           fsNaN:  fStringBuilder.Append('NaN');
         else
-          fStringBuilder.Append(aDataobj.getStore^.fDataSingle);
+          fStringBuilder.Append(FloatToJSON(aDataobj.getStore^.fDataSingle));
         end;
       end
       else
       begin
         case aDataObj.AsDouble.SpecialType of
-          fsZero: fStringBuilder.Append('0');       // Doubles are often zero and this is faster than doing a FloatToStr.
-          fsNZero: fStringBuilder.Append('-0');
+          fsZero: fStringBuilder.Append('0.0');       // Doubles are often zero and this is faster than doing a FloatToStr.
+          fsNZero: fStringBuilder.Append('-0.0');
   //        fsDenormal
   //        fsNDenormal
   //        fsPositive
@@ -1608,7 +1627,7 @@ begin
           fsNInf: fStringBuilder.Append('null');
           fsNaN: fStringBuilder.Append('null');
         else
-          fStringBuilder.Append(aDataobj.getStore^.fDataSingle);
+          fStringBuilder.Append(FloatToJSON(aDataobj.getStore^.fDataSingle));
         end;
       end;
     end;
@@ -1618,8 +1637,8 @@ begin
       if fSupportJSON5 then
       begin
         case aDataObj.AsDouble.SpecialType of
-          fsZero: fStringBuilder.Append('0');
-          fsNZero: fStringBuilder.Append('-0');
+          fsZero: fStringBuilder.Append('0.0');
+          fsNZero: fStringBuilder.Append('-0.0');
   //        fsDenormal
   //        fsNDenormal
   //        fsPositive
@@ -1628,14 +1647,14 @@ begin
           fsNInf: fStringBuilder.Append('-Infinity');
           fsNaN:  fStringBuilder.Append('NaN');
         else
-          fStringBuilder.Append(aDataobj.getStore^.fDataDouble);
+          fStringBuilder.Append(FloatToJSON(aDataobj.getStore^.fDataDouble));
         end;
       end
       else
       begin
         case aDataObj.AsDouble.SpecialType of
-          fsZero: fStringBuilder.Append('0');       // Doubles are often zero and this is faster than doing a FloatToStr.
-          fsNZero: fStringBuilder.Append('-0');
+          fsZero: fStringBuilder.Append('0.0');       // Doubles are often zero and this is faster than doing a FloatToStr.
+          fsNZero: fStringBuilder.Append('-0.0');
   //        fsDenormal
   //        fsNDenormal
   //        fsPositive
@@ -1644,7 +1663,7 @@ begin
           fsNInf: fStringBuilder.Append('null');
           fsNaN: fStringBuilder.Append('null');
         else
-          fStringBuilder.Append(aDataobj.getStore^.fDataDouble);
+          fStringBuilder.Append(FloatToJSON(aDataobj.getStore^.fDataDouble));
         end;
       end;
     end;
@@ -2148,6 +2167,7 @@ begin
 end;
 
 initialization
+  gJSONFormatSettings := TFormatSettings.Invariant;
   RegisterDataObjStreamer(TJsonStreamer);
 
 end.
