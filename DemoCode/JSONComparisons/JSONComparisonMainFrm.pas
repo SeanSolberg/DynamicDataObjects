@@ -53,7 +53,7 @@ McJSON       0.777        [0.197]        0.424           0.526           0.943  
          likely not a common situation as I'm sure most of the time an app that is taking in JSON is actually interested in using the data in that file.
 }
 
-{$DEFINE cIncludeDDOTest}
+//{$DEFINE cIncludeDDOTest}
 {$DEFINE cIncludeGrijjyTest}
 {$DEFINE cIncludeCleverJSON}
 {$DEFINE cIncludeMcJSONtest}
