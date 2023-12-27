@@ -790,7 +790,7 @@ begin
     end;
     cDataTypeInt32:begin
       lBuffer[0] := lValue;
-      PInteger(@lBuffer[1])^ := lStore.fDataByte;
+      PInteger(@lBuffer[1])^ := lStore.fDataInt32;
       fStream.Write(lBuffer,5);
     end;
     cDataTypeInt64: begin
