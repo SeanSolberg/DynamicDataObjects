@@ -122,17 +122,17 @@ unit DataObjects2;
     Messagepack
     ION - binary and text (json superset)
 
-    { Planned Internal Improvements
-      Finish all the details around the sparse array.
-      Internal support for the WKB Geometry data type so that DDO can be fully serialized.
-      Internal support for the Half Float (Float16)
-      Internal support for the Extended Float
-      Internal support for the full unsigned set of integers (UInt16, UInt32, Uint64) and the signed byte.
-      Either get the concept of "Attributes" working correctly or remove it entirely.
-      Support JSON5 serialization
-      Support YAML serialization
-      Support the ability for TDataFrame to have an option for case-sensitive fieldnames.  This is needed for more correct support of JSON, although pascal object properties are case insensitive, so....
-    }
+    Planned Internal Improvements
+    Finish all the details around the sparse array.
+    Internal support for the WKB Geometry data type so that DDO can be fully serialized.
+    Internal support for the Half Float (Float16)
+    Internal support for the Extended Float
+    Internal support for the full unsigned set of integers (UInt16, UInt32, Uint64) and the signed byte.
+    Either get the concept of "Attributes" working correctly or remove it entirely.
+    Support JSON5 serialization
+    Support YAML serialization
+    Support the ability for TDataFrame to have an option for case-sensitive fieldnames.  This is needed for more correct support of JSON, although pascal object properties are case insensitive, so....
+  }
 
 
 interface
@@ -402,7 +402,7 @@ type
   protected
     fStream: TStream;   // reference only in most situations.   However, if you set OwnsStream to true, then when this object is freed, then fStream will be freed.
   public
-    constructor Create(aStream: TStream); virtual;
+    constructor Create(aStream: TStream = nil); virtual;
     destructor Destroy; override;
 
     function Clone: TDataObjStreamerBase; virtual;
@@ -3697,7 +3697,7 @@ begin
   end;
 end;
 
-constructor TDataObjStreamerBase.Create(aStream: TStream);
+constructor TDataObjStreamerBase.Create(aStream: TStream = nil);
 begin
   inherited Create;
   fStream := aStream;

@@ -1,10 +1,7 @@
 This directory contains a few tools that are built with the DynamicDataObjects Library. 
-There are two sets of tools:  32bit set and a 64bit set in their respective subdirectories. 
-
-NOTE:  The 64bit set doesn't have the installer built yet and I don't have a 64 bit Explorer Previewer yet.
 
 
-1.  DataObjectInstaller32.exe - This is a simple nsis installer that will install the three tools listed below.  This is the easyest way to get everything setup correctly as it will register the supported file formats with windows to easily edit these files with the editor and it will register the explorer plugin. 
+1.  DataObjectInstaller32.exe - This is a simple nsis installer that will install the three tools listed below.  This is the easiest way to get everything setup correctly as it will register the supported file formats with windows to easily edit these files with the editor and it will register the explorer plugin. 
 
 2.  DataObjectEditor.exe - This is a simple executable that will open any of the files supported by the dataObjects serializers.  It is very fast and can handle very large files in the tree-orientated UI. 
 

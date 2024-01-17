@@ -91,6 +91,7 @@ type
 
     constructor Create(aStream: TStream); override;
     destructor Destroy; override;
+    function Clone: TDataObjStreamerBase; override;
 
     procedure Decode(aDataObj: TDataObj); override;
     procedure Encode(aDataobj: TDataObj); override;
@@ -135,7 +136,7 @@ procedure RegisterDataObjStreamer(aStreamer: TDataObjStreamerClass);
 ResourceString
   strUnableToReadDataObject = 'Unable to read DataObject(%s) from stream at offset = %d';
   strSlotNameOrSizeTooLarge =  'Slot name size or ID too large to serialize.';
-  strReadInvalidDataType = 'Read an invalid data type of %s';
+  strReadInvalidDataType = 'Read an invalid data type of %s at offset = %d';
 
 implementation
 
@@ -255,6 +256,14 @@ begin
   result := 1;    // highest priority
 end;
 
+function TDataObjStreamer.Clone: TDataObjStreamerBase;
+begin
+  result := TDataObjStreamer.Create(nil);
+  TDataObjStreamer(result).UseStringRefs := self.UseStringRefs;
+  TDataObjStreamer(result).UseSlotnameRefs := self.UseSlotnameRefs;
+  TDataObjStreamer(result).SerializeAsUTF8 := self.SerializeAsUTF8;
+end;
+
 constructor TDataObjStreamer.Create(aStream: TStream);
 begin
   inherited;
@@ -304,7 +313,6 @@ var
     lVarInt.ReadFromStream(fStream);
     result := lVarInt;
   end;
-
 
   function ReadUTF8String: string;
   var
@@ -586,7 +594,7 @@ begin
   else
     begin
       // FINISH - need to generate a good exception here because we received a dataType that's not valid.
-      raise EDataObj.Create(format(strReadInvalidDataType, [IntToHex(lValue,2)]));
+      raise EDataObj.Create(format(strReadInvalidDataType, [IntToHex(lValue,2), fStream.Position]));
     end;
   end;
 end;
