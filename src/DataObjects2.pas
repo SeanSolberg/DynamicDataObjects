@@ -270,7 +270,8 @@ type
                                    // This lets us have a real object that we want to serialize in dataObject form without having to make a full copy of the data in DataObject
                                    // form first before we can serialize to a stream.  It means we are not doubling up the memory when reading from and writing from a stream.
 
-    cDataTypeTag = 21             // a tag is an unsigned number (up to 32 bit).  The tag data type, then holds exactly one child dataObject that can be of any time (including another tag).
+    cDataTypeTag = 21,             // a tag is an unsigned number (up to 32 bit).  The tag data type, then holds exactly one child dataObject that can be of any time (including another tag).
+    cDataTypeCurrency = 22     // number in the form off xx.xx if there is more than 2 decimal places, currency automatically rounds up to the nearest 2 places
   );
 
 
@@ -352,6 +353,8 @@ type
     procedure SetObject(const Value: TObject); inline;
     function getDataString: string; inline;
     procedure setDataString(const Value: string); inline;
+    function getDataCurrency: Currency; inline;
+    procedure setDataCurrency(const Value: Currency); inline;
   public
     procedure ClearData; inline;
 
@@ -365,9 +368,11 @@ type
     property DataObject: TObject read getObject write setObject;
     property DataStringList: TDataStringList read getDataStringList write setDataStringList;
     property DataString: string read getDataString write setDataString;
+    property DataCurrency: Currency read getDataCurrency write setDataCurrency;
   var
     fDataObject: TObject;         // If this data object holds a datatype that requires an object to hold it, that is stored/owned here.  Note, depending on the compiler, this may use arc or may not use arc.
     fDataString: string;          // if the data is going to be a string, then it is stored here so that arc can manage it.
+    fDataCurrency: Currency;
 
     // Note that the biggest size of any of these storage values should be 8 bytes (pointer on 64 bit systems, or Double).  Anything that is bigger than this will have an object that is intantiated to hold it.
     case byte of
@@ -466,6 +471,7 @@ type
     function getDataType: TDataType;
     function getDataTypeString: String;
     function getAsTag: TDataTag;
+    function getAsCurrency: Currency;
 
     procedure setAsArray(const aValue: TDataArray);
     procedure setAsBinary(const aValue: TDataBinary);
@@ -491,6 +497,7 @@ type
     procedure setAsTime(const aValue: TTime);
     procedure setAsUTCDateTime(const aValue: Int64);
     procedure setDataType(const Value: TDataType);
+    procedure SetAsCurrency(const Value: Currency);
 
     function getItem(aKey: variant): TDataObj;           // if aKey is a string, this will treat this dataObj as a Frame and do a newSlot on the frame
                                                          // if aKey is an integer, will treat this dataObj as an array and do a newSlot on the array
@@ -566,6 +573,8 @@ type
     property AsFrame: TDataFrame read getAsFrame write setAsFrame;
     property AsArray: TDataArray read getAsArray write setAsArray;
     property AsSparseArray: TDataSparseArray read getAsSparseArray write setAsSparseArray;
+
+    property AsCurrency: Currency read getAsCurrency write setAsCurrency;
 
     property AsBinary: TDataBinary read getAsBinary write setAsBinary;
 {$ifDef cMakeMoreCompatibleWithOldDataObjects}
@@ -865,6 +874,11 @@ begin
   result := TDataBinary(fDataObject);
 end;
 
+function TDataStore.getDataCurrency: Currency;
+begin
+  result := FDataCurrency;
+end;
+
 function TDataStore.getDataFrame: TDataFrame;
 begin
   result := TDataFrame(fDataObject);
@@ -908,6 +922,11 @@ end;
 procedure TDataStore.setDataBinary(const Value: TDataBinary);
 begin
  fDataObject := Value;
+end;
+
+procedure TDataStore.setDataCurrency(const Value: Currency);
+begin
+  fDataCurrency := Value;
 end;
 
 procedure TDataStore.setDataFrame(const aValue: TDataFrame);
@@ -1869,6 +1888,11 @@ begin
   end;
 end;
 
+function TDataObj.getAsCurrency: Currency;
+begin
+//stay
+end;
+
 function TDataObj.getAsDate: TDate;
 begin
   result := Trunc(getAsDateTime);
@@ -2560,6 +2584,13 @@ begin
   ClearData;    // does not clear attributes if there are any.
   fDataType.Code := cDataTypeByte;
   FStore.fDataByte := aValue;
+end;
+
+procedure TDataObj.SetAsCurrency(const Value: Currency);
+begin
+  ClearData;
+  fDataType.Code := cDataTypeCurrency;
+
 end;
 
 procedure TDataObj.setAsDate(const aValue: TDate);

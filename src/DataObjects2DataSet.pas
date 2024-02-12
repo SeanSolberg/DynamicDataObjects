@@ -125,7 +125,7 @@ begin
      //ftIDispatch: ;  Not supported
      ftGuid: aFieldDataObj.AsGUID.GUID := aField.AsGuid;
      ftTimeStamp: aFieldDataObj.AsDateTime := aField.AsDateTime;
-     //ftFMTBcd: ;  FINISH
+//     ftFMTBcd: aFieldDataObj.As;
      ftFixedWideChar: aFieldDataObj.AsString := aField.AsString;
      ftWideMemo: aFieldDataObj.AsStringList.text := aField.AsString;
      ftOraTimeStamp: aFieldDataObj.AsDateTime := aField.AsDateTime;
