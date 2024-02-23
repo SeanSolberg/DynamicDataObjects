@@ -44,8 +44,8 @@ type
     procedure SetDoubleValue(aValue: double);
   strict private
     case byte of
-      0: (fSingleValue: Single;);
-      1: (fDoubleValue: Double;);
+      0: (fSingleValue: Cardinal;);    //4-byte Byte-Swapped Cardinal representation of a Single
+      1: (fDoubleValue: UInt64;);      //8-byte Byte-Swapped UInt64 representation of a Double
     end;
 
   TSmileStreamer = class(TDataObjStreamerBase)
@@ -518,8 +518,6 @@ procedure TSmileStreamer.Decode(aDataObj: TDataObj);
 var
   lByte: byte;
   lClass: byte;
-  lInt32: integer;
-  lInt64: int64;
 
   procedure InvalidCode;
   begin
@@ -591,12 +589,12 @@ end;
 
 procedure TNumBytes.SetSingleValue(aValue: Single);
 begin
-  fSingleValue := SwapBytes(aValue);
+  fSingleValue := SwapBytesSingle(aValue);
 end;
 
 procedure TNumBytes.SetDoubleValue(aValue: double);
 begin
-  fDoubleValue := SwapBytes(aValue);
+  fDoubleValue := SwapBytesFromDouble(aValue);
 end;
 
 

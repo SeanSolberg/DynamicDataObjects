@@ -67,6 +67,14 @@ type
     procedure Encode(aDataObj: TDataObj); override;
   end;
 
+  TMatroskaStreamer = class(TEBMLStreamer)
+  public
+    class function FileExtension: string; override;
+    class function Description: string; override;
+    class function GetFileFilter: string; override;
+    class function IsFileExtension(aStr: string): boolean; override;
+  end;
+
 implementation
 
 //resourceString
@@ -79,12 +87,12 @@ end;
 
 class function TEBMLStreamer.GetFileFilter: string;
 begin
-  result := 'EBML Files (*.ebml)|*.ebml|Matroska Files (*.mkv)|*.mkv';
+  result := 'EBML Files (*.ebml)|*.ebml';
 end;
 
 class function TEBMLStreamer.IsFileExtension(aStr: string): boolean;
 begin
-  result := SameText(aStr, '.ebml') or SameText(aStr, 'ebml') or SameText(aStr, '.mkv') or SameText(aStr, 'mkv');
+  result := SameText(aStr, '.ebml') or SameText(aStr, 'ebml');
 end;
 
 
@@ -731,7 +739,6 @@ begin
 
     cDataTypeTag: begin
       // FINISH - found that other implementations have an option to put tags into JSON by containing the tag using a Json Object (frame) with a certain slotName naming convention.
-      //          maybe we should support this concept too.
       // see https://github.com/intel/tinycbor/commit/782f2545a07e707464c6e9b417768e8b980c8e13
 
       // For now, we are skipping over the tagging portion and just streaming out the contained DataObject so call recursively
@@ -773,7 +780,30 @@ begin
   result := 'ebml';
 end;
 
+{ TMatroskaStreamer }
+
+class function TMatroskaStreamer.Description: string;
+begin
+  result := 'Matroska Container. https://en.wikipedia.org/wiki/Matroska';
+end;
+
+class function TMatroskaStreamer.FileExtension: string;
+begin
+  result := 'mkv';
+end;
+
+class function TMatroskaStreamer.GetFileFilter: string;
+begin
+  result := 'Matroska Files (*.mkv)|*.mkv';
+end;
+
+class function TMatroskaStreamer.IsFileExtension(aStr: string): boolean;
+begin
+ result := SameText(aStr, '.mkv') or SameText(aStr, 'mkv')
+end;
+
 initialization
   RegisterDataObjStreamer(TEBMLStreamer);
+  RegisterDataObjStreamer(TMatroskaStreamer);
 
 end.

@@ -700,14 +700,14 @@ begin
       end;
 
       $ca: begin  // float 32
-        fStream.Read(lSingle, 4);
-        lSingle := SwapBytes(lSingle);
+        fStream.Read(lCardinal, 4);
+        lSingle := SwapBytesSingle(lCardinal);
         aDataObj.AsSingle := lSingle;
       end;
 
       $cb: begin  // float 64
-        fStream.Read(lDouble, 8);
-        lDouble := SwapBytes(lDouble);
+        fStream.Read(lUint64, 8);
+        lDouble := SwapBytesToDouble(lUInt64);
         aDataObj.AsDouble := lDouble;
       end;
 

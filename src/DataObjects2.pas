@@ -433,6 +433,7 @@ type
     fStore: TDataStore;                 // most of the time, you should not access this directly.  use a call to GetStore to get it. This stores the actual data and it can vary what type of data it is holding.
     fDataType: TDataType;               // most of the time, you should not access this directly.
     fAttributes: TDataAttributeStore;   // will be nil unless attributes have been added.
+    fFlags: Cardinal;                   // Set of flags that can be used for generic purposes.  DataObject Editor uses it for storing flags that signal how two dataObjects are diffed with each other.
   private
     function getAsArray: TDataArray;
     function getAsBinary: TDataBinary;
@@ -576,6 +577,8 @@ type
     property DataTypeString: String read getDataTypeString;
 
     property HasAttributes: boolean read getHasAttributes write setHasAttributes;
+
+    property Flags: Cardinal read fFlags write fFlags;
 
     function DataTypeIsAContainer: boolean;     // means that we can put one or more than one child item into this object.
                                                 // This returns false for items that contain a fixed number of child objects such as the tag type.

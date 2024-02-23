@@ -262,13 +262,13 @@ procedure WriteSingle(aStream: TStream; aValue: single);
 type
   TCodeWithSingle = packed record
     lCode: byte;
-    lSingle: single;
+    lSingle: Cardinal;    // 4-byte cardinal representation of a byte-swapped 4-byte single.
   end;
 var
   lCodeWithSingle: TCodeWithSingle;
 begin
   lCodeWithSingle.lCode := $FA;                      // Major 7, value=26;     // means a 4-byte single follows
-  lCodeWithSingle.lSingle := SwapBytes(aValue);
+  lCodeWithSingle.lSingle := SwapBytesSingle(aValue);
   aStream.Write(lCodeWithSingle, 5);
 end;
 
@@ -276,13 +276,13 @@ procedure WriteDouble(aStream: TStream; aValue: Double);
 type
   TCodeWithDouble = packed record
     lCode: byte;
-    lDouble: double;
+    lDouble: UInt64;   // 8 byte UInt64 representation of a byte-swapped 8-byte double.
   end;
 var
   lCodeWithDouble: TCodeWithDouble;
 begin
   lCodeWithDouble.lCode := $FB;                      // Major 7, value=27;     // means a 8-byte double follows
-  lCodeWithDouble.lDouble := SwapBytes(aValue);                // need to reverse the order of the bytes.
+  lCodeWithDouble.lDouble := SwapBytesFromDouble(aValue);                // need to reverse the order of the bytes.
   aStream.Write(lCodeWithDouble, 9);
 end;
 
@@ -952,7 +952,7 @@ var
   lSingle: single;
   lDouble: double;
   lCardinal: Cardinal;
-  lInt64: UInt64;
+  lUInt64: UInt64;
 //  lSS: TStringStream;
   lToReadCount: Int64;
   lCount: Int64;
@@ -989,14 +989,14 @@ begin
             aDataObj.AsInt32 := lCardinal;  // numbers 65536 -  2 billion are covered by reading four bytes
         end;
         27: begin
-          DoRead(lInt64, 8);
-          lInt64 := SwapBytes(lInt64);
+          DoRead(lUInt64, 8);
+          lUInt64 := SwapBytes(lUInt64);
 (*          if (lInt64 > $7FFFFFFFFFFFFFFF) then        FINISH - Need to figure out what to do about this situation.  Do we add full UInt64 support to DataObjects, or do we produce an error situation here?
           begin
 
           end
           else *)
-          aDataObj.AsInt64 := lInt64;     // 8 byte unsigned int64.  Problem we have here is that we natively model signed 64bit ints, so it's possible we get an unsigned number that's too big here.
+          aDataObj.AsInt64 := lUInt64;     // 8 byte unsigned int64.  Problem we have here is that we natively model signed 64bit ints, so it's possible we get an unsigned number that's too big here.
         end;
       end;
     end;
@@ -1023,8 +1023,8 @@ begin
             aDataObj.AsInt32 := -1-Integer(lCardinal);  // numbers 65536 -  2 billion are covered by reading four bytes
         end;
         27: begin
-          DoRead(lInt64, 8);
-          aDataObj.AsInt64 := -1-lInt64;     // 8 byte unsigned int64.  Problem we have here is that we natively model signed 64biters, so it's possible we get an incoming unsigned number that's too big here.
+          DoRead(lUInt64, 8);
+          aDataObj.AsInt64 := -1-lUInt64;     // 8 byte unsigned int64.  Problem we have here is that we natively model signed 64biters, so it's possible we get an incoming unsigned number that's too big here.
         end;
       end;
     end;
@@ -1223,14 +1223,14 @@ begin
         end;
         26: begin
           // read four more bytes for a 32 bit float
-          DoRead(lSingle, 4);
-          lSingle := SwapBytes(lSingle);
+          DoRead(lCardinal, 4);
+          lSingle := SwapBytesSingle(lCardinal);
           aDataObj.AsSingle := lSingle;
         end;
         27: begin
           // read 8 more bytes for a 64 bit float
-          DoRead(lDouble, 8);
-          lDouble := SwapBytes(lDouble);
+          DoRead(lUInt64, 8);
+          lDouble := SwapBytesToDouble(lUInt64);
           aDataObj.AsDouble := lDouble;
         end;
         //28-30=unassigned
