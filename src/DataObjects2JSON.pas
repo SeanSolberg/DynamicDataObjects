@@ -1796,7 +1796,8 @@ begin
           fStringBuilder.AppendLine;
       end;
       lSpaces := DecInd;
-      fStringBuilder.Append(lSpaces);
+      if lArray.Count>0 then
+        fStringBuilder.Append(lSpaces);
       fStringBuilder.Append(']');
     end;
 
