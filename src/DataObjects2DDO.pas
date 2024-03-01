@@ -276,7 +276,7 @@ begin
 
           fStream.Write(lByte, 1);  // write 1 byte representing the size of the slot name string
           if lSize > 0 then
-            fStream.Write(lAnsiStr[1], lSize);  // write the slot Name. Not Including the Null Byte.
+            fStream.Write(lAnsiStr[1], lByte);  // write the slot Name. Not Including the Null Byte.
 
           // then write the slot data
           Encode(lFrame.Slots[i]);  // recursion happening here.
@@ -439,6 +439,7 @@ begin
 
       6{Frame}: begin
         fStream.Read(lSize, 4);
+        lFrame := aDataObj.AsFrame;   // need to always call .Asframe so if we are reading zero slots, then we still at least produce an empty frame instead of null slot.
         if lSize>0 then             // need this check for zero to prevent the lSize-1 call below if lSize=0 because a range exception would fire.
         begin
           for i := 0 to lSize-1 do
@@ -460,7 +461,7 @@ begin
               end;
             end;
 
-            Decode(aDataObj.AsFrame.NewSlot(String(lAnsiString)));     // create a new slot and recursively load it from the stream
+            Decode(lFrame.NewSlot(String(lAnsiString)));     // create a new slot and recursively load it from the stream
           end;
         end;
       end;

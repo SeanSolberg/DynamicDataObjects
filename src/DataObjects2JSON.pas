@@ -1766,7 +1766,8 @@ begin
         if i>0 then
           fStringBuilder.Append(lSpaces);
         fStringBuilder.Append('"');
-        fStringBuilder.Append(lFrame.slotName(i));
+        WriteStringEncodingSpecialJSONCharacters(lFrame.slotName(i));
+//        fStringBuilder.Append(lFrame.slotName(i));
         fStringBuilder.Append('":');
         ReadFromDataObjInternal(lFrame.Slots[i]);     // recursion happening here.
         if i<lFrame.Count-1 then
