@@ -953,7 +953,6 @@ var
   lDouble: double;
   lCardinal: Cardinal;
   lUInt64: UInt64;
-//  lSS: TStringStream;
   lToReadCount: Int64;
   lCount: Int64;
   i: Integer;

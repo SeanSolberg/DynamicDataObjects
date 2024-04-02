@@ -696,7 +696,8 @@ type
 
     // if aRaiseExceptionIfAlreadyExists is true, then an exception is raised if trying to add a new slot with the given aSlotName finds that this slot already exists.
     // the normal operation (when aRaiseExceptionIfAlreadyExists=false) when this occurs is to just return the slot that was found.
-    function NewSlot(const aSlotName: string; aRaiseExceptionIfAlreadyExists: boolean = false): TDataObj;
+    function NewSlot(const aSlotName: string): TDataObj; overload;
+    function NewSlot(const aSlotName: string; aRaiseExceptionIfAlreadyExists: boolean): TDataObj; overload;
     procedure AppendSlot(const aSlotName: string; aDataObj: TDataObj);
     function SlotByName(const aSlotName: string): TDataObj;
     function DeleteSlot(const aSlotName: string): boolean;   // returns true if the slot was found and deleted.
@@ -3009,7 +3010,13 @@ begin
   result := fSlotList.IndexOfObject(aSlot);
 end;
 
-function TDataFrame.NewSlot(const aSlotName: string; aRaiseExceptionIfAlreadyExists: boolean = false): TDataObj;
+
+function TDataFrame.NewSlot(const aSlotName: string): TDataObj;
+begin
+  result := newSlot(aSlotName, False);
+end;
+
+function TDataFrame.NewSlot(const aSlotName: string; aRaiseExceptionIfAlreadyExists: boolean): TDataObj;
 begin
   if not FindSlot(aSlotname, result) then
   begin
