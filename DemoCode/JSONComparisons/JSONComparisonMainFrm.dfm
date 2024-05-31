@@ -142,7 +142,7 @@ object Form15: TForm15
   end
   object btnRunAllTests: TButton
     Left = 6
-    Top = 37
+    Top = 35
     Width = 169
     Height = 25
     Caption = 'Run All Tests'

@@ -53,17 +53,21 @@ McJSON       0.777        [0.197]        0.424           0.526           0.943  
          likely not a common situation as I'm sure most of the time an app that is taking in JSON is actually interested in using the data in that file.
 }
 
-//{$DEFINE cIncludeDDOTest}
+{$DEFINE cIncludeDDOTest}
 {$DEFINE cIncludeGrijjyTest}
-{$DEFINE cIncludeCleverJSON}
+//{$DEFINE cIncludeCleverJSON}
 {$DEFINE cIncludeMcJSONtest}
+{$DEFINE cIncludeJSONDataObjects}
 
 
 interface
 
 uses
-  Winapi.Windows, Winapi.Messages, System.SysUtils, System.Variants, System.Classes, Vcl.Graphics, json,
-    Vcl.Controls, Vcl.Forms, Vcl.Dialogs,  Vcl.StdCtrls, db, DateUtils, varint,
+  Winapi.Windows, Winapi.Messages, System.SysUtils, System.Variants, System.Classes, Vcl.Graphics,
+    {$ifdef cIncludeJSONDataObjects}
+      JsonDataObjects,
+    {$endif}
+    json, Vcl.Controls, Vcl.Forms, Vcl.Dialogs,  Vcl.StdCtrls, db, DateUtils, varint,
     {$ifdef cIncludeDDOTest}
       DataObjects,
     {$endif}
@@ -181,6 +185,7 @@ type
     procedure SaveTime(aTester, aReadOrWrite: string; aTime: double);
     procedure PublishFinalTestResults(aStrings: TStrings);
     procedure RunTestSequence;
+    function RunJSONDataObjectsTest: string;
 
   public
     { Public declarations }
@@ -245,6 +250,60 @@ begin
    fTestTimes.AsFrame.NewSlot(aTester).AsFrame.NewSlot(fTestName+'-'+aReadOrWrite).AsDouble := aTime;
 end;
 
+
+function TForm15.RunJSONDataObjectsTest: string;
+{$ifdef cIncludeJsonDataObjects}
+var
+   JSonValue: JsonDataObjects.TJsonBaseObject;
+   lStart: TDateTime;
+   i: integer;
+   JSonObject: JsonDataObjects.TJSonObject;
+   lSS: TStringStream;
+   lTime: TDateTime;
+{$endif}
+begin
+{$ifdef cIncludeJsonDataObjects}
+   m('Starting JSONDataObjects Test');
+
+   lStart := now;
+   for i := 1 to fTestCount do
+   begin
+     JSonObject := JsonDataObjects.TJSonObject.Create;
+     JSonObject.Parse(fTestJSONString);
+     JSonObject.Free;
+   end;
+   lTime := (now-lStart)*24*60*60;
+   m('JSON DataObjects JSON Parse '+intToStr(fTestCount)+' times.  Total Time = '+FloatToStrf(lTime, ffFixed, 10, 2));
+   SaveTime('JSONDataObjects', 'R', lTime);
+
+   // Now re-write this test file to disk.
+   JSonValue := JsonDataObjects.TJSonObject.Parse(fTestJSONString);
+   try
+     lStart := now;
+     for i := 1 to fTestCount do
+     begin
+       result := JSonValue.ToJSON(true);   // true means compact
+     end;
+     lTime := (now-lStart)*24*60*60;
+     m('Delphi JSON Write '+intToStr(fTestCount)+' times.  Total Time = '+FloatToStrf(lTime, ffFixed, 10, 2));
+     SaveTime('JSONDataObjects', 'W', lTime);
+
+     lSS := TStringStream.Create;
+     lSS.WriteString(result);
+     lSS.SaveToFile('c:\temp\CreatedJsonDataObjects.json');
+     lSS.Free;
+
+
+   finally
+     JSonValue.Free;
+   end;
+   m('');
+
+{$else}
+  m('JSON DataOBjects not included in the compile.');
+  m('');
+{$endif}
+end;
 
 function TForm15.RunDelphiTest: string;
 var
@@ -322,6 +381,7 @@ begin
   RunGrijjiTest;
   RunCleverJsonTest;
   RunMcJSONTest;
+  RunJSONDataObjectsTest;
 end;
 
 procedure TForm15.btnRunAllTestsClick(Sender: TObject);
