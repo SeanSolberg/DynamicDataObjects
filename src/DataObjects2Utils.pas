@@ -66,10 +66,9 @@ type
       1: (fIntValue: Integer;);  //signed
       2: (fUInt64Value: UInt64;);
       3: (fInt64Value: Int64;);  //signed
-      4: (fDoubleValue: Double;);
-      5: (fUnsignedIntValue: Cardinal;);  // unsigned 32 bit
-      6: (fUInt16Value: Word);
-      7: (fBigTimestampValue: TBigTimestampValue);
+      4: (fUnsignedIntValue: Cardinal;);  // unsigned 32 bit
+      5: (fUInt16Value: Word);
+      6: (fBigTimestampValue: TBigTimestampValue);
     end;
 
 
@@ -132,11 +131,11 @@ function FloatToHalf(Float: Single): THalfFloat;
 implementation
 
 
-// NOTE:  when swapping bytes on a single floating point number, the resulting bytes could turn into a floating point number that is technically invalid.
+// NOTE:  when swapping bytes on a double floating point number, the resulting bytes could turn into a floating point number that is technically invalid.
 //        These are mostly when the Exponent works out to be $FF or $00
-// Delphi's assignment of such a single value will result in an exception.  SO, we CANNOT SwapBytes on a single and put the result into a Single.
-// Rather, we can swap bytes from a Single (4 bytes) to a Cardinal (4 bytes) and from a Cardinal (4 bytes) to a Single (4 bytes).
-// This whole situation also applies to floating point Doubles.
+// Delphi's assignment of such a single value will result in an exception.  SO, we CANNOT SwapBytes on a double and put the result into a double.
+// Rather, we can swap bytes from a double (8 bytes) to a UINT64 (8 bytes) and from a UInt64 (8 bytes) to a Double (8 bytes).
+// This whole situation also applies to floating point Singles.
 function SwapBytesFromDouble(aDouble: double): UInt64; register;
 type
   //enumeration used in variant record

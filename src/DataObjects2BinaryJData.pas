@@ -43,10 +43,11 @@ type
     procedure DecodeType(aType: byte; aDataObj: TDataObj); override;
   public
     class function FileExtension: string; override;
+    class function Name: string; override;
     class function Description: string; override;
     class function GetFileFilter: string; override;
     class function IsFileExtension(aStr: string): boolean; override;
-    class function ClipboardPriority: cardinal; override;
+    class function Priority: cardinal; override;
 
 //    procedure Decode(aDataObj: TDataObj); override;   No need to override as the ancestors implementation is sufficient and the Virtual DecodeType handles it.
     procedure Encode(aDataObj: TDataObj); override;
@@ -57,7 +58,7 @@ implementation
 
 { TJDataStreamer }
 
-class function TJDataStreamer.ClipboardPriority: cardinal;
+class function TJDataStreamer.Priority: cardinal;
 begin
   result := 40;
 end;
@@ -223,6 +224,11 @@ end;
 class function TJDataStreamer.IsFileExtension(aStr: string): boolean;
 begin
   result := SameText(aStr, '.bjd') or SameText(aStr, 'bjd');
+end;
+
+class function TJDataStreamer.Name: string;
+begin
+  result := 'Binary JData';
 end;
 
 initialization

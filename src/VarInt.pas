@@ -330,7 +330,7 @@ begin
     else
     begin
       // read the final (5th) byte, but we can only use 5 bits from it.  5*7=35 bits, so we only need 5 more bit5 from the 5th byte.
-      if lByte > $FFFFF then
+      if lByte > $1F then
         raise Exception.Create(strUnableToReadNumTooBig)
       else
         Value := Value or Uint32(lByte) shl 28;   // get the top 5 bits in place.

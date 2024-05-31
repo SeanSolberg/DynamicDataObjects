@@ -48,10 +48,11 @@ type
     constructor Create(aStream: TStream); override;
 
     class function FileExtension: string; override;
+    class function Name: string; override;
     class function Description: string; override;
     class function GetFileFilter: string; override;
     class function IsFileExtension(aStr: string): boolean; override;
-    class function ClipboardPriority: cardinal; override;
+    class function Priority: cardinal; override;
 
     procedure Decode(aDataObj: TDataObj); override;
     procedure Encode(aDataObj: TDataObj); override;
@@ -97,13 +98,18 @@ begin
 end;
 
 
+class function TICSStreamer.Name: string;
+begin
+  result := 'Internet Calendaring and Scheduling (iCalendar)';
+end;
+
 procedure TICSStreamer.ApplyOptionalParameters(aParams: TStrings);
 begin
   inherited;
   // no parameters yet so there's nothing to implement here.
 end;
 
-class function TICSStreamer.ClipboardPriority: cardinal;
+class function TICSStreamer.Priority: cardinal;
 begin
   result := 40;
 end;

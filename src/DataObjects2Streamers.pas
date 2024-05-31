@@ -53,6 +53,7 @@ type
     procedure Sort;
     function FindStreamerClassByFilenameExtension(aExtension: string): TDataObjStreamerClass;
     function FindStreamerClassByFilename(aFilename: string): TDataObjStreamerClass;
+    function FindStreamerClassByClassname(aClassname: string): TDataObjStreamerClass;
     function CreateStreamerByFilenameExtension(aExtension: string): TDataObjStreamerBase;
     function CreateStreamerByFilename(aFilename: string): TDataObjStreamerBase;
     function AllStreamersFileDialogFilters: string;
@@ -82,9 +83,13 @@ type
   public
     class function FileExtension: string; override;
     class function Description: string; override;
+    class function Name: string; override;
     class function GetFileFilter: string; override;
     class function IsFileExtension(aStr: string): boolean; override;
-    class function ClipboardPriority: cardinal; override;
+    class function Priority: Cardinal; override;
+
+
+//    class function ClipboardPriority: cardinal; override;
 
     class procedure GetParameterInfo(aParameterPurpose: TDataObjParameterPurposes; aStrings: TStrings); override;
     procedure ApplyOptionalParameters(aParams: TStrings); override;
@@ -251,10 +256,10 @@ end;
 
 { TDataObjStreamer }
 
-class function TDataObjStreamer.ClipboardPriority: cardinal;
+(*class function TDataObjStreamer.ClipboardPriority: cardinal;
 begin
   result := 1;    // highest priority
-end;
+end;  *)
 
 function TDataObjStreamer.Clone: TDataObjStreamerBase;
 begin
@@ -532,7 +537,7 @@ begin
       lStore.dataArray := TDataArray.Create;
       for i := 0 to lCount-1 do
       begin
-        lDataObj := TDataObj.Create;
+        lDataObj := TDataObj(TDataObj_CT190.Create);
         try
           DecodeInternal(lDataObj);     // Note:  Recursion happening here.  TODO. in the future, we should limit how far deep we can nest.
         except
@@ -549,7 +554,7 @@ begin
       for i := 0 to lCount-1 do
       begin
         lIndex := ReadUVarInt;
-        lDataObj := TDataObj.Create;
+        lDataObj := TDataObj(TDataObj_CT191.Create);
         try
           DecodeInternal(lDataObj);     // Note:  Recursion happening here.  TODO. in the future, we should limit how far deep we can nest.
         except
@@ -623,6 +628,16 @@ end;
 class function TDataObjStreamer.IsFileExtension(aStr: string): boolean;
 begin
   result := SameText(aStr, 'DataObj') or SameText(aStr, '.DataObj');
+end;
+
+class function TDataObjStreamer.Name: string;
+begin
+  result := 'DataObj';
+end;
+
+class function TDataObjStreamer.Priority: Cardinal;
+begin
+  result := 1;
 end;
 
 function TDataObjStreamer.SlotnameRefWriteCount: integer;
@@ -1053,6 +1068,22 @@ begin
     result := lSC.Create(nil);
 end;
 
+function TStreamerRegistry.FindStreamerClassByClassname( aClassname: string): TDataObjStreamerClass;
+var
+  i: integer;
+begin
+  result := nil;
+
+  for i := 0 to gStreamerRegistry.Count-1 do
+  begin
+    if SameText(gStreamerRegistry.Items[i].ClassName, aClassName) then
+    begin
+      result := gStreamerRegistry.Items[i];
+      break;
+    end;
+  end;
+end;
+
 function TStreamerRegistry.FindStreamerClassByFilename(aFilename: string): TDataObjStreamerClass;
 begin
   result := FindStreamerClassByFilenameExtension(ExtractFileExt(aFilename));
@@ -1083,7 +1114,7 @@ end;
 
 function TStreamerRegistryComparer.Compare(const Left, Right: TDataObjStreamerClass): Integer;
 begin
-  result := Integer(Left.ClipboardPriority) - Integer(right.ClipboardPriority);
+  result := Integer(Left.Priority) - Integer(right.Priority);
 end;
 
 initialization

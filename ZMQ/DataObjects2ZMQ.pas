@@ -193,7 +193,7 @@ var
   end;
 
 begin
-  fReceiveDDO:=TDataObj.create;
+  fReceiveDDO:=TDataObj(TDataObj_CT179.Create);
   fSubSocket:=fContext.Socket(stSub);
   try
     fSubSocket.Subscribe(SwapBytes(fSubscribeMessageType));                     // subscribe to all published messages if zero, otherwise just that message type.
@@ -253,7 +253,7 @@ begin
         lMessageType := word(aZMQMsg.first.data^);
         lMessageType := SwapBytes(lMessageType);
 
-        lDataObj:=TDataObj.Create;
+        lDataObj:=TDataObj(TDataObj_CT180.Create);
         lPointerStream := TPointerStream.Create(aZMQMsg.last.data, aZMQMsg.last.size,true);
         try
           fStreamer.Stream := lPointerStream;

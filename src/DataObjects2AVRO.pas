@@ -101,9 +101,11 @@ type
     destructor Destroy; override;
     class function FileExtension: string; override;
     class function Description: string; override;
+    class function Name: string; override;
+
     class function GetFileFilter: string; override;
     class function IsFileExtension(aStr: string): boolean; override;
-    class function ClipboardPriority: cardinal; override;
+    class function Priority: cardinal; override;
 
     procedure Decode(aDataObj: TDataObj); override;
     procedure Encode(aDataObj: TDataObj); override;
@@ -130,7 +132,12 @@ begin
 end;
 
 
-class function TAVROStreamer.ClipboardPriority: cardinal;
+class function TAVROStreamer.Name: string;
+begin
+  result := 'Apache AVRO';
+end;
+
+class function TAVROStreamer.Priority: cardinal;
 begin
   result := 40;
 end;
@@ -142,7 +149,7 @@ end;
 
 class function TAVROStreamer.Description: string;
 begin
-  result := 'AVRO (Apace AVRO).  https://avro.apache.org/';
+  result := 'Apache AVRO.  https://avro.apache.org/';
 end;
 
 destructor TAVROStreamer.Destroy;

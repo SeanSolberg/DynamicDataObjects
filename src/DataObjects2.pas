@@ -97,7 +97,7 @@ unit DataObjects2;
     TDataObj - This is the main object a user can instantiate to use and this one is the only one that should be instantiated by outside code.
                The other objects listed below are data container objects for working with specific types of data owned by TDataObj.
 
-    TDataFrame - contains a collection of child objects indexed by a slotname.  Similar to a document in BSON.
+    TDataFrame - contains a collection of child objects indexed by a slotname.  Similar to a document in BSON or an object in JSON notation.
 
     TDataArray - contains a collection of child objects that are in a collection ordered by an indexed array [0..n]
 
@@ -106,7 +106,7 @@ unit DataObjects2;
     TDataStringList - contains a collection of strings.  Note:  this is not quite the same thing as a string with carriage return/line feeds in it.  However, they are very, very similar.
                       It's basically a TStringList;
 
-    TDataBinary - contains binary data. By default, the implementation holds the data in TMemoryStream.  However, there may be provisions to have a reference to any other TStream descendant as well to avoid a copy of data in some cases.
+    TDataBinary - contains binary data. By default, the implementation holds the data in TMemoryStream. 
   }
 
   { Planned Serialization mechanisms
@@ -123,7 +123,7 @@ unit DataObjects2;
     ION - binary and text (json superset)
 
     Planned Internal Improvements
-    Finish all the details around the sparse array.
+    ------------------------------------------------------------------------------------
     Internal support for the WKB Geometry data type so that DDO can be fully serialized.
     Internal support for the Half Float (Float16)
     Internal support for the Extended Float
@@ -132,12 +132,13 @@ unit DataObjects2;
     Support JSON5 serialization
     Support YAML serialization
     Support the ability for TDataFrame to have an option for case-sensitive fieldnames.  This is needed for more correct support of JSON, although pascal object properties are case insensitive, so....
+    Support big numbers:  https://github.com/rvelthuis/DelphiBigNumbers
   }
 
 
 interface
 
-uses SysUtils, DateUtils, Generics.collections, Classes, VarInt, StreamCache, Rtti, typInfo, System.RTLConsts, System.NetEncoding
+uses SysUtils, DateUtils, Generics.collections, Classes, VarInt, StreamCache, Rtti, typInfo, System.RTLConsts, System.NetEncoding, System.StrUtils
 {$ifdef MSWINDOWS}
    ,windows
 {$endif};
@@ -394,10 +395,14 @@ type
 
   TDataObj = class;
 
+  TDataObjStreamerClass = class of TDataObjStreamerBase;
+  TGetClipboardPublishingCallbackProc = reference to procedure(aStreamerclass: TDataObjStreamerClass; aCaption: string; aClipboardVersion: integer);
+
   // This is the base class that all streamers must descend from.  It just defines the core abstract behavior for encoding and decoding to a descendant streamer's format.
-  TDataObjStreamerBase = class
+  TDataObjStreamerBase = class abstract
   private
     fOwnsStream: boolean;
+    fClipboardFormat: word;
     procedure setStream(const Value: TStream);
   protected
     fStream: TStream;   // reference only in most situations.   However, if you set OwnsStream to true, then when this object is freed, then fStream will be freed.
@@ -409,22 +414,29 @@ type
 
     class function FileExtension: string; virtual; abstract;
     class function Description: string; virtual; abstract;
+    class function Name: string; virtual; abstract;
     class procedure GetParameterInfo(aParameterPurpose: TDataObjParameterPurposes; aStrings: TStrings); virtual;  // Will fill aStrings with information about the optional parameters that the streamer may support.
     class function GetFileFilter: string; virtual; abstract;
     class function IsFileExtension(aStr: string): boolean; virtual;
-    class function ClipboardPriority: Cardinal; virtual; abstract;
-
-    class function GetClipboardFormatStr: string; virtual;
+    class function Priority: Cardinal; virtual; abstract;
+    class procedure GetClipboardPublishingFormats(aCallback: TGetClipboardPublishingCallbackProc); virtual;
+    procedure SetPreferencesByClipboardVersion(aClipboardVersion: integer); virtual;     // Descendents should return the clipboard format code for the given aClipboardVersion that each streamer can produce
+//    function GetClipboardFormatStr: string; virtual;
+//    function GetClipboardFormat: word; virtual;
 
     procedure Decode(aDataObj: TDataObj); virtual; abstract;
     procedure Encode(aDataobj: TDataObj); virtual; abstract;
+
+    // By default is just the same as Encode, but descendants have an chance to override to maybe put some framing into the serialization when going to a clipboard.
+    // will return the clipboard format for this clipboard encoding
+    procedure ClipboardEncode(aDataObj: TDataObj); virtual;
     procedure ApplyOptionalParameters(aParams: TStrings); overload; virtual;
     procedure ApplyOptionalParameters(aParams: String); overload;
 
     property Stream: TStream read fStream write setStream;
     property OwnsStream: boolean read fOwnsStream write fOwnsStream;
+    property ClipboardFormat: word read fClipboardFormat write fClipboardFormat;
   end;
-  TDataObjStreamerClass = class of TDataObjStreamerBase;
 
 
 
@@ -492,6 +504,7 @@ type
     function getHasAttributes: boolean;
     procedure setHasAttributes(const Value: boolean);
 
+    function GetObjByPath(ASlotPath: String; ACreateSlot: Boolean; aDelimeter: string): TDataObj;
   public
     destructor Destroy; override;
 
@@ -534,6 +547,24 @@ type
                          aDoNotSerializeDefaultValues: boolean = false; aSerializeEnumerationsAsIntegers: boolean = false);
 
     property Items[aKey: variant]: TDataObj read getItem; default;
+
+    {The xxxxSlotByPath methods below allow you to pass in a SlotPath string which is the full path of hierarchy to get to child items within
+     the container types that are supported by TDataObj such as a frame, array or sparse array.
+     By default, each \ character is the delimeter between the identies of items within a container.
+     Numbers wrapped in [] denote the index of an item in an array
+     Numbers wrapped in () denote the SlotIndex of an item in a sparse array.
+     All other identifiers are considered slotnames to get access to an item within a frame.
+     Example of getting a nested item with a path:
+       lDataObj.NewSlotByPath('Preferences\LayoutPrefs\Layouts\[0]\size');
+     is equivalent to
+       lDataObj.AsFrame.NewSlot('Preferences').AsFrame.newSlot('LayoutPrefs').AsFrame.newSlot('Layouts').AsArray.slots[0].AsFrame.newslot('size');
+     and is also equivalent to
+       lDataObj['Preferences']['LayoutPrefs']['Layout'][0]['size'];
+    }
+    function FindSlotByPath(const aSlotPath: string; out oDataObj: TDataObj): Boolean; overload;
+    function NewSlotByPath(const aSlotPath: string): TDataObj; overload;
+    function FindSlotByPath(const aSlotPath: string; out oDataObj: TDataObj; const aDelimeter: string): Boolean; overload;
+    function NewSlotByPath(const aSlotPath: string; const aDelimeter: string):TDataObj; overload;
 
     property AsBoolean: Boolean read getAsBoolean write setAsBoolean;
     property AsByte: Byte read getAsByte write setAsByte;
@@ -612,6 +643,214 @@ type
     procedure WriteToFile(aFilename: string; aStreamer: TDataObjStreamerBase); overload;
   end;
 
+{ClassTrack: TDataObj}
+{CT:TDataObj} TDataObj_CT0 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT1 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT2 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT3 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT4 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT5 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT6 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT7 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT8 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT9 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT10 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT11 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT12 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT13 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT14 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT15 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT16 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT17 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT18 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT19 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT20 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT21 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT22 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT23 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT24 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT25 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT26 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT27 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT28 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT29 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT30 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT31 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT32 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT33 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT34 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT35 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT36 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT37 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT38 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT39 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT40 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT41 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT42 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT43 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT44 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT45 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT46 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT47 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT48 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT49 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT50 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT51 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT52 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT53 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT54 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT55 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT56 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT57 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT58 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT59 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT60 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT61 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT62 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT63 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT64 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT65 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT66 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT67 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT68 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT69 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT70 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT71 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT72 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT73 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT74 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT75 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT76 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT77 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT78 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT79 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT80 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT81 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT82 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT83 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT84 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT85 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT86 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT87 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT88 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT89 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT90 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT91 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT92 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT93 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT94 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT95 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT96 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT97 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT98 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT99 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT100 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT101 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT102 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT103 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT104 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT105 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT106 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT107 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT108 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT109 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT110 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT111 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT112 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT113 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT114 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT115 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT116 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT117 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT118 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT119 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT120 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT121 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT122 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT123 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT124 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT125 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT126 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT127 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT128 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT129 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT130 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT131 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT132 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT133 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT134 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT135 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT136 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT137 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT138 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT139 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT140 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT141 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT142 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT143 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT144 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT145 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT146 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT147 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT148 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT149 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT150 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT151 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT152 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT153 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT154 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT155 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT156 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT157 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT158 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT159 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT160 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT161 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT162 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT163 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT164 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT165 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT166 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT167 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT168 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT169 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT170 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT171 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT172 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT173 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT174 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT175 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT176 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT177 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT178 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT179 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT180 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT181 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT182 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT183 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT184 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT185 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT186 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT187 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT188 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT189 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT190 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT191 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT192 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT193 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT194 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT195 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT196 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT197 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT198 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT199 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT200 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT201 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT202 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT203 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT204 = class(TDataObj);
+{CT:TDataObj} TDataObj_CT205 = class(TDataObj);
+
 {$ifDef cMakeMoreCompatibleWithOldDataObjects}
   TDataSlot = TDataObj;       // Just an alias for old code backward compatibility.
 {$endif}
@@ -687,6 +926,7 @@ type
     function getSlot(aIndex: integer): TDataObj;
     function FindSlotIndex(const aSlotName: string): integer;
     function GetItem(const aKey: string): TDataObj;
+    function GetObjByPath(ASlotPath: String; ACreateSlot: Boolean; aDelimeter: string): TDataObj;
   public
     constructor Create;
     destructor Destroy; override;
@@ -748,6 +988,7 @@ type
     procedure setItem(aIndex: Cardinal; const Value: TDataObj);
     procedure CheckIndexInRange(aIndex: integer); inline;    // will raise exception if aIndex is invalid
     procedure setCapacity(const aCapacity: Integer);
+    function GetObjByPath(ASlotPath: String; ACreateSlot: Boolean; aDelimeter: string): TDataObj;
   public
     constructor Create(aInitialCapacity: Integer = 0);
     destructor Destroy; override;
@@ -792,6 +1033,7 @@ type
   TDataSparseArray = class(TDataArray)
   private
     fIndexKeyList: TList<int64>;         // each "key" in the list is going to be an integer
+    function GetObjByPath(ASlotPath: String; ACreateSlot: Boolean; aDelimeter: string): TDataObj;
   public
     constructor Create;
     destructor Destroy; override;
@@ -800,7 +1042,7 @@ type
     function NewSlot(aSlotIndex: integer; aRaiseExceptionIfAlreadyExists: boolean = false): TDataObj;
     procedure AppendSlot(aSlotIndex: integer; aDataObj: TDataObj);
     function SlotByIndex(aSlotIndex: integer): TDataObj;     // generates an exception if the aSlotIndex is not found
-    function DeleteSlot(aSlotIndex: integer): boolean;       // returns true if the slot was found and delted.
+    function DeleteSlot(aSlotIndex: integer): boolean;       // returns true if the slot was found and deleted.
     function SlotIndex(aIndex: integer): integer;            // pass in the index into the collection (0..count-1) and get back the slot's indentifer index.
     procedure Clear;
     procedure CopyFrom(aSource: TDataSparseArray);
@@ -890,8 +1132,50 @@ begin
  end;
 
 
+function IsArrayPathPart(aPart: string): boolean; inline;
+const
+  cSlotPathArrayDelimiters: array[0..1] of Char = ('[', ']');
+begin
+  Result:=StartsStr(cSlotPathArrayDelimiters[0], aPart) and EndsStr(cSlotPathArrayDelimiters[1], aPart);
+end;
+
+function IsSparseArrayPathPart(aPart: string): boolean; inline;
+const
+  cSlotPathSparseArrayDelimiters: array[0..1] of Char = ('(', ')');
+begin
+  Result:=StartsStr(cSlotPathSparseArrayDelimiters[0], aPart) and EndsStr(cSlotPathSparseArrayDelimiters[1], aPart);
+end;
 
 
+function ExtractNextPathPart(var aSlotPath: String; out oSlotPath: string; aDelimeter: string): string;
+var
+  lSlotPath: String;
+  lDelimeterPos: Integer;
+
+  function ExcludeLeadingPathDelimiter(aStr: string): string;
+  begin
+    if StartsStr(aDelimeter, aStr) then
+      result := copy(aStr, 2)
+    else
+      result := aStr;
+  end;
+begin
+  //Remove the leading delimiter if it exists
+  lSlotPath:=ExcludeLeadingPathDelimiter(ASlotPath);
+
+  //Find the delimiter if it exists
+  lDelimeterPos := Pos(aDelimeter, lSlotPath);
+
+  if lDelimeterPos>0 then
+  begin
+    result:=Copy(lSlotPath, 1, lDelimeterPos - 1);
+    oSlotPath:=Copy(lSlotPath, lDelimeterPos + 1);
+  end else
+  begin
+    result:=lSlotPath;
+    oSlotPath:='';
+  end;
+end;
 
 function TDataStore.getDataArray: TDataArray;
 begin
@@ -1765,6 +2049,18 @@ begin
   inherited;
 end;
 
+function TDataObj.FindSlotByPath(const aSlotPath: string; out oDataObj: TDataObj; const aDelimeter: string): Boolean;
+begin
+  oDataObj := GetObjByPath(aSlotPath, false, aDelimeter);   // can return nil.
+  result := assigned(oDataObj);
+end;
+
+function TDataObj.FindSlotByPath(const aSlotPath: string; out oDataObj: TDataObj): boolean;
+begin
+  oDataObj := GetObjByPath(aSlotPath, false, '\');
+  result := assigned(oDataObj);
+end;
+
 function TDataObj.getAsArray: TDataArray;
 var
   i: Integer;
@@ -2331,6 +2627,30 @@ begin
   end;
 end;
 
+function TDataObj.GetObjByPath(ASlotPath: String; ACreateSlot: Boolean; aDelimeter: string): TDataObj;
+var
+  lSlotName: string;
+  lNewPath: string;
+begin
+  //We need to know whether the next part is an array or not
+  lSlotName := ExtractNextPathPart(ASlotPath, lNewPath, aDelimeter);
+  //First check!  A blank slot name means it wants this data object
+  if lSlotName='' then
+  begin
+    Result:=Self;
+  end
+  else
+  begin
+    // Change.  go By DataObject Type first to handle array or sparse array.
+    if IsArrayPathPart(lSlotName) then
+      Result:=AsArray.GetObjByPath(ASlotPath, ACreateSlot, aDelimeter)
+    else if IsSparseArrayPathPart(lSlotName) then
+      Result:=getAsSparseArray.GetObjByPath(ASlotPath, ACreateSlot, aDelimeter)
+    else
+      Result:=AsFrame.GetObjByPath(ASlotPath, ACreateSlot, aDelimeter);
+  end;
+end;
+
 function TDataObj.DataTypeCanHaveAChildObject: boolean;
 begin
   result := DataTypeIsAContainer or (fDataType.Code = cDataTypeTag);
@@ -2410,6 +2730,16 @@ begin
   finally
     lStreamer.Free;
   end;
+end;
+
+function TDataObj.NewSlotByPath(const aSlotPath, aDelimeter: string): TDataObj;
+begin
+  result := GetObjByPath(aSlotPath, true, aDelimeter);
+end;
+
+function TDataObj.NewSlotByPath(const aSlotPath: string): TDataObj;
+begin
+  result := GetObjByPath(aSlotPath, true, '\');
 end;
 
 function TDataObj.PrintToString: string;
@@ -2504,7 +2834,7 @@ begin
       begin
         if i=1 then
           lSpaces := StringOfChar(' ',aIndent);
-        aStringBuilder.Append(lSpaces+'0:');
+        aStringBuilder.Append(lSpaces+IntToStr(fStore.DataSparseArray.SlotIndex(i))+':');
         fStore.DataSparseArray.items[i].PrintToStringBuilder(aStringBuilder, aIndent);
       end;
       lSpaces := StringOfChar(' ',aIndent-2);
@@ -3000,6 +3330,24 @@ begin
   result := NewSlot(aKey);
 end;
 
+function TDataFrame.GetObjByPath(ASlotPath: String; ACreateSlot: Boolean; aDelimeter: string): TDataObj;
+var
+  lSlotName: string;
+  lNewPath: string;
+  lObj: TDataObj;
+begin
+  Result:=nil;
+  lSlotname := ExtractNextPathPart(ASlotPath, lNewPath, aDelimeter);
+
+  if ACreateSlot then
+    lObj:=NewSlot(lSlotName)
+  else
+    lObj:=FindSlot(lSlotName);  // could return nil.
+
+  if Assigned(lObj) then
+    Result:=lObj.GetObjByPath(lNewPath, ACreateSlot, aDelimeter);
+end;
+
 function TDataFrame.getSlot(aIndex: integer): TDataObj;
 begin
   result := TDataobj(fSlotList.Objects[aIndex]);
@@ -3156,7 +3504,13 @@ end;
 
 procedure TDataSparseArray.AppendSlot(aSlotIndex: integer; aDataObj: TDataObj);
 begin
-  //FINISH - what does append mean?  make a copy?  Take Over Ownership?
+  // this will add a new slot as long as aSlotName is not already in this frame.  If it is, then the previous slot wil be removed first.
+  DeleteSlot(aSlotIndex);
+  if assigned(aDataObj) then
+  begin
+    fIndexKeyList.Add(aSlotIndex);
+    add(aDataObj);
+  end;
 end;
 
 procedure TDataSparseArray.Clear;
@@ -3182,9 +3536,33 @@ begin
 end;
 
 function TDataSparseArray.DeleteSlot(aSlotIndex: integer): boolean;
+var
+  lObj: TDataObj;
+  lIndex: integer;
+  lSize: NativeInt;
 begin
-  //Finish
-  result := false;
+  lIndex := fIndexKeyList.IndexOf(aSlotIndex);
+  if (lIndex>=0) and (lIndex<count) then
+  begin
+  {$R-}   // can turn off range checking because it was already checked.
+
+    // First, free the found item within the data list.
+    lObj := fItems[lIndex];
+    lObj.Free;
+    lSize := SizeOf(pointer)*(fCount-lIndex-1);
+    if lSize>0 then
+      move(fItems[lIndex+1], fItems[lIndex], lSize);
+    dec(fCount);
+
+    // then, remove the slotIndex
+    fIndexKeyList.Delete(lIndex);
+    result := true;
+  {$R+}
+  end
+  else
+  begin
+    result := false;
+  end;
 end;
 
 destructor TDataSparseArray.Destroy;
@@ -3215,24 +3593,57 @@ end;
 
 function TDataSparseArray.FindSlot(aSlotIndex: integer; var oSlot: TDataObj): boolean;
 begin
-  //Finish
-  result := false;
+  oSlot := FindSlot(aSlotIndex);
+  result := Assigned(oSlot);
+end;
+
+function TDataSparseArray.GetObjByPath(ASlotPath: String; ACreateSlot: Boolean; aDelimeter: string): TDataObj;
+var
+  lSlotName: string;
+  lNewPath: string;
+  lSlotIdx: Integer;
+  lObj: TDataObj;
+begin
+  Result:=nil;
+  lSlotname := ExtractNextPathPart(ASlotPath, lNewPath, aDelimeter);
+
+  //Try to extract the slot index...
+  //If we do not have a valid [nnn] slot index, then we will return nil.
+  lSlotIdx:=-1;   // -1 means not found.
+  if IsSparseArrayPathPart(lSlotName) then
+  begin
+    if TryStrToInt(Copy(lSlotName, 2, Length(lSlotName)-2), lSlotIdx) then
+    begin
+      // lSlotIdx has been found so we can use it.
+      // Create slots if we need to and if ACreateSlot is true
+      if aCreateSlot then
+        lObj := self.NewSlot(lSlotIdx)
+      else
+        lObj := self.FindSlot(lSlotIdx);   // can return nil.
+
+      if Assigned(lObj) then
+        Result:=lObj.GetObjByPath(lNewPath, ACreateSlot, aDelimeter);
+    end;
+  end;
 end;
 
 function TDataSparseArray.FindSlot(aSlotIndex: integer): TDataObj;
+var
+  lIndex: integer;
 begin
   result := nil;
-  //Finish
+  lIndex := fIndexKeyList.IndexOf(aSlotIndex);
+  if (lIndex>=0) and (lIndex<count) then
+    result := self.Items[lIndex];
 end;
 
 function TDataSparseArray.NewSlot(aSlotIndex: integer; aRaiseExceptionIfAlreadyExists: boolean = false): TDataObj;
 begin
-  // not tested
-  //FINISH - need to do a findSlot First.
   result := FindSlot(aSlotIndex);
   if not assigned(result) then
   begin
     result := TDataObj.Create;
+    fIndexKeyList.Add(aSlotIndex);
     add(result);
   end
   else if aRaiseExceptionIfAlreadyExists then
@@ -3243,14 +3654,16 @@ end;
 
 function TDataSparseArray.SlotByIndex(aSlotIndex: integer): TDataObj;
 begin
-  //Finish
-  result := nil;
+  result := FindSlot(aSlotIndex);
+  if not assigned(result) then
+  begin
+    raise EDataObj.Create('Slot "'+IntToStr(aSlotIndex)+'" not found.');
+  end;
 end;
 
 function TDataSparseArray.SlotIndex(aIndex: integer): integer;
 begin
-  //Finish
-  result := 0;
+  result := fIndexKeyList[aIndex];
 end;
 
 { TDataArray }
@@ -3350,7 +3763,7 @@ begin
 {$R-}   // can turn off range checking because it was already checked.
   lObj := fItems[aIndex];
   lObj.Free;
-  lSize := SizeOf(TDataObj)*(fCount-aIndex-1);
+  lSize := SizeOf(pointer)*(fCount-aIndex-1);
   if lSize>0 then
     move(fItems[aIndex+1], fItems[aIndex], lSize);
   dec(fCount);
@@ -3510,6 +3923,39 @@ end;
 function TDataArray.getItem(aIndex: Cardinal): TDataObj;
 begin
   result := fItems[aIndex];
+end;
+
+function TDataArray.GetObjByPath(ASlotPath: String; ACreateSlot: Boolean; aDelimeter: string): TDataObj;
+var
+  lSlotName: string;
+  lNewPath: string;
+  lSlotIdx: Integer;
+  lObj: TDataObj;
+begin
+  Result:=nil;
+  lObj:=nil;
+  lSlotname := ExtractNextPathPart(ASlotPath, lNewPath, aDelimeter);
+
+  //Try to extract the slot index...
+  //If we do not have a valid [nnn] slot index, then we will return nil.
+  lSlotIdx:=-1;   // -1 means not found.
+  if IsArrayPathPart(lSlotName) then
+  begin
+    if TryStrToInt(Copy(lSlotName, 2, Length(lSlotName)-2), lSlotIdx) then
+    begin
+      // lSlotIdx has been found so we can use it.
+      //Create slots if we need to and if ACreateSlot is true
+      if ACreateSlot then
+      begin
+        while Count<=lSlotIdx do NewSlot;      // If we are asking for slot [10], but we only have 5, then we need to create 6 more from index 5 to 10
+      end;
+
+      if lSlotIdx<Count then
+        lObj:=Slots[lSlotIdx];
+      if Assigned(lObj) then
+        Result:=lObj.GetObjByPath(lNewPath, ACreateSlot, aDelimeter); // Danger Will Robinson...Recursion approaching.
+    end;
+  end;
 end;
 
 function TDataArray.getSlot(aIndex: integer): TDataObj;
@@ -3694,6 +4140,11 @@ begin
   end;
 end;
 
+procedure TDataObjStreamerBase.ClipboardEncode(aDataObj: TDataObj);
+begin
+  Encode(aDataObj);
+end;
+
 function TDataObjStreamerBase.Clone: TDataObjStreamerBase;
 begin
   if assigned(self) then
@@ -3720,14 +4171,35 @@ begin
   inherited;
 end;
 
-class function TDataObjStreamerBase.GetClipboardFormatStr: string;
+(*function TDataObjStreamerBase.GetClipboardFormat: word;
+begin
+  result := 0;  // Means that there isn't a specific clipboard format for this, so one can be made from the ClipboardFormatStr.
+end;
+
+function TDataObjStreamerBase.GetClipboardFormatStr: string;
 begin
   result := 'CF_'+self.ClassName;    // base class implements this pattern for all descendants, but each descendant is free to override and do something else.
+end;  *)
+
+class procedure TDataObjStreamerBase.GetClipboardPublishingFormats(aCallback: TGetClipboardPublishingCallbackProc);
+begin
+  // base class will callback with one call to represent the descendant class as having one default clipboard format.
+  // for this situation, the clipboard
+  aCallback(self, Self.Name, 0);
 end;
 
 class function TDataObjStreamerBase.IsFileExtension(aStr: string): boolean;
 begin
   result := SameText(aStr, FileExtension) or SameText(aStr, '.'+FileExtension);
+end;
+
+procedure TDataObjStreamerBase.SetPreferencesByClipboardVersion(aClipboardVersion: integer);
+begin
+  // This base class will setup a default Clipboard Version for each descendant class based on the classname.  For this base class operation, aClipboardVersion is irrevelant
+  // as we just implement one clipboard format for the entire descendant class.
+  // Descendents can choose to override if needed and should return the clipboard format code for the given aClipboardVersion that each streamer can produce
+  // see https://learn.microsoft.com/en-us/windows/win32/dataxchg/standard-clipboard-formats
+  fClipboardFormat := RegisterClipboardFormat(PWideChar('CF_'+self.ClassName));
 end;
 
 procedure TDataObjStreamerBase.setStream(const Value: TStream);

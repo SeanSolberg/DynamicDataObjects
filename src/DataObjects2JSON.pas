@@ -37,7 +37,7 @@ unit DataObjects2JSON;
 
 interface
 
-uses DataObjects2, DataObjects2Streamers, SysUtils, Classes, DataObjects2Utils;
+uses DataObjects2, DataObjects2Streamers, SysUtils, Classes, DataObjects2Utils, windows;
 
 type
   TJsonStyle = (cJsonTight, cJsonHumanReadable);
@@ -137,11 +137,16 @@ type
     destructor Destroy; override;
 
     class function FileExtension: string; override;
+    class function Name: string; override;
     class function Description: string; override;
     class procedure GetParameterInfo(aParameterPurpose: TDataObjParameterPurposes; aStrings: TStrings); override;
     class function GetFileFilter: string; override;
     class function IsFileExtension(aStr: string): boolean; override;
-    class function ClipboardPriority: cardinal; override;
+    class function Priority: cardinal; override;
+    class procedure GetClipboardPublishingFormats(aCallback: TGetClipboardPublishingCallbackProc); override;
+    procedure SetPreferencesByClipboardVersion(aClipboardVersion: integer); override;
+//    function GetClipboardFormat: word; override;
+
 
     // Parse the JSON from the attached Stream or from the JSON string if there is not Stream attached and put the results into aDataObj
     procedure Decode(aDataObj: TDataObj); override;
@@ -149,6 +154,7 @@ type
     // Produce JSON from the aDataObj and put the results into the JSON property using the formatting options defined by Style, Indention, etc.
     // Also put the results into the attached Stream if it is not nil according to the encoding defined in the Encoding property and the IncludeEncodingPreamble property.
     procedure Encode(aDataObj: TDataObj); override;
+    procedure ClipboardEncode(aDataObj: TDataObj); override;
     procedure ApplyOptionalParameters(aParams: TStrings); override;
 
     property Style: TJsonStyle read fStyle write fStyle;
@@ -1495,7 +1501,7 @@ end;
 
 class function TJsonStreamer.CreateDataObjFromJSON(const aJson: string): TDataObj;
 begin
-  result := TDataObj.Create;
+  result := TDataObj(TDataObj_CT188.Create);
   try
     JsonToDataObj(aJSON, result);
   except
@@ -1832,7 +1838,7 @@ begin
     cDataTypeObject:
     begin
       // FINISH - Objects are basically just serialized the same as a frame, so maybe we can generate the frame and then JSON that frame.
-      lTempDDO:=TDataObj.create;
+      lTempDDO:=TDataObj(TDataObj_CT189.Create);
       try
 //        FINISH
 //        lTempDDO.AsObject := AsObject;   // Hmmm, what about freeing.  Is this just a ref?
@@ -1984,6 +1990,60 @@ begin
   end;
 end;
 
+class function TJsonStreamer.Name: string;
+begin
+  result := 'JSON';
+end;
+
+(*function TJsonStreamer.GetClipboardFormat: word;
+begin
+  // for JSON, we can use it as the "Text" format.
+  if self.Encoding.ClassType = TUnicodeEncoding then
+  begin
+    result := CF_UNICODETEXT;
+  end
+  else
+  begin
+    result := CF_TEXT;
+  end;
+end; *)
+
+procedure TJsonStreamer.SetPreferencesByClipboardVersion(aClipboardVersion: integer);
+begin
+  case aClipboardVersion of
+    0: begin
+      self.fStyle := TJsonStyle.cJsonTight;
+      SetEncoding(TEncoding.Unicode);
+      ClipboardFormat := CF_UNICODETEXT;
+    end;
+    1: begin
+      self.fStyle := TJsonStyle.cJsonTight;
+      SetEncoding(TEncoding.ASCII);
+      ClipboardFormat := CF_TEXT;
+    end;
+    2: begin
+      self.fStyle := TJsonStyle.cJsonHumanReadable;
+      SetEncoding(TEncoding.Unicode);
+      ClipboardFormat := CF_UNICODETEXT;
+    end;
+    3: begin
+      self.fStyle := TJsonStyle.cJsonHumanReadable;
+      SetEncoding(TEncoding.ASCII);
+      ClipboardFormat := CF_TEXT;
+    end;
+  end;
+end;
+
+class procedure TJsonStreamer.GetClipboardPublishingFormats(aCallback: TGetClipboardPublishingCallbackProc);
+begin
+  // we can call back with multiple versions on how we want to serialize to the clipboard.
+  // Each version corresponds to the setup of a serializer in the SetPreferencesByClipboardVersion method
+  aCallback(self, 'JSON - Tight Format, UNICODE', 0);
+  aCallback(self, 'JSON - Tight Format, ASCII', 1);
+  aCallback(self, 'JSON - Human Readable Format, UNICODE', 2);
+  aCallback(self, 'JSON - Human Readable Format, ASCII', 3);
+end;
+
 class function TJsonStreamer.GetFileFilter: string;
 begin
   result := 'JSON Files (*.json, *.txt)|*.json;*.txt';
@@ -2056,9 +2116,19 @@ begin
 
 end;
 
-class function TJsonStreamer.ClipboardPriority: cardinal;
+class function TJsonStreamer.Priority: cardinal;
 begin
   result := 100;
+end;
+
+procedure TJsonStreamer.ClipboardEncode(aDataObj: TDataObj);
+var
+  lBytes: TBytes;
+begin
+  inherited;  // start with the default encoding
+  // depending on the encoding, we are either writing a carriage return-line feed as 2 bytes or 4 bytes.
+  lBytes := fEncoding.GetBytes(#13+#10);
+  fStream.write(lBytes, length(lBytes));
 end;
 
 function TJsonStreamer.Clone: TDataObjStreamerBase;

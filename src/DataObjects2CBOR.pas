@@ -130,10 +130,11 @@ Tag	Data Item	Semantics	Reference
 
   public
     class function FileExtension: string; override;
+    class function Name: string; override;
     class function Description: string; override;
     class function GetFileFilter: string; override;
     class function IsFileExtension(aStr: string): boolean; override;
-    class function ClipboardPriority: cardinal; override;
+    class function Priority: cardinal; override;
 
     procedure Decode(aDataObj: TDataObj); override;
     procedure Encode(aDataObj: TDataObj); override;
@@ -164,7 +165,6 @@ resourceString
 
 procedure WriteTypeAndNumber(aStream: TStream; aMajorType: byte; aCount: UInt32); overload;
 var
-  lUInt32: cardinal;
   lBuffer: array[0..4] of byte;
 begin
   //Deals with positive numbers
@@ -747,6 +747,11 @@ begin
   result := SameText(aStr, '.cbor') or SameText(aStr, 'cbor');
 end;
 
+class function TCBORStreamer.Name: string;
+begin
+  result := 'Compact Binary Object Representation';
+end;
+
 procedure TCBORStreamer.Encode(aDataObj: TDataObj);
 var
   i: Integer;
@@ -937,7 +942,7 @@ begin
 end;
 
 
-class function TCBORStreamer.ClipboardPriority: cardinal;
+class function TCBORStreamer.Priority: cardinal;
 begin
   result := 20;
 end;

@@ -47,9 +47,10 @@ type
   public
     class function FileExtension: string; override;
     class function Description: string; override;
+    class function Name: string; override;
     class function GetFileFilter: string; override;
     class function IsFileExtension(aStr: string): boolean; override;
-    class function ClipboardPriority: cardinal; override;
+    class function Priority: cardinal; override;
 
     procedure Decode(aDataObj: TDataObj); override;
     procedure Encode(aDataObj: TDataObj); override;
@@ -75,12 +76,15 @@ begin
   result := SameText(aStr, '.ubj') or SameText(aStr, 'ubj');
 end;
 
+class function TUBJSONStreamer.Name: string;
+begin
+  result := 'Universal Binary JSON';
+end;
 
-class function TUBJSONStreamer.ClipboardPriority: cardinal;
+class function TUBJSONStreamer.Priority: cardinal;
 begin
   result := 40;
 end;
-
 
 procedure TUBJSONStreamer.DoRead(var Buffer; Count: LongInt);
 begin
