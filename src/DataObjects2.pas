@@ -1316,21 +1316,19 @@ begin
             result := true;
           end;
           cDataTypeByte: begin
-            aValue.FromOrdinal(aValue.TypeInfo, aDataObj.AsByte);
+            aValue := TValue.FromOrdinal(aValue.TypeInfo, aDataObj.AsByte);
             result := true;
           end;
           cDataTypeInt32: begin
-            aValue.FromOrdinal(aValue.TypeInfo, aDataObj.AsInt32);
+            aValue := TValue.FromOrdinal(aValue.TypeInfo, aDataObj.AsInt32);
             result := true;
           end;
           cDataTypeInt64: begin
-            aValue.FromOrdinal(aValue.TypeInfo, aDataObj.AsInt64);
+            aValue := TValue.FromOrdinal(aValue.TypeInfo, aDataObj.AsInt64);
             result := true;
           end;
           cDataTypeString: begin
-            aValue.FromOrdinal(aValue.TypeInfo, GetEnumValue(aValue.TypeInfo, aDataObj.AsString));
-//            aValue := GetEnumValue(aValue.TypeInfo, aDataObj.AsString);
-//            aRttiProp.SetValue(aObj, TValue.FromOrdinal(lValue.TypeInfo, GetEnumValue(lValue.TypeInfo, aDataObj.AsString)));
+            aValue := TValue.FromOrdinal(aValue.TypeInfo, GetEnumValue(aValue.TypeInfo, aDataObj.AsString));
             result := true;
           end;
           cDataTypeTag: begin
