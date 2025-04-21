@@ -38,6 +38,7 @@ type
   TClipboardItem = class(TPersistent)
   private
     {private declarations}
+    fParentDataObj: TdataObj;
     fDataObj: TDataObj;
     fSlotName: String;
   public
@@ -45,22 +46,34 @@ type
     constructor Create;
     destructor Destroy; override;
     property DataObj: TDataObj read fDataObj;
+    property ParentDataObj: TDataObj read fParentDataObj write fParentDataObj;
   published
     {published properties}
     property SlotName: String read fSlotName write fSlotName;  //Does not apply when this is an element of an array
   end;
 
+
+
+  // The purpose of this object is to put one or more selected dataObjects into the clipboard.   Note that many different dataObjects can be selected to put into the clipboard at once,
+  // different serializations can be used such as DataObj serialization or JSON serialization.   Some serializations such as JSON may have formatting preferences such as tight JSON
+  // or human readable JSON.   Some can be put into the clipboard in Text form (Unicode and/or ascii), and some are only binary in nature.
+  // Each object put into the clipboard has an associated SlotName so that a pasting operation from the clipboard may take in the slotname too.
+  // SO, we are putting a special MetaData object onto the clipboard that can have this metadata shared to a receiver of the clipboard pasting that might understand it.
   TDataObjClipboard = class(TObjectList<TClipboardItem>)
   private
-    procedure CopyToClipboardWithStreamer(aStreamer: TDataObjStreamerBase);
     procedure CopyFromClipboardWithStreamer(aStreamer: TDataObjStreamerBase);
+    function AddDataObj(ASlotName: String; ADataObj: TDataObj): TClipboardItem;
 
   public
     {public declarations}
-    function AddDataObj(ASlotName: String; ADataObj: TDataObj): TClipboardItem;
+    function AddDataObjFrameItem(aParentDataObj: TDataObj; aSlotName: String; aDataObj: TDataObj): TClipboardItem;
+    function AddDataObjArrayItem(aParentDataObj: TDataObj; aDataObj: TDataObj): TClipboardItem;
+    function AddDataObjSparseArrayItem(aParentDataObj: TDataObj; aIndex: integer; aDataObj: TDataObj): TClipboardItem;
 
     // This will copy to the clipboard using all of the registered streaming formats.
     procedure CopyToClipboard;
+
+    procedure CopyToClipboardWithStreamer(aStreamer: TDataObjStreamerBase);
 
     // This will copy from the clipboard and it will iterate through the registered formats in a prioritized way choosing the first one that it finds that is possible.
     procedure CopyFromClipboard;
@@ -81,12 +94,31 @@ resourcestring
 
 { TDataObjClipboard }
 
-function TDataObjClipboard.AddDataObj(ASlotName: String; ADataObj: TDataObj): TClipboardItem;
+function TDataObjClipboard.AddDataObj(aSlotName: String; aDataObj: TDataObj): TClipboardItem;
 begin
   Result:=TClipboardItem.create;
   Result.SlotName:=ASlotName;
   Result.DataObj.CopyFrom(ADataObj);
   add(Result);
+end;
+
+function TDataObjClipboard.AddDataObjFrameItem(aParentDataObj: TDataObj; aSlotName: String; aDataObj: TDataObj): TClipboardItem;
+begin
+  Result:=TClipboardItem.create;
+  Result.ParentDataObj := aParentDataObj;
+  Result.SlotName:=ASlotName;
+  Result.DataObj.CopyFrom(ADataObj);
+  add(Result);
+end;
+
+function TDataObjClipboard.AddDataObjArrayItem(aParentDataObj, aDataObj: TDataObj): TClipboardItem;
+begin
+
+end;
+
+function TDataObjClipboard.AddDataObjSparseArrayItem(aParentDataObj: TDataObj; aIndex: integer; aDataObj: TDataObj): TClipboardItem;
+begin
+
 end;
 
 
@@ -108,7 +140,9 @@ begin
     begin
       lStreamer := gStreamerRegistry.Items[i].Create(nil);  // create a streamer with default streaming properties if that streamer has configurable properties.
       try
-        CopyToClipboardWithStreamer(lStreamer);
+        try
+          CopyToClipboardWithStreamer(lStreamer);   // we trap all exceptions because some of them may have restrictions on what it can produce but we don't want it to skip out on the others.
+        except end;
       finally
         lStreamer.Free;
       end;
@@ -122,53 +156,96 @@ end;
 procedure TDataObjClipboard.CopyToClipboardWithStreamer(aStreamer: TDataObjStreamerBase);
 var
   i: integer;
-  lContainer: TDataObj;
-  lContainerFrame: TDataFrame;
-  lMem: TMemoryStream;
+  lIndex: TDataObj;
+  lIndexFrame: TDataFrame;
+  lIndexMem: TMemoryStream;
+  lContentMem: TMemoryStream;
+  lStartSize: Int64;
+  lClipboardFormat: word;
 
-  lGlobalHandle: THandle;
-  lGlobalPointer: Pointer;
-  lFormat: word;
-begin
-  lFormat := RegisterClipboardFormat(PWideChar(aStreamer.GetClipboardFormatStr));
-  if lFormat = 0 then
-    raise exception.Create(format(StrDataObjectStreamerNoFormat,[aStreamer.classname]));
-
-  //Save the collection of copied DataObjects and their slotnames to a chunk of memory in the given format using the given streamer
-  lMem:=TMemoryStream.Create;
-
-  // So we can handle having multiple selected slots in the clipboard, we are going to make a particularily structured dataObject that holds
-  // the selected data objects in one container dataObject.  Then, we will stream that one data object to the clipboard memory.
-  lContainer:=TDataObj.Create;
-  try
-    lContainerFrame := lContainer.AsFrame;
-
-    //first, put our parts into the container DataObj
-    for i:=0 to (Count-1) do
-    begin
-      lContainerFrame.NewSlot(Items[i].fSlotName).CopyFrom(Items[i].fDataObj);
-    end;
-
-    aStreamer.Stream := lMem;                 // link this streamer to the memStream that we are using for the clipboard.
-    aStreamer.Encode(lContainer);
-
+  procedure WriteStreamToClipboard(aStream: TStream; aFormat: word);
+  var
+    lGlobalHandle: THandle;
+    lGlobalPointer: Pointer;
+  begin
     // Allocate the memory with a global lock
-    lGlobalHandle := GlobalAlloc(GMEM_MOVEABLE, lMem.Size);
-
+    lGlobalHandle := GlobalAlloc(GMEM_MOVEABLE, aStream.Size);
     //Lock the memory
     lGlobalPointer := GlobalLock(lGlobalHandle);    { Lock the allocated memory }
+    try
+      aStream.Seek(0, soFromBeginning);
+      aStream.Read(lGlobalPointer^, aStream.Size);       // copy our memory stream to the globally allocated memory that will go to the clipboard.
 
-    lMem.Seek(0, soFromBeginning);
-    lMem.Read(lGlobalPointer^, lMem.Size);          // copy our memory stream to the globally allocated memory that will go to the clipboard.
+      // Now apply this global memory to the clipboard.   It is expected that the caller already has opened the clipboard.
+      Clipboard.SetAsHandle(aFormat, lGlobalHandle);  { Copy to clipboard }
+    finally
+      //unlock the allocate memory. But don't free it, it will be used by the clipboard
+      GlobalUnlock(lGlobalHandle);
+    end;
+  end;
 
-    // Now apply this global memory to the clipboard.   It is expected that the caller already has opened the clipboard.
-    Clipboard.SetAsHandle(lFormat, lGlobalHandle);  { Copy to clipboard }
+begin
+  // To support having multiple dataObject items in a clipboard, we produce a DataObjectEditor clipboard type that has an
+  // index to the actual dataObject serialization payloads.
+  // This index is simply one dataObject serialization of that same serialization type that contains the information needed for each item in the clipboard format such as the caption and the size.
+  // Each dataObject stream serialization has each of the serialization payloads put into the clipboard data stacked one after the other and the size of each one is told to the
+  // receiver through the index
+  // The Index portion is written as a separate Serialization under it's own clipboard format ID and it is currently formatted as follows:
+  //  [caption: <text caption of the dataObject that we copied>, size: <integer>]
+  // Note that this allows for expandability in the future as we could serialize more attributes in this index.
+  // the number of items in this index denotes the number of serialization payloads that will be in the associated payload clipboard format
+  // For text and binary types of serializations, each items size helps the receiver decode on the proper byte boundary
+  // For text serializations where the receiver is another app that can take in text, that app will see the payload as one block of continuous text that may or may not have
+  // crlf in between the individual items put into the clipboard.
+  //example
+  // [{caption: "Devices", size: 1234},
+  //  {caption: "DeviceTypes", size: 4567}]
 
-    //unlock the allocate memory. But don't free it, it will be used by the clipboard
-    GlobalUnlock(lGlobalHandle);
+
+  //NOTE:  If ALL of the items selected to be put into the clipboard come from the same parent (all items in the same array, or all slots in the same frame),
+  //       Then we are going to merge all these items into a similar parent item and put them to the clipboard as one item in the parent and not individual items.
+
+
+
+
+
+
+  Clipboard.Open;
+  try
+    //Save the collection of copied DataObjects and their slotnames to a chunk of memory in the given format using the given streamer
+    lIndexMem:=TMemoryStream.Create;
+    lContentMem:=TMemoryStream.create;
+    lIndex:=TDataObj.Create;
+    try
+    // So we can handle having multiple selected slots in the clipboard, we are going to make a particularily structured dataObject that holds
+    // the selected data objects in one container dataObject.  Then, we will stream that one data object to the clipboard memory.
+      aStreamer.Stream := lContentMem;                 // link this streamer to the memStream that we are using for the clipboard.
+
+      //put our parts into the content memory stream and build our index along the way.
+      for i:=0 to (Count-1) do
+      begin
+        aStreamer.ClipboardEncode(items[i].fDataObj);
+
+        lStartSize := lContentMem.size;
+        lIndexFrame := lIndex.AsFrame.newSlot('Items').AsArray.NewSlot.AsFrame;
+        lIndexFrame.newSlot('caption').AsString := Items[i].fSlotName;
+        lIndexFrame.newSlot('size').AsInt64 := lContentMem.Size - lStartSize;   // give the index the number of bytes of just this item.
+      end;
+
+      // Now that all our parts are serialized into the content memory, we need to write two Formats to the clipboard, the content and the index.
+      WriteStreamToclipboard(lContentMem, aStreamer.ClipboardFormat);
+
+      aStreamer.Stream := lIndexMem;
+      aStreamer.Encode(lIndex);
+      lClipboardFormat := RegisterClipboardFormat(PWideChar('CF_DataObjectClipboardMeta'));
+      WriteStreamToClipboard(lIndexMem, lClipboardFormat);
+    finally
+      lIndex.free;
+      lContentMem.Free;
+      lIndexMem.Free;
+    end;
   finally
-    lContainer.Free;
-    lMem.Free;
+    Clipboard.Close;
   end;
 end;
 
@@ -210,7 +287,8 @@ var
   lGlobalPointer: Pointer;
   i: Integer;
 begin
-  lFormat := RegisterClipboardFormat(PWideChar(aStreamer.GetClipboardFormatStr));
+(* FINISH - MUST RESTORE REFACTORING THIS
+  lFormat := RegisterClipboardFormat(PWideChar(aStreamer.GetClipboardFormatStr));  *)
   if lFormat = 0 then
     raise exception.Create(format(StrDataObjectStreamerNoFormat,[aStreamer.classname]));
 

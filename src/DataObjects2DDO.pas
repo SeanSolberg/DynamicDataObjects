@@ -41,16 +41,19 @@ interface
 uses classes, DataObjects2, DataObjects2Streamers, SysUtils, RTTI, TypInfo, DataObjects2Utils;
 
 type
+  EDDOReadException = class(Exception);
+
   TDDOStreamer = class(TDataObjStreamerBase)
   private
     procedure GenerateException(aMessage: string);
 
   public
     class function FileExtension: string; override;
+    class function Name: string; override;
     class function Description: string; override;
     class function GetFileFilter: string; override;
     class function IsFileExtension(aStr: string): boolean; override;
-    class function ClipboardPriority: cardinal; override;
+    class function Priority: cardinal; override;
 
     procedure Decode(aDataObj: TDataObj); override;
     procedure Encode(aDataObj: TDataObj); override;
@@ -83,7 +86,7 @@ resourceString
 
 procedure TDDOStreamer.GenerateException(aMessage: string);
 begin
-  raise Exception.Create(format(strException, [aMessage, fStream.Position]));
+  raise EDDOReadException.Create(format(strException, [aMessage, fStream.Position]));
 end;
 
 
@@ -98,6 +101,11 @@ begin
 end;
 
 
+
+class function TDDOStreamer.Name: string;
+begin
+  result := 'DDO format';
+end;
 
 procedure TDDOStreamer.Encode(aDataObj: TDataObj);
 var
@@ -357,7 +365,7 @@ begin
   result := 'ddo';
 end;
 
-class function TDDOStreamer.ClipboardPriority: cardinal;
+class function TDDOStreamer.Priority: cardinal;
 begin
   result := 10;
 end;
@@ -629,6 +637,8 @@ begin
       end;
     end; // case
   except
+    on e: EDDOReadException do
+      raise;
     on e: Exception do
       GenerateException(e.Message);
   end;

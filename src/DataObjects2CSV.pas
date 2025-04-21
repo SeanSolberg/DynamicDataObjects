@@ -52,11 +52,12 @@ type
     constructor Create(aStream: TStream); override;
 
     class function FileExtension: string; override;
+    class function Name: string; override;
     class function Description: string; override;
     class procedure GetParameterInfo(aParameterPurpose: TDataObjParameterPurposes; aStrings: TStrings); override;
     class function GetFileFilter: string; override;
     class function IsFileExtension(aStr: string): boolean; override;
-    class function ClipboardPriority: cardinal; override;
+    class function Priority: cardinal; override;
 
     function Clone: TDataObjStreamerBase; override;
     procedure Decode(aDataObj: TDataObj); override;
@@ -156,6 +157,11 @@ begin
 end;
 
 
+class function TCSVStreamer.Name: string;
+begin
+  result := 'Comma Separated Values';
+end;
+
 procedure TCSVStreamer.ApplyOptionalParameters(aParams: TStrings);
 var
   i: Integer;
@@ -187,7 +193,7 @@ begin
   end;
 end;
 
-class function TCSVStreamer.ClipboardPriority: cardinal;
+class function TCSVStreamer.Priority: cardinal;
 begin
   result := 40;
 end;

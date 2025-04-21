@@ -31,8 +31,7 @@ interface
 {                                                                                }
 {********************************************************************************}
 
-
-uses sysUtils, classes, math;
+uses sysUtils, classes{, math};
 
 (* This code implements a 64 bit VarInt as defined by Google's protocol buffers
    as well as a 64 bit Unsigned VarInt that is the same except it doesn't do the zigZag Encoding part.
@@ -52,7 +51,8 @@ uses sysUtils, classes, math;
 
 type
 
-  // signed VarInt with zig-zag encoding
+
+  // signed 32bit VarInt with zig-zag encoding
   TVarInt32 = record
   private
     Value: int32;
@@ -79,6 +79,7 @@ type
     class operator Implicit(aValue: TUVarInt32): UInt32;
   end;
 
+// signed 64bit VarInt with zig-zag encoding
   TVarInt64 = record
   private
     Value: int64;
@@ -111,7 +112,7 @@ ResourceString
   strUnableToReadByte = 'Unable to read a byte from a stream when reading a VarInt.';
   strUnableToReadNumTooBig = 'Error reading VarInt from a stream.  Number is too big for Int64';
 
-{$define cUseASM}
+//{$define cUseASM}
 
 implementation
 
@@ -143,17 +144,26 @@ end;
 class function TVarInt64.ZigZagEncode64(aValue: int64): Uint64; Register;
 var
   lPart: UInt64;
+  lValue: UInt64;
 begin
   lPart := $0;
+  lValue := UInt64(aValue);    // take the bits as-is into the unsigned space.
   if aValue<0 then
-    lPart := $FFFFFFFFFFFFFFFF;
+    lPart := UInt64($FFFFFFFFFFFFFFFF);
 
-  result := lPart xor (aValue shl 1);
+  result := lPart xor (lValue shl 1);
 end;
 
 class function TVarInt64.ZigZagDecode64(aValue: Uint64): int64; Register;
+var
+  lInt: Int64;
+  lUInt: UInt64;
 begin
-  result := (aValue shr 1) xor -(aValue and 1);
+//  result := (aValue shr 1) xor -(aValue and 1);
+  // Note: we need to be careful on each operation if it working on a signed value or unsigned value to prevent numbers getting outside a valid value.
+  lInt := int64((aValue and 1));   // should result in only a 0 or 1, but must be into a signed into so we can negate it below.
+  lUInt := aValue shr 1;
+  result := int64(lUint) xor -lInt;
 end;
 
 {$endif}
@@ -477,18 +487,28 @@ end;
 class function TVarInt32.ZigZagEncode32(aValue: int32): Uint32;  Register;  // For 32bit compiler, // aValue comes in on EAX, result goes out in EAX
 var
   lPart: UInt32;
+  lValue: UInt32;
 begin
   lPart := $0;
+  lValue := UInt32(aValue);    // take the bits as-is into the unsigned space.
   if aValue<0 then
-    lPart := $FFFFFFFF;
+    lPart := UInt32($FFFFFFFF);
 
-  result := lPart xor (aValue shl 1);
+  result := lPart xor (lValue shl 1);
 end;
 
 class function TVarInt32.ZigZagDecode32(aValue: Uint32): int32;  Register;  // For 32bit compiler, // aValue comes in on EAX, result goes out in EAX
+var
+  lInt: Int32;
+  lUInt: UInt32;
 begin
-  result := (aValue shr 1) xor -(aValue and 1);
+//  result := (aValue shr 1) xor -(aValue and 1);
+  // Note: we need to be careful on each operation if it working on a signed value or unsigned value to prevent numbers getting outside a valid value.
+  lInt := int32((aValue and 1));   // should result in only a 0 or 1, but must be into a signed into so we can negate it below.
+  lUInt := aValue shr 1;
+  result := int32(lUint) xor -lInt;
 end;
+
 
 {$endif}
 
