@@ -83,6 +83,7 @@ type
 
   TestTDataArray = class(TTestCase)
   strict private
+    FDataObj: TDataObj;
     FDataArray: TDataArray;
   public
     procedure SetUp; override;
@@ -963,6 +964,7 @@ end;
 procedure TestTDataFrame.SetUp;
 begin
   FDataObj := TDataObj.Create;
+  MakeTestObject(fDataObj);
   FDataFrame := fDataObj.AsFrame;
 end;
 
@@ -973,10 +975,22 @@ end;
 
 procedure TestTDataFrame.TestFindSlot;
 var
-  ReturnValue: TDataObj;
-  aSlotName: string;
+  lNewSlot, lSlot: TDataObj;
 begin
-  ReturnValue := FDataFrame.FindSlot(aSlotName);
+  lNewSlot := fDataFrame.newSlot('TESTSLOT');
+
+  lSlot := FDataFrame.FindSlot('TESTSLOT');
+  if not assigned(lSlot) then
+    Assert.Fail('FindSlot did not find an expected slot by a slotname (1)');
+
+  lSlot := FDataFrame.FindSlot('testSlot');   // case insensitive compare
+  if not assigned(lSlot) then
+    Assert.Fail('FindSlot did not find an expected slot by a slotname (2)');
+
+  if not FDataFrame.FindSlot('testSlot', lSlot) then   // case insensitive compare
+    Assert.Fail('FindSlot did not find an expected slot by a slotname (3)');
+
+  Assert.pass;
 end;
 
 procedure TestTDataFrame.TestNewSlot;
@@ -994,30 +1008,33 @@ begin
 end;
 
 procedure TestTDataFrame.TestSlotByName;
+var
+  lNewSlot, lSlot: TDataObj;
 begin
-  // TODO: Setup method call parameters
-  fDataFrame.NewSlot('TESTSLOT');
-  if not assigned(FDataFrame.SlotByName('TESTSLOT')) then
-  begin
-    raise Exception.Create('Unable to find slot with .SlotByName');
+  lNewSlot := fDataFrame.newSlot('TESTSLOT');
+
+  try
+    lSlot := FDataFrame.SlotByName('ShouldNotFind');  // generates exception if not found
+    Assert.fail('SlotByName should have raised an exception but it didn''t');
+  except
+    // expect the exception, so trap it and all is good. and move on.
   end;
-  // TODO: Validate method results
+
+  try
+    lSlot := FDataFrame.SlotByName('TESTSLOT');  // generates exception if not found
+    lSlot := FDataFrame.SlotByName('TestSlot'); // generates exception if not found
+  except
+    on e: exception do
+      Assert.Fail('Failed with exception '+e.classname+': '+e.message);
+  end;
+  Assert.pass;
 end;
 
 procedure TestTDataFrame.TestDeleteSlot;
-var
-  ReturnValue: Boolean;
-  aSlotName: string;
 begin
-  // TODO: Setup method call parameters
   fDataFrame.NewSlot('TESTSLOT');
-  FDataFrame.DeleteSlot('TESTSLOT');
-  if assigned(FDataFrame.FindSlot('TESTSLOT')) then
-  begin
-    raise exception.Create('Unable to Delete a slot with call to .DeleteSlot');
-  end;
-
-  // TODO: Validate method results
+  fDataFrame.DeleteSlot('TESTSLOT');
+  Assert.IsNull(FDataFrame.FindSlot('TESTSLOT'),'Unable to Delete a slot with call to .DeleteSlot');
 end;
 
 procedure TestTDataFrame.TestDelete;
@@ -1026,43 +1043,33 @@ var
   lIndex: Integer;
   lSlot: TDataObj;
 begin
-  // TODO: Setup method call parameters
   lSlot:=fDataFrame.NewSlot('TESTSLOT');
   lIndex := fDataFrame.IndexOfChildSlot(lSlot);
-  if FDataFrame.Delete(lIndex) = false then
-  begin
-    raise Exception.Create('unable to Delete Slot with index: '+InttoStr(lIndex));
-  end;
-
+  Assert.IsTrue(FDataFrame.Delete(lIndex), 'Unable to Delete Slot with index: '+InttoStr(lIndex));
 end;
 
 procedure TestTDataFrame.TestSlotname;
 var
-  ReturnValue: string;
+  lSlotName: string;
   lSlot: TDataObj;
   lIndex: integer;
 begin
   lSlot:=fDataFrame.NewSlot('TESTSLOT');
+  lSlot:=fDataFrame.NewSlot('testslot');   // doing it again with a different case, but it should "find" the upper case version.
   lIndex := fDataFrame.IndexOfChildSlot(lSlot);
-  ReturnValue := FDataFrame.Slotname(lIndex);
-  if ReturnValue <> 'TESTSLOT' then
-  begin
-    raise Exception.Create('Slotname unable to be found with index: '+InttoStr(lIndex));
-  end;
+  lSlotName := FDataFrame.Slotname(lIndex);
+  Assert.AreEqual('TESTSLOT', lSlotName, 'Slotname did not match what was expected.');
 end;
 
 procedure TestTDataFrame.TestCount;
-var
-  ReturnValue: Integer;
 begin
-  ReturnValue := FDataFrame.Count;
-  // TODO: Validate method results
+  Assert.AreEqual(20,FDataFrame.Count, 'Count did not return the expected value');
 end;
 
 procedure TestTDataFrame.TestClear;
 begin
   FDataFrame.Clear;
-  // TODO: Validate method results
+  Assert.isTrue(fDataObj.AsFrame.count=0, 'Clear did not clear everything in the frame.');
 end;
 
 procedure TestTDataFrame.TestCopyFrom;
@@ -1075,10 +1082,7 @@ begin
   try
     MakeTestObject(lObj);
     lObj2.CopyFrom(lObj);
-    if lObj.PrintToString <> lObj2.PrintToString then
-    begin
-      raise Exception.Create('TDataobj.CopyFrom did not create an exact copy.');
-    end;
+    Assert.areEqual(lObj.PrintToString, lObj2.PrintToString,'TDataobj.CopyFrom did not create an exact copy.');
   finally
     lObj.Free;
     lObj2.Free;
@@ -1087,122 +1091,374 @@ end;
 
 procedure TestTDataArray.SetUp;
 begin
-  FDataArray := TDataArray.Create;
+  fDataobj := TDataObj.create;
+  FDataArray := fDataObj.AsArray;
 end;
 
 procedure TestTDataArray.TearDown;
 begin
-  FDataArray.Free;
-  FDataArray := nil;
+  fDataobj.Free;
+  fDataobj := nil;
 end;
 
 procedure TestTDataArray.TestNewSlot;
 var
-  ReturnValue: TDataObj;
+  i: integer;
+  lCountBefore: integer;
+  lCountAfter: integer;
 begin
-//  ReturnValue := FDataArray.NewSlot;
-  // TODO: Validate method results
+  for i := 0 to 1000 do
+  begin
+    lCountBefore := fDataArray.Count;
+    fDataArray.newSlot.Asint32 := Random(10000);
+    lCountAfter := fDataArray.count;
+    if lCountAfter <> lCountBefore+1 then
+    begin
+      Assert.Fail('Calling NewSlot did not increase the count of the array');
+      exit;
+    end;
+  end;
+  Assert.Pass('');
 end;
 
 procedure TestTDataArray.TestFind;
 var
-  ReturnValue: TDataObj;
-  aFindFunction: TForEachFunction;
+  i: integer;
+  lfoundObj: TDataObj;
 begin
-  // TODO: Setup method call parameters
-//  ReturnValue := FDataArray.Find(aFindFunction);
-  // TODO: Validate method results
+  // Build an array that we can use to test with.
+  for i := 0 to 1000 do
+  begin
+    fDataArray.newSlot.Asint32 := i;
+  end;
+
+  lFoundObj := fDataArray.find(
+    function(aArray: TDataArray; aCurrentObj: TDataObj; aIndex: integer): boolean
+    begin
+      result := aCurrentObj.AsString = '999';
+    end
+  );
+
+  if not assigned(lFoundObj) then
+    Assert.fail('Find call did not return a slot that was expected to be found.');
+
+  lFoundObj := fDataArray.find(
+    function(aArray: TDataArray; aCurrentObj: TDataObj; aIndex: integer): boolean
+    begin
+      result := aCurrentObj.AsString = 'abcd123';
+    end
+  );
+
+  if assigned(lFoundObj) then
+    Assert.fail('Find call did not returned an object that should not have been found.');
+
+  Assert.pass;
 end;
 
 procedure TestTDataArray.TestForEach;
 var
-  aReverseOrder: Boolean;
-  aForEachFunction: TForEachProcedure;
+  i: integer;
+
+  procedure DoTheTest(aReverse: boolean);
+  var
+    lCount: integer;
+  begin
+    lCount := 0;
+    fDataArray.ForEach(
+      procedure(aArray: TDataArray; aCurrentValue: TDataObj; aIndex: integer)
+      begin
+        if aArray.Slots[aIndex] <> aCurrentValue then
+          Assert.Fail('Parameters called into ForEach callback did not match each other as expected. aReverse='+BoolToStr(aReverse));
+
+        if aCurrentValue.AsInt32 <> aIndex then
+          Assert.Fail('Array item value did not match its expected index. aReverse='+BoolToStr(aReverse));
+
+        inc(lCount);
+      end, aReverse
+    );
+
+    Assert.AreEqual(fDataArray.count, lCount, 'Count of items in an array did not match the iteration call count of ForEach. aReverse='+BoolToStr(aReverse));
+  end;
 begin
-  // TODO: Setup method call parameters
-//  FDataArray.ForEach(aForEachFunction, aReverseOrder);
-  // TODO: Validate method results
+  // Build an array that we can use to test with.
+  for i := 0 to 1000 do
+  begin
+    fDataArray.newSlot.Asint32 := i;
+  end;
+
+  DoTheTest(false);
+  DoTheTest(true);
 end;
 
 procedure TestTDataArray.TestEvery;
 var
-  ReturnValue: Boolean;
-  aEveryFunction: TForEachFunction;
+  i: integer;
+  lCount: integer;
 begin
-  // TODO: Setup method call parameters
-//  ReturnValue := FDataArray.Every(aEveryFunction);
-  // TODO: Validate method results
+  // Build an array that we can use to test with.
+  fDataArray.clear;
+  for i := 0 to 1000 do
+  begin
+    fDataArray.newSlot.Asint32 := i;
+  end;
+
+  // First, run the test expected all items to be truthy
+  lCount := 0;
+  Assert.AreEqual(true, fDataArray.Every(
+    function(aArray: TDataArray; aCurrentValue: TDataObj; aIndex: integer): boolean    // should return true for every item that is truthy
+    begin
+      if aArray.Slots[aIndex] <> aCurrentValue then
+        Assert.Fail('Parameters called into ForEach callback did not match each other as expected.');
+
+      result := aCurrentValue.AsInt32 = aIndex;
+
+      inc(lCount);
+    end
+  ),'When all items in the Every call should be true');
+
+  Assert.AreEqual(fDataArray.count, lCount, 'Count of items in an array did not match the iteration call count of Every.');
+
+  // Second, run the test expecting one of the items to not be truthy
+  lCount := 0;
+  fDataArray.items[1000].AsInt32 := -1;     // Make of the items not be truthy
+  Assert.AreEqual(false, fDataArray.Every(
+    function(aArray: TDataArray; aCurrentValue: TDataObj; aIndex: integer): boolean    // should return true for every item that is truthy
+    begin
+      if aArray.Slots[aIndex] <> aCurrentValue then
+        Assert.Fail('Parameters called into ForEach callback did not match each other as expected.');
+
+      result := aCurrentValue.AsInt32 = aIndex;
+
+      inc(lCount);
+    end
+  ),'When one of the items in the Every call should be false');
+
+  Assert.AreEqual(fDataArray.count, lCount, 'Count of items in an array did not match the iteration call count of Every.');
+
 end;
 
 procedure TestTDataArray.TestIndexOf;
 var
-  ReturnValue: Integer;
-  aCaseInsensitive: Boolean;
-  aString: string;
+  i: integer;
+  lStrVal: string;
 begin
-  // TODO: Setup method call parameters
-//  ReturnValue := FDataArray.IndexOf(aString, aCaseInsensitive);
-  // TODO: Validate method results
+  // Build an array that we can use to test with.
+  fDataArray.clear;
+  for i := 0 to 1000 do
+  begin
+    fDataArray.newSlot.Asint32 := i;
+  end;
+
+  if 987 <> fDataArray.IndexOf(987) then     //Int32
+    Assert.fail('Indexof for value 987 expected to return an index of 987');
+
+  if 987 <> fDataArray.IndexOf('987') then   // String comparison
+    Assert.fail('Indexof for value 987 expected to return an index of 987');
+
+  // Build a new array that we can use to test with using 64 bit ints.
+  fDataArray.clear;
+  for i := 0 to 1000 do
+  begin
+    fDataArray.newSlot.Asint64 := Int64(i)+int64($100000000);
+  end;
+
+  if 987 <> fDataArray.IndexOf(int64(987)+int64($100000000)) then     //Int64 comparison
+    Assert.fail('Indexof for value 987 expected to return an index of 987');
+
+  lStrVal := IntToStr(int64(987)+int64($100000000));
+  if 987 <> fDataArray.IndexOf(lStrVal) then                       // String comparison
+    Assert.fail('Indexof for value '+lStrVal+' expected to return an index of 987');
+
+
+  // now add a string to the end of the array and try to test indexOf on that.
+  fDataArray.newSlot.AsString := '987654321';
+  if 1001 <> fDataArray.Indexof(987654321) then
+    Assert.fail('Indexof for integer value 987654321 could not find string value "987654321"');
+
+  if 1001 <> fDataArray.Indexof(987654321) then
+    Assert.fail('Indexof for string value "987654321" could not find string value "987654321"');
+
+  Assert.pass('All IndexOf variations passed.');
 end;
 
 procedure TestTDataArray.TestLastIndexOf;
 var
-  ReturnValue: Integer;
-  aCaseInsensitive: Boolean;
-  aString: string;
+  i: integer;
+  lStrVal: string;
 begin
-  // TODO: Setup method call parameters
-//  ReturnValue := FDataArray.LastIndexOf(aString, aCaseInsensitive);
-  // TODO: Validate method results
+  // Build an array that we can use to test with.
+  fDataArray.clear;
+  fDataArray.newSlot.AsString := '999';
+  for i := 0 to 1000 do
+  begin
+    fDataArray.newSlot.AsInt32 := i;   // yes.  as Integer, but LastIndex of below is string.
+  end;
+
+  if fDataArray.LastIndexOf('') <> -1 then
+    Assert.Fail('LastIndexOf should have returned a -1 for a non-found value');
+
+  Assert.AreEqual(1000,fDataArray.LastIndexOf('999'), 'Last IndexOf "999" did not return the expected index');
 end;
 
 procedure TestTDataArray.TestRemoveForEach;
 var
-  ReturnValue: Integer;
-  aEveryFunction: TForEachFunction;
+  i: integer;
+  lStrVal: string;
 begin
-  // TODO: Setup method call parameters
-//  ReturnValue := FDataArray.RemoveForEach(aEveryFunction);
-  // TODO: Validate method results
+  // Build an array that we can use to test with.
+  fDataArray.clear;
+  for i := 0 to 1000 do
+  begin
+    fDataArray.newSlot.AsInt32 := i;
+  end;
+
+  fDataArray.RemoveForEach(
+    function(aArray: TDataArray; aCurrentValue: TDataObj; aIndex: integer): boolean
+    begin
+      result := (aCurrentValue.AsInt32 mod 2) = 0;   // remove all the even items.
+    end
+  );
+
+  Assert.AreEqual(500,fDAtaArray.count, 'Incorrect number of removals in a RemoveForEach call');
 end;
 
 procedure TestTDataArray.TestReduce;
 var
-  ReturnValue: TDataObj;
-  aReduceProcedure: TReduceProcedure;
+  i: integer;
+  lStrVal: string;
+  lReducedObject: TDataObj;
+  lSum: int64;
 begin
-  // TODO: Setup method call parameters
-//  ReturnValue := FDataArray.Reduce(aReduceProcedure);
-  // TODO: Validate method results
+  // Build an array that we can use to test with.
+  fDataArray.clear;
+  lSum := 0;
+  for i := 0 to 1000 do
+  begin
+    fDataArray.newSlot.AsInt32 := i;
+    inc(lSum, i);
+  end;
+
+  lReducedObject := fDataArray.Reduce(
+    procedure(aTotal: TDataObj; aArray: TDataArray; aCurrentObj: TDataObj; aIndex: integer)
+    begin
+      aTotal.AsInt64 := aTotal.AsInt64+aCurrentObj.AsInt64;
+    end
+  );
+  try
+    Assert.areEqual(lSum, lReducedObject.AsInt64);
+  finally
+    lReducedObject.free;
+  end;
 end;
 
 procedure TestTDataArray.TestMap;
 var
-  ReturnValue: TDataObj;
-  aMapProcedure: TMapProcedure;
+  i: integer;
+  lStrVal: string;
+  lNewMappedObject: TDataObj;
 begin
-  // TODO: Setup method call parameters
-//  ReturnValue := FDataArray.Map(aMapProcedure);
-  // TODO: Validate method results
+  // Build an array that we can use to test with.
+  fDataArray.clear;
+  for i := 0 to 1000 do
+  begin
+    fDataArray.newSlot.AsInt32 := i;   // Yes.  as Integer, but LastIndex of below is string.
+  end;
+
+  try
+    lNewMappedObject := fDataArray.map(
+      procedure(aTargetObj: TDataObj; aCurrentArray: TDataArray; aCurrentObj: TDataObj; aIndex: integer)
+      begin
+        aTargetObj.AsString := aCurrentObj.AsString;   // convert from Ints to string.
+      end
+    );
+
+    if lNewMappedObject.AsArray.count <> fDataArray.count then
+    begin
+      assert.fail('Map call on an array object returned a count that differed from the original.');
+    end;
+
+    // Compare the source to the mapped object
+    for i := 0 to lNewMappedObject.AsArray.count-1 do
+    begin
+      if (lNewMappedObject.asArray[i].AsString <> fDAtaArray[i].AsString) then
+        assert.fail('Value in an item from a Map call did not have the expected value at index '+IntToStr(i));
+    end;
+    Assert.pass;
+  finally
+    lNewMappedObject.free;
+  end;
 end;
 
 procedure TestTDataArray.TestConcat;
 var
-  ReturnValue: TDataObj;
-  aArray: TDataArray;
+  i: integer;
+  lSum: integer;
+  lAppendFrom: TDataObj;
+  lCheckSum: integer;
+  lConcatArray: TDataObj;
 begin
-  // TODO: Setup method call parameters
-//  ReturnValue := FDataArray.Concat(aArray);
-  // TODO: Validate method results
+  // Build two arrays that we can use to test with.
+  lAppendFrom:=TDataObj.create;
+  try
+    fDataArray.clear;
+    lSum:=0;
+    for i := 0 to 1000 do
+    begin
+      fDataArray.newSlot.AsInt32 := i;
+      lAppendFrom.AsArray.newSlot.Asint32 := i;
+      inc(lSum, i);
+    end;
+
+    lConcatArray:=fDataArray.Concat(lAppendFrom.AsArray);
+    try
+      // now check that we have double the sum
+      lCheckSum := 0;
+      for i := 0 to lConcatArray.AsArray.count-1 do
+      begin
+        inc(lCheckSum, lConcatArray.AsArray[i].Asint32);
+      end;
+
+      Assert.AreEqual(lSum*2, lCheckSum, 'Concat didn''t get all the data copied.');
+    finally
+      lConcatArray.free;
+    end;
+  finally
+    lAppendFrom.free;
+  end;
 end;
 
 procedure TestTDataArray.TestAppendFrom;
 var
-  aArray: TDataArray;
+  i: integer;
+  lSum: integer;
+  lAppendFrom: TDataObj;
+  lCheckSum: integer;
 begin
-  // TODO: Setup method call parameters
-//  FDataArray.AppendFrom(aArray);
-  // TODO: Validate method results
+  // Build two arrays that we can use to test with.
+  lAppendFrom:=TDataObj.create;
+  try
+    fDataArray.clear;
+    lSum:=0;
+    for i := 0 to 1000 do
+    begin
+      fDataArray.newSlot.AsInt32 := i;
+      lAppendFrom.AsArray.newSlot.Asint32 := i;
+      inc(lSum, i);
+    end;
+
+    fDataArray.AppendFrom(lAppendFrom.AsArray);
+
+    // now check that we have double the sum
+    lCheckSum := 0;
+    for i := 0 to fDataArray.count-1 do
+    begin
+      inc(lCheckSum, fDataArray.slots[i].Asint32);
+    end;
+
+    Assert.AreEqual(lSum*2, lCheckSum, 'AppendFrom didn''t get all the slots copied.');
+  finally
+    lAppendFrom.free;
+  end;
 end;
 
 procedure TestTDataSparseArray.SetUp;

@@ -755,10 +755,10 @@ type
     property Items[const aKey: string]: TDataObj read GetItem; default;
   end;
 
-  TForEachProcedure = reference to procedure(aArray: TDataArray; aCurrentValue: TDataObj; aIndex: integer);
-  TForEachFunction = reference to function(aArray: TDataArray; aCurrentValue: TDataObj; aIndex: integer): boolean;
-  TReduceProcedure = reference to procedure(aTotal: TDataObj; aArray: TDataArray; aCurrentValue: TDataObj; aIndex: integer);
-  TMapProcedure = reference to procedure(aTargetObj: TDataObj; aCurrentArray: TDataArray; aCurrentValue: TDataObj; aIndex: integer);
+  TForEachProcedure = reference to procedure(aArray: TDataArray; aCurrentObj: TDataObj; aIndex: integer);
+  TForEachFunction = reference to function(aArray: TDataArray; aCurrentObj: TDataObj; aIndex: integer): boolean;
+  TReduceProcedure = reference to procedure(aTotal: TDataObj; aArray: TDataArray; aCurrentObj: TDataObj; aIndex: integer);
+  TMapProcedure = reference to procedure(aTargetObj: TDataObj; aCurrentArray: TDataArray; aCurrentObj: TDataObj; aIndex: integer);
 
   TDataArray = class
   type
@@ -797,10 +797,10 @@ type
     // The following set of methods are very similar to the set of methods you can call on a javaScript array
     function Find(aFindFunction: TForEachFunction): TDataObj;   // can return nil if not found.
     procedure ForEach(aForEachFunction: TForEachProcedure; aReverseOrder: boolean = false);
-    function Every(aEveryFunction: TForEachFunction): boolean;
+    function Every(aEveryFunction: TForEachFunction): boolean; //A function to execute for each element in the array. It should return a truthy value to indicate the element passes the test, and a falsy value otherwise.
     function IndexOf(aString: string; aCaseInsensitive: boolean = false): integer; overload;   // returns -1 if nothing found.
-    function IndexOf(aInteger: Integer; aCaseInsensitive: boolean = false): integer; overload;   // returns -1 if nothing found.
-    function IndexOf(aInt64: Int64; aCaseInsensitive: boolean = false): integer; overload;   // returns -1 if nothing found.
+    function IndexOf(aInteger: Integer): integer; overload;   // returns -1 if nothing found.
+    function IndexOf(aInt64: Int64): integer; overload;   // returns -1 if nothing found.
     function LastIndexOf(aString: string; aCaseInsensitive: boolean = false): integer;   // returns -1 if nothing found.
 
     function RemoveForEach(aEveryFunction: TForEachFunction): integer;    // returns the number of items removed.
@@ -3817,6 +3817,7 @@ begin
   inherited;
 end;
 
+//A function to execute for each element in the array. It should return a truthy value to indicate the element passes the test, and a falsy value otherwise.
 function TDataArray.Every(aEveryFunction: TForEachFunction): boolean;
 var
   i: Integer;
@@ -3853,7 +3854,7 @@ var
 begin
   if aReverseOrder then
   begin
-    for i := count downto 0 do
+    for i := count-1 downto 0 do
     begin
       aForEachFunction(self, Items[i], i);
     end;
@@ -3870,35 +3871,6 @@ end;
 function TDataArray.GetEnumerator: TDataArrayEnumerator;
 begin
   Result := TDataArrayEnumerator.Create(Self);
-end;
-
-function TDataArray.IndexOf(aString: string; aCaseInsensitive: boolean = false): integer;
-var
-  i: Integer;
-begin
-  result := -1;
-  if aCaseInsensitive then
-  begin
-    for i := 0 to count-1 do
-    begin
-      if SameText(items[i].AsString, aString) then
-      begin
-        result := i;
-        break;
-      end;
-    end;
-  end
-  else
-  begin
-    for i := 0 to count-1 do
-    begin
-      if items[i].AsString = aString then
-      begin
-        result := i;
-        break;
-      end;
-    end;
-  end;
 end;
 
 function TDataArray.LastIndexOf(aString: string; aCaseInsensitive: boolean): integer;
@@ -3991,18 +3963,27 @@ begin
 end;
 
 
-function TDataArray.IndexOf(aInteger: Integer; aCaseInsensitive: boolean): integer;
+function TDataArray.IndexOf(aString: string; aCaseInsensitive: boolean = false): integer;
 var
   i: Integer;
-  lItem: TDataObj;
 begin
   result := -1;
-  for i := 0 to count-1 do
+  if aCaseInsensitive then
   begin
-    lItem := Items[i];
-    if lItem.DataType.Code = cDataTypeInt32 then
+    for i := 0 to count-1 do
     begin
-      if lItem.AsInt32 = aInteger then
+      if SameText(items[i].AsString, aString) then
+      begin
+        result := i;
+        break;
+      end;
+    end;
+  end
+  else
+  begin
+    for i := 0 to count-1 do
+    begin
+      if items[i].AsString = aString then
       begin
         result := i;
         break;
@@ -4011,7 +3992,8 @@ begin
   end;
 end;
 
-function TDataArray.IndexOf(aInt64: Int64; aCaseInsensitive: boolean): integer;
+
+function TDataArray.IndexOf(aInteger: Integer): integer;
 var
   i: Integer;
   lItem: TDataObj;
@@ -4020,12 +4002,57 @@ begin
   for i := 0 to count-1 do
   begin
     lItem := Items[i];
-    if lItem.DataType.Code = cDataTypeInt64 then
-    begin
-      if lItem.AsInt64 = aInt64 then
-      begin
-        result := i;
-        break;
+    case lItem.DataType.code of
+      cDataTypeByte, cDataTypeInt32: begin
+        if lItem.AsInt32 = aInteger then
+        begin
+          result := i;
+          break;
+        end;
+      end;
+      cDataTypeInt64: begin
+        if lItem.AsInt64 = Int64(aInteger) then
+        begin
+          result := i;
+          break;
+        end;
+      end;
+//      cDataTypeDecimal128: ;   Future
+      cDataTypeString: begin
+        if lItem.AsString = IntToStr(aInteger) then
+        begin
+          result := i;
+          break;
+        end;
+      end;
+    end;
+  end;
+end;
+
+function TDataArray.IndexOf(aInt64: Int64): integer;
+var
+  i: Integer;
+  lItem: TDataObj;
+begin
+  result := -1;
+  for i := 0 to count-1 do
+  begin
+    lItem := Items[i];
+    case lItem.DAtaType.code of
+      cDataTypeByte, cDataTypeInt32, cDataTypeInt64: begin
+        if lItem.AsInt64 = aInt64 then
+        begin
+          result := i;
+          break;
+        end;
+      end;
+//      cDataTypeDecimal128: ;  future
+      cDataTypeString: begin
+        if lItem.AsString = IntToStr(aInt64) then
+        begin
+          result := i;
+          break;
+        end;
       end;
     end;
   end;
