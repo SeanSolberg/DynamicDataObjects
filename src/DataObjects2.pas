@@ -1441,7 +1441,7 @@ begin
         case aDataObj.DataType.Code of
           cDataTypeSingle: begin aValue := aDataObj.AsSingle; result := true; end;
           cDataTypeDouble: begin aValue := aDataObj.AsDouble; result := true; end;
-          cDataTypeDatetime: begin aValue := aDataObj.AsDateTime; result := true; end;
+          cDataTypeDatetime, cDataTypeUTCDateTime: begin aValue := aDataObj.AsDateTime; result := true; end;
           cDataTypeTime: begin aValue := aDataObj.AsTime; result := true; end;
           cDatatypeDate: begin aValue := aDataObj.AsDate; result := true; end;
         end;
