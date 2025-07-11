@@ -243,7 +243,9 @@
 
 interface
 
-uses System.SysUtils;
+uses System.SysUtils, classes;
+
+{$I DataObjects2Settings.inc}
 
 type
   {Forwards}
@@ -257,55 +259,81 @@ type
                                   aExtData: Pointer;
                                   Var aContinue: Boolean);
 
+  // Record is sometimes used Iterating the stringTree as a paramater passed in aExtData such as
+  // when performing a delete operation, or a finding operation by fID.
+  TIterateStringTreeContext = record
+    ID: integer;
+    MatchedNode: TStringBinaryTreeNode;
+  end;
+  PTIterateStringTreeContext = ^TIterateStringTreeContext;
+
+
+  TSignBase = -1..1;
+  TSignType = TSignBase;
+
   TStringBinaryTreeNode = class(Tobject)
   Private
   Protected
     fChildNodes: array[Boolean] of TStringBinaryTreeNode;
-    fBal: -1..1;
+    fBal: TSignType;
   Public
     fString: String;
     fID: integer;
     Constructor Create; virtual;
   end;
 
+
+  TComparerType = (cCompareString, cCompareID);
+  TComparer = record   // this is used in the Internal Extract Node to find the node either by String or ID.
+    fType: TComparerType;
+    fID: integer;
+    fString: string;
+//    function IsMatch(aNode: TStringBinaryTreeNode): boolean;
+//    function CompareNode(aNode: TStringBinaryTreeNode): Integer; {compares aNode with either fID or fString and returns 0 if they are equal. If fString or fID is greater than aNode, returns an integer greater than 0. If aNode is less than fString or fID, returns an integer less than 0.}
+  end;
+  PTComparer = ^TComparer;
+
   TStringBinaryTree = class(TObject)
   private
     FHead: TStringBinaryTreeNode;
     FNodeCount: Integer;
+    fCaseSensitive: boolean;   // if this is false, then strings in this tree are considered the same string case insensitively
   protected
     procedure FreeNodeObj(aNode: TStringBinaryTreeNode);
-    Function  CompareNode(IdVal: pointer; ANode: TStringBinaryTreeNode): Integer; overload;   {compares IdVal and aNode.keydata and returns 0 if they are equal. If IdVal is greater than aNode.keydata, returns an integer greater than 0. If aNode.keydata is less than IdVal, returns an integer less than 0.}
-    Function  CompareNode(aNode1, ANode2: TStringBinaryTreeNode): Integer; overload;   {compares aNode1 and aNode2 and returns 0 if they are equal. If aNode1 is greater than aNode2, returns an integer greater than 0. If aNode1 is less than aNode2, returns an integer less than 0.}
+    Function  CompareNode(const aStr: string; ANode: TStringBinaryTreeNode): TSignType; overload;   {compares IdVal and aNode.keydata and returns 0 if they are equal. If IdVal is greater than aNode.keydata, returns an integer greater than 0. If aNode.keydata is less than IdVal, returns an integer less than 0.}
+    Function  CompareNode(aNode1, ANode2: TStringBinaryTreeNode): TSignType; overload;   {compares aNode1 and aNode2 and returns 0 if they are equal. If aNode1 is greater than aNode2, returns an integer greater than 0. If aNode1 is less than aNode2, returns an integer less than 0.}
     function  CreateNode: TStringBinaryTreeNode;
     procedure InternalIterate(Action: TStringBinaryTreeIterateFunc; Up: Boolean; ExtData: Pointer);
     function  InternalAddNode(aNode: TStringBinaryTreeNode): Boolean;
-    Function  InternalExtractNode(IdVal: Pointer): TStringBinaryTreeNode;
-    Function  InternalDeleteNode(IdVal: Pointer): Boolean;
+    Function  InternalExtractNode(aComparer: PTComparer): TStringBinaryTreeNode;
+    Function  InternalDeleteNode(aComparer: PTComparer): Boolean;
     Procedure InternalClear;
     Function  InternalGetHead: TStringBinaryTreeNode;
-    function  InternalFindNode(idVal: pointer): TStringBinaryTreeNode;
+    function  InternalFindNode(const aStr: string): TStringBinaryTreeNode;
     function  InternalFirst: TStringBinaryTreeNode;  {Return the smallest-value node in the tree}
     function  InternalLast: TStringBinaryTreeNode;  {Return the largest-value node in the tree}
     function  InternalNext(aNode: TStringBinaryTreeNode): TStringBinaryTreeNode;  {Return the next node whose value is larger than aNode}
     function  InternalPrev(aNode: TStringBinaryTreeNode): TStringBinaryTreeNode;  {Return the largest node whose value is smaller than aNode}
-    Function  InternalGetNodeCount: integer;
   public
     Constructor Create;
     Destructor  Destroy; Override;
+    procedure   Publish(aStrings: TStrings);
     procedure   Iterate(Action: TStringBinaryTreeIterateFunc; Up: Boolean; ExtData: Pointer);
     function    AddNode(aNode: TStringBinaryTreeNode): Boolean;
     function    AddString(aStr: String; aID: integer): Boolean;
-    Function    ExtractNode(IdVal: Pointer): TStringBinaryTreeNode;
-    Function    DeleteNode(IdVal: Pointer): Boolean;
+    function    DeleteNode(const aStr: String): Boolean; overload;
+    function    DeleteNode(const aID: Integer): Boolean; overload;
     Procedure   Clear;
     Function    Head: TStringBinaryTreeNode;
-    function    FindNode(idVal: pointer): TStringBinaryTreeNode; overload;
-    function    FindNode(const idVal: String): TStringBinaryTreeNode; overload;
+    function    FindNode(const aStr: String): TStringBinaryTreeNode; overload;
+    function    FindNode(aID: integer): TSTringBinaryTreeNode; overload;
     function    First: TStringBinaryTreeNode;  {Return the smallest-value node in the tree}
     function    Last: TStringBinaryTreeNode;  {Return the largest-value node in the tree}
     function    Next(aNode: TStringBinaryTreeNode): TStringBinaryTreeNode;  {Return the next node whose value is larger than aNode}
     function    Prev(aNode: TStringBinaryTreeNode): TStringBinaryTreeNode;  {Return the largest node whose value is smaller than aNode}
-    Function    NodeCount: integer;
+
+    property    Count: integer read fNodeCount;
+    property    CaseSensitive: boolean read fCaseSensitive write fCaseSensitive;   // Note, if this value is going to be changed at some point, it probably should be set before putting strings into the tree.
   end;
 
 var
@@ -313,6 +341,10 @@ var
 
 implementation
 
+
+{$ifndef CompareTextUsingDelphiCompareText}
+  uses UnicodeData;
+{$endif}
 
 const
   cStringBinaryTree_StackSize = 40;
@@ -322,11 +354,11 @@ const
 type
   TStringBinaryTree_StackNode = record
     Node : TStringBinaryTreeNode;
-    Comparison : Integer;
+    Comparison : TSignType;
   end;
   TStringBinaryTree_StackArray = array[1..cStringBinaryTree_StackSize] of TStringBinaryTree_StackNode;
 
-function StringBinaryTree_Sign(I: Integer): Integer;
+function StringBinaryTree_Sign(I: Integer): TSignType;
 begin
   if I < 0 then Result := -1
   else if I > 0 then Result := +1
@@ -348,18 +380,21 @@ end;
 procedure StringBinaryTree_DelBalance(
             var aNode: TStringBinaryTreeNode;
             var SubTreeDec: Boolean;
-            CmpRes: Integer);
+            CmpRes: TSignType);
 var N1, N2: TStringBinaryTreeNode;
-    B1, B2: Integer;
+    B1, B2: TSignType;
     LR: Boolean;
 begin
   CmpRes := StringBinaryTree_Sign(CmpRes);
-  if aNode.fBal = CmpRes then aNode.fBal := 0
-  else if aNode.fBal = 0 then begin
+  if aNode.fBal = CmpRes then
+    aNode.fBal := 0
+  else if aNode.fBal = 0 then
+  begin
     aNode.fBal := -CmpRes;
     SubTreeDec := False;
   end
-  else begin
+  else
+  begin
     LR := (CmpRes < 0);
     N1 := aNode.fChildNodes[LR];
     B1 := N1.fBal;
@@ -399,7 +434,7 @@ end;
 procedure StringBinaryTree_InsBalance(
             var aNode: TStringBinaryTreeNode;
             var SubTreeInc: Boolean;
-            CmpRes: Integer);
+            CmpRes: TSignType);
 var N1: TStringBinaryTreeNode;
     N2: TStringBinaryTreeNode;
     LR: Boolean;
@@ -458,6 +493,7 @@ Constructor TStringBinaryTree.Create;
 begin
   FHead := Nil;
   FNodeCount := 0;
+  fCaseSensitive := true;
   randomize;
   Inherited;
 end;
@@ -466,6 +502,7 @@ function TStringBinaryTree.CreateNode: TStringBinaryTreeNode;
 begin
   result := TStringBinaryTreeNode.Create;
 end;
+
 
 Destructor TStringBinaryTree.Destroy;
 begin
@@ -507,7 +544,7 @@ end;
 
 function TStringBinaryTree.InternalAddNode(aNode: TStringBinaryTreeNode): Boolean;
 var N1: TStringBinaryTreeNode;
-    CmpRes: Integer;
+    CmpRes: TSignType;
     StackPos: Integer;
     Stack: TStringBinaryTree_StackArray;
     SubTreeInc: Boolean;
@@ -594,78 +631,132 @@ begin
   aNode.Free;
 end;
 
-function TStringBinaryTree.InternalExtractNode(IdVal: Pointer): TStringBinaryTreeNode;
+// We can extract a node either by finding via the Node's String or by the Node's ID.  Note that using the String is faster because it can use the BTree, where the ID must do a scan.
+function TStringBinaryTree.InternalExtractNode(aComparer: PTComparer): TStringBinaryTreeNode;
 var N1: TStringBinaryTreeNode;
     N2: TStringBinaryTreeNode;
     TmpNode: TStringBinaryTreeNode;
-    CmpRes: Integer;
+    CmpRes: TSignType;
     Found: Boolean;
     SubTreeDec: Boolean;
-    StackPos: Integer;
+    lStackPos: Integer;
+    lMatchedStackPos: Integer;
     StackParentPos: integer;
     Stack: TStringBinaryTree_StackArray;
+
+  // See if aNode is a match to what we are looking for, if it is, return that node and leave the Stack filled with the pathway to get to it.
+  // If there is no match, return nil.
+  // Before Entering this function, it is expected that StackPos variable above is placed to the level that is current for this check.
+  function RecurseScan(aNode: TStringBinaryTreeNode): TStringBinaryTreeNode;
+  begin
+    result := nil;
+    if assigned(aNode) then
+    begin
+      inc(lStackPos);
+      if aNode.fID = aComparer.fID then
+      begin
+        // have a match so return it and start backing out of the recursion.
+        lMatchedStackPos := lStackPos;
+        Stack[lStackPos].Node := aNode;
+        Stack[lStackPos].Comparison := -1;
+        result := aNode;
+      end
+      else
+      begin
+        // try the less than child first.
+        result := RecurseScan(aNode.fChildNodes[cStringBinaryTree_LeftChild]);   // It's OK if we are passing in nil.
+        if assigned(result) then
+        begin
+          Stack[lStackPos].Node := aNode;     // as we walk back out of the recursion, build the stack
+          Stack[lStackPos].Comparison := -1;  // Less-than pathway
+        end
+        else
+        begin
+          result := RecurseScan(aNode.fChildNodes[cStringBinaryTree_RightChild]);   // It's OK if we are passing in nil.
+          if assigned(result) then
+          begin
+            Stack[lStackPos].Node := aNode;     // as we walk back out of the recursion, build the stack
+            Stack[lStackPos].Comparison := 1;   // greater-than pathway
+          end;
+        end;
+      end;
+      Dec(lStackPos);
+    end;
+  end;
+
 begin
   {exit if head is nil}
+  result := nil;
   N1 := Fhead;
   if not Assigned(N1) then begin
-    result := nil;
     Exit;
   end;
 
-  {Find node to delete and stack the nodes to reach it}
   Found := False;
-  StackPos := 0;
-  while not Found do begin
+  lStackPos := 0;
+  lMatchedStackPos := 0;
 
-    {compare node}
-    CmpRes := CompareNode(IdVal, N1);
-    Inc(StackPos);
+  if aComparer.fType=cCompareString then
+  begin
+    {If we are finding by the String, then find node to delete using the normal string BTree approach and stack the nodes to reach it}
+    while not Found do
+    begin
+      {compare node}
+      CmpRes := CompareNode(aComparer.fString, N1);
+      Inc(lMatchedStackPos);
 
-    {Found node}
-    if CmpRes = 0 then begin
-      with Stack[StackPos] do begin
-        Node := N1;
-        Comparison := -1;
-      end;
-      Found := True;
-    end
+      {Found node}
+      if CmpRes = 0 then begin
+        with Stack[lMatchedStackPos] do begin
+          Node := N1;
+          Comparison := -1;
+        end;
+        Found := True;
+      end
 
-    {not found yet, continue the search}
-    else begin
-      with Stack[StackPos] do begin
-        Node := N1;
-        Comparison := CmpRes;
-      end;
-      N1 := N1.fChildNodes[CmpRes > 0];
+      {not found yet, continue the search}
+      else begin
+        with Stack[lMatchedStackPos] do begin
+          Node := N1;
+          Comparison := CmpRes;
+        end;
+        N1 := N1.fChildNodes[CmpRes > 0];
 
-      {Node not found, then exit}
-      if not Assigned(N1) then begin
-        Result := nil;
-        Exit;
+        if not Assigned(N1) then begin   //Node not found, then exit
+          Exit;
+        end;
       end;
     end;
-
+  end
+  else
+  begin
+    // We need to scan through all nodes to try and find a node with the given ID
+    N1 := RecurseScan(N1);
+    if not Assigned(N1) then begin    //Node not found, then exit
+      Exit;
+    end;
   end;
 
   {save the position of the parent of the node to delete in the stack}
-  StackParentPos := StackPos - 1;
+  StackParentPos := lMatchedStackPos - 1;
+  lStackPos := lMatchedStackPos;
 
   {Delete the node found}
   N2 := N1;
   if (not Assigned(N2.fChildNodes[cStringBinaryTree_RightChild])) or (not Assigned(N2.fChildNodes[cStringBinaryTree_LeftChild])) then begin
     {Node has at most one branch}
-    Dec(StackPos);
+    Dec(lStackPos);
     N1 := N2.fChildNodes[Assigned(N2.fChildNodes[cStringBinaryTree_RightChild])];
-    if StackPos = 0 then Fhead := N1
-    else with Stack[StackPos] do
+    if lStackPos = 0 then Fhead := N1
+    else with Stack[lStackPos] do
       Node.fChildNodes[Comparison > 0] := N1;
   end
   else begin
     {Node has two branches; stack nodes to reach one with no right child}
     N1 := N2.fChildNodes[cStringBinaryTree_LeftChild];
     while Assigned(N1.fChildNodes[cStringBinaryTree_RightChild]) do begin
-      Inc(StackPos);
-      with Stack[StackPos] do begin
+      Inc(lStackPos);
+      with Stack[lStackPos] do begin
         Node := N1;
         Comparison := 1;
       end;
@@ -685,7 +776,7 @@ begin
     N1.fChildNodes[cStringBinaryTree_RightChild] := N2.fChildNodes[cStringBinaryTree_RightChild];
     N1.fChildNodes[cStringBinaryTree_LeftChild] := N2.fChildNodes[cStringBinaryTree_LeftChild];
 
-    with Stack[StackPos] do
+    with Stack[lStackPos] do
       Node.fChildNodes[Comparison > 0] := tmpnode;
   end;
 
@@ -695,33 +786,36 @@ begin
 
   {Unwind the stack and rebalance}
   SubTreeDec := True;
-  while (StackPos > 0) and SubTreeDec do begin
-    if StackPos = 1 then StringBinaryTree_DelBalance(Fhead, SubTreeDec, Stack[1].Comparison)
-    else with Stack[StackPos-1] do
-      StringBinaryTree_DelBalance(Node.fChildNodes[Comparison > 0], SubTreeDec, Stack[StackPos].Comparison);
-    dec(StackPos);
+  while (lStackPos > 0) and SubTreeDec do begin
+    if lStackPos = 1 then StringBinaryTree_DelBalance(Fhead, SubTreeDec, Stack[1].Comparison)
+    else with Stack[lStackPos-1] do
+      StringBinaryTree_DelBalance(Node.fChildNodes[Comparison > 0], SubTreeDec, Stack[lStackPos].Comparison);
+    dec(lStackPos);
   end;
 end;
 
-function TStringBinaryTree.InternalDeleteNode(IdVal: Pointer): Boolean;
-var N1: TStringBinaryTreeNode;
+function TStringBinaryTree.InternalDeleteNode(aComparer: PTComparer): Boolean;
+var
+  N1: TStringBinaryTreeNode;
 begin
-  N1 := InternalExtractNode(IdVal);
-  if assigned(N1) then begin
+  N1 := InternalExtractNode(aComparer);
+  if assigned(N1) then
+  begin
     result := True;
     FreeNodeObj(N1);
   end
-  else result := False;
+  else
+    result := False;
 end;
 
 
-function TStringBinaryTree.InternalFindNode(idVal: pointer): TStringBinaryTreeNode;
+function TStringBinaryTree.InternalFindNode(const aStr: string): TStringBinaryTreeNode;
 var N1: TStringBinaryTreeNode;
-    CmpRes: Integer;
+    CmpRes: TSignType;
 begin
   N1 := FHead;
   while Assigned(N1) do begin
-    CmpRes := CompareNode(IdVal, N1);
+    CmpRes := CompareNode(aStr, N1);
     if CmpRes = 0 then begin
       Result := N1;
       Exit;
@@ -811,10 +905,6 @@ begin
   until False;
 end;
 
-function TStringBinaryTree.InternalGetNodeCount: integer;
-begin
-  Result := FnodeCount;
-end;
 
 function TStringBinaryTree.AddNode(aNode: TStringBinaryTreeNode): Boolean;
 begin
@@ -840,34 +930,81 @@ begin
   InternalClear;
 end;
 
-function TStringBinaryTree.CompareNode(IdVal: pointer; ANode: TStringBinaryTreeNode): Integer;
+function ToSignType(aInput: integer): TSignType; inline;
 begin
-  Result := CompareStr(PString(IdVal)^,aNode.fString);
+  result := 0;
+  if aInput>0 then
+    result := 1
+  else if aInput<0 then
+    result := -1;
 end;
 
-function TStringBinaryTree.CompareNode(aNode1, ANode2: TStringBinaryTreeNode): Integer;
+function TStringBinaryTree.CompareNode(const aStr: string; ANode: TStringBinaryTreeNode): TSignType;
 begin
-  result := CompareStr(aNode1.fString, aNode2.fString);
+  if fCaseSensitive then
+    Result := ToSignType(CompareStr(aStr,aNode.fString))
+  else
+{$ifdef CompareTextUsingDelphiCompareText}
+    Result := ToSignType(CompareText(aStr,aNode.fString));
+{$else}
+    Result := ToSignType(CompareTextUnicode(aStr,aNode.fString));
+{$endif}
+
 end;
 
-function TStringBinaryTree.ExtractNode(IdVal: Pointer): TStringBinaryTreeNode;
+function TStringBinaryTree.CompareNode(aNode1, ANode2: TStringBinaryTreeNode): TSignType;
 begin
-  Result := InternalExtractNode(IdVal);
+  if fCaseSensitive then
+    result := ToSignType(CompareStr(aNode1.fString, aNode2.fString))
+  else
+{$ifdef CompareTextUsingDelphiCompareText}
+    result := ToSignType(CompareText(aNode1.fString, aNode2.fString));
+{$else}
+    result := ToSignType(CompareTextUnicode(aNode1.fString, aNode2.fString));
+{$endif}
 end;
 
-function TStringBinaryTree.DeleteNode(IdVal: Pointer): Boolean;
+function TStringBinaryTree.DeleteNode(const aStr: String): Boolean;
+var
+  lComparer: TComparer;
 begin
-  Result := InternalDeleteNode(IdVal);
+  lComparer.fType := cCompareString;
+  lComparer.fString := aStr;
+  result := InternalDeleteNode(@lComparer);
 end;
 
-function TStringBinaryTree.FindNode(idVal: pointer): TStringBinaryTreeNode;
+function TStringBinaryTree.DeleteNode(const aID: Integer): Boolean;
+var
+  lComparer: TComparer;
 begin
-  Result := InternalFindNode(idVal);
+  lComparer.fType := cCompareID;
+  lComparer.fID := aID;
+  result := InternalDeleteNode(@lComparer);
 end;
 
-function TStringBinaryTree.FindNode(const idVal: String): TStringBinaryTreeNode;
+function TStringBinaryTree.FindNode(const aStr: String): TStringBinaryTreeNode;
 begin
-  Result := FindNode(@idVal);
+  Result := InternalFindNode(aStr);
+end;
+
+procedure FindNodeByIDIteratorFunc(aTree: TStringBinaryTree; aNode: TStringBinaryTreeNode; aExtData: Pointer; Var aContinue: Boolean);
+begin
+  if aNode.fID = PTIterateStringTreeContext(aExtData).ID then
+  begin
+    // found it so save our MatchedNode, and we can stop scanning.
+    PTIterateStringTreeContext(aExtData).MatchedNode := aNode;
+    aContinue := false;
+  end;
+end;
+
+function TStringBinaryTree.FindNode(aID: integer): TSTringBinaryTreeNode;
+var
+  lSearchContext: TIterateStringTreeContext;
+begin
+  lSearchContext.ID := aID;
+  lSearchContext.MatchedNode := nil;
+  self.InternalIterate(FindNodeByIDIteratorFunc, true, @lSearchContext);
+  result := lSearchContext.MatchedNode;
 end;
 
 function TStringBinaryTree.First: TStringBinaryTreeNode;
@@ -901,10 +1038,40 @@ begin
 end;
 
 
-function TStringBinaryTree.NodeCount: integer;
+procedure TStringBinaryTree.Publish(aStrings: TStrings);
+var
+  lLevel: integer;
+
+  procedure InternalPublish(aNode: TStringBinaryTreeNode);
+  begin
+    if assigned(aNode) then
+    begin
+      aStrings.Add(StringOfChar('-',lLevel)+aNode.fString+': '+IntToStr(aNode.fID));
+      inc(lLevel);
+      InternalPublish(aNode.fChildNodes[false]);  // recurse
+      InternalPublish(aNode.fChildNodes[true]);   // recurse
+      dec(lLevel);
+    end;
+  end;
 begin
-  Result := InternalGetNodeCount;
+  lLevel := 0;
+  InternalPublish(FHead);
 end;
+
+
+{ TComparer }
+(*
+function TComparer.IsMatch(aNode: TStringBinaryTreeNode): boolean;
+begin
+  if fType = cCompareString then
+  begin
+    result := aNode.fString = self.fString;
+  end
+  else
+  begin
+    result := aNode.fID = self.fID;
+  end;
+end;      *)
 
 
 end.

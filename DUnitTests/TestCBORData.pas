@@ -81,6 +81,7 @@ const
     "hex": "3bffffffffffffffff",
     "roundtrip": true,
     "decoded": "-18446744073709551616",
+    "name": "Negative Number too large",
     "ExpectedException": "ECBORStreamerExceptionInvalidFormat: Negative number too large to be supported.  when reading a CBOR Stream at position=9"
   },
   {
@@ -291,7 +292,8 @@ const
     "cbor": "wHQyMDEzLTAzLTIxVDIwOjA0OjAwWg==",
     "hex": "c074323031332d30332d32315432303a30343a30305a",
     "roundtrip": true,
-    "diagnostic": "0(\"2013-03-21T20:04:00Z\")"
+    "diagnostic": "0(\"2013-03-21T20:04:00Z\")",
+    "Name": "Tagged string DateTime"
   },
   {
     "cbor": "wRpRS2ew",
@@ -483,6 +485,20 @@ const
     "cbor": "pWFhYUFhYmFCYWNhQ2FkYURhZWFF",
     "hex": "a56161614161626142616361436164614461656145",
     "roundtrip": true,
+    "name": "Definite length map",
+    "decoded": {
+      "a": "A",
+      "b": "B",
+      "c": "C",
+      "d": "D",
+      "e": "E"
+    }
+  },
+  {
+    "cbor": "v2FhYUFhYmFCYWNhQ2FkYURhZWFF/w==",
+    "hex": "bf6161614161626142616361436164614461656145ff",
+    "roundtrip": true,
+    "name": "Indefinite length map",
     "decoded": {
       "a": "A",
       "b": "B",

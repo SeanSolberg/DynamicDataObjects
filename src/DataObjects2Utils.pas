@@ -55,6 +55,7 @@ type
     procedure SetIntValue(aValue: integer);
     procedure SetSingleValue(aValue: Single);
     procedure SetInt64Value(aValue: Int64);
+    procedure SetUInt64Value(aValue: UInt64);
     procedure SetDoubleValue(aValue: double);
     procedure SetUnsignedIntValue(aValue: Cardinal);
     procedure SetUnsignedInt16Value(aValue: Word);
@@ -505,6 +506,11 @@ begin
   fUnsignedIntValue := SwapBytes(aValue);
 end;
 
+procedure TNumBytes.SetUInt64Value(aValue: UInt64);
+begin
+  fUInt64Value := aValue;
+end;
+
 procedure TNumBytes.SetUnsignedInt16Value(aValue: Word);
 begin
   fUInt16Value := SwapBytes(aValue);
@@ -525,14 +531,14 @@ var
 begin
   Src := PLongWord(@Float)^;
   // Extract sign, exponent, and mantissa from Single number
-  Sign := Src shr 31;
+  Sign := LongInt(Src shr 31);
   Exp := LongInt((Src and $7F800000) shr 23) - 127 + 15;
-  Mantissa := Src and $007FFFFF;
+  Mantissa := LongInt(Src and $007FFFFF);
 
   if (Exp > 0) and (Exp < 30) then
   begin
     // Simple case - round the significand and combine it with the sign and exponent
-    Result := (Sign shl 15) or (Exp shl 10) or ((Mantissa + $00001000) shr 13);
+    Result := THalfFloat((Sign shl 15) or (Exp shl 10) or ((Mantissa + $00001000) shr 13));
   end
   else if Src = 0 then
   begin
@@ -558,7 +564,7 @@ begin
         if (Mantissa and $00001000) > 0 then
           Mantissa := Mantissa + $00002000;
         // Assemble Sign and Mantissa (Exp is zero to get denormalized number)
-        Result := (Sign shl 15) or (Mantissa shr 13);
+        Result := THalfFloat((Sign shl 15) or (Mantissa shr 13));
       end;
     end
     else if Exp = 255 - 127 + 15 then
@@ -566,12 +572,12 @@ begin
       if Mantissa = 0 then
       begin
         // Input float is infinity, create infinity half with original sign
-        Result := (Sign shl 15) or $7C00;
+        Result := THalfFloat((Sign shl 15) or $7C00);
       end
       else
       begin
         // Input float is NaN, create half NaN with original sign and mantissa
-        Result := (Sign shl 15) or $7C00 or (Mantissa shr 13);
+        Result := THalfFloat((Sign shl 15) or $7C00 or (Mantissa shr 13));
       end;
     end
     else
@@ -592,11 +598,11 @@ begin
       if Exp > 30 then
       begin
         // Exponent overflow - return infinity half
-        Result := (Sign shl 15) or $7C00;
+        Result := THalfFloat((Sign shl 15) or $7C00);
       end
       else
         // Assemble normalized half
-        Result := (Sign shl 15) or (Exp shl 10) or (Mantissa shr 13);
+        Result := THalfFloat((Sign shl 15) or (Exp shl 10) or (Mantissa shr 13));
     end;
   end;
 end;

@@ -1,4 +1,4 @@
-unit TestDataObjects;
+﻿unit TestDataObjects;
 {
 
   Delphi DUnit Test Case
@@ -9,11 +9,13 @@ unit TestDataObjects;
 
 }
 
+{$M+}
+
 interface
 
 uses
-  DUnitX.TestFramework, DUnitX.DUnitCompatibility, Generics.collections, classes, DataObjects2, SysUtils, VarInt,
-  StreamCache, DateUtils, contnrs, math;
+  windows, DUnitX.TestFramework, DUnitX.DUnitCompatibility, Generics.collections, classes, DataObjects2, SysUtils, VarInt,
+  StreamCache, DateUtils, contnrs, math, UnicodeData;
 
 type
 
@@ -78,6 +80,7 @@ type
     procedure TestCount;
     procedure TestClear;
     procedure TestCopyFrom;
+    procedure TestCaseSensitive;
   end;
   // Test methods for class TDataArray
 
@@ -124,6 +127,15 @@ type
   // Test methods for class TDataAttributeStore
 
 
+  TestUnicodeCompareText = class(TTestCase)
+  public
+    procedure SetUp; override;
+    procedure TearDown; override;
+  published
+    procedure TestCompareText;
+  end;
+
+
 implementation
 
 procedure MakeTestObject(aObj: TDataObj);
@@ -165,7 +177,7 @@ begin
     with newSlot('ObjectId').AsObjectID do
     begin
       for i := 0 to 11 do
-        Data[i] := i;
+        Data[i] := byte(i);
     end;
 
     newSlot('String').AsString := 'Hello World';
@@ -201,7 +213,7 @@ begin
     end;
 
     for i := low(lbuffer) to high(lbuffer) do
-      lBuffer[i] := i;
+      lBuffer[i] := byte(i);
 
     newSlot('Binary').AsBinary.Write(lbuffer, sizeof(lbuffer));
 
@@ -688,6 +700,7 @@ begin
   FreeAndNil(FDataObj);
 end;
 
+
 procedure TestTDataObj.TestClear;
 begin
   FDataObj.Clear;
@@ -977,7 +990,11 @@ procedure TestTDataFrame.TestFindSlot;
 var
   lNewSlot, lSlot: TDataObj;
 begin
+  FDataObj.SlotnameIsCaseSensitive := false;
+
   lNewSlot := fDataFrame.newSlot('TESTSLOT');
+  if not assigned(lNewSlot) then
+    Assert.Fail('NewSlot did not return a slot object');
 
   lSlot := FDataFrame.FindSlot('TESTSLOT');
   if not assigned(lSlot) then
@@ -996,56 +1013,139 @@ end;
 procedure TestTDataFrame.TestNewSlot;
 var
   lDataObj: TDataObj;
-  aSlotName: string;
   lNewSlot: TDataObj;
   lFindSlot: TDataObj;
 begin
   lDataObj := TDataObj.create;
-  lNewSlot := lDataObj.AsFrame.newslot('TEST');
-  lFindSlot := lDataObj.AsFrame.findSlot('TEST');
+  lNewSlot := lDataObj.AsFrame.newSlot('TEST');
+  lFindSlot := lDataObj.AsFrame.newSlot('TEST');
 
   assert.AreEqual(lNewSlot, lFindSlot, 'Find Slot Did not return the expected result');
 end;
 
 procedure TestTDataFrame.TestSlotByName;
 var
-  lNewSlot, lSlot: TDataObj;
+  lSlot: TDataObj;
+  lNewSlot: TDataObj;
 begin
+  fDataFrame.clear;
   lNewSlot := fDataFrame.newSlot('TESTSLOT');
+  if not assigned(lNewSlot) then
+    Assert.Fail('NewSlot did not return a slot object');
 
   try
     lSlot := FDataFrame.SlotByName('ShouldNotFind');  // generates exception if not found
+    if assigned(lSlot) then
+      Assert.Fail('SlotByname returned an object instance, but it shouln''t have.');
     Assert.fail('SlotByName should have raised an exception but it didn''t');
   except
     // expect the exception, so trap it and all is good. and move on.
   end;
 
+  // First, make sure that case-insensitive lookups are working.
   try
+    FDataObj.SlotnameIsCaseSensitive := false;
     lSlot := FDataFrame.SlotByName('TESTSLOT');  // generates exception if not found
-    lSlot := FDataFrame.SlotByName('TestSlot'); // generates exception if not found
+    if not assigned(lSlot) then
+      Assert.Fail('SlotByName did not return a slot object');
+
+    lSlot := FDataFrame.SlotByName('TestSlot');  // generates exception if not found
+    if not assigned(lSlot) then
+      Assert.Fail('SlotByname did not return a slot object');
   except
     on e: exception do
       Assert.Fail('Failed with exception '+e.classname+': '+e.message);
   end;
+
+  // Now make sure that case-sensitive lookups are working only when the case matches.
+  try
+    FDataObj.SlotnameIsCaseSensitive := true;
+    lSlot := FDataFrame.SlotByName('TESTSLOT');  // generates exception if not found
+    if not assigned(lSlot) then
+      Assert.Fail('SlotByname did not return a slot object');
+  except
+    on e: exception do
+      Assert.Fail('Failed with exception '+e.classname+': '+e.message);
+  end;
+
+  try
+    lSlot := FDataFrame.SlotByName('TestSlot'); // generates exception if not found, which is what we should expect.
+    if assigned(lSlot) then
+      Assert.Fail('SlotByname returned an object instance, but it shouln''t have.');
+    Assert.fail('SlotByName should have raised an exception but it didn''t');
+
+  except;
+    // expect the exception, so trap it and all is good. and move on.
+  end;
+
   Assert.pass;
 end;
 
 procedure TestTDataFrame.TestDeleteSlot;
+var
+  i: integer;
+  lSlot: TDataObj;
+  lStart, lEnd: TDateTime;
+  lSlotName: string;
 begin
-  fDataFrame.NewSlot('TESTSLOT');
-  fDataFrame.DeleteSlot('TESTSLOT');
-  Assert.IsNull(FDataFrame.FindSlot('TESTSLOT'),'Unable to Delete a slot with call to .DeleteSlot');
+  fDataFrame.clear;
+
+  for i := 0 to 10000 do   // Making a big amount of slots so that we can test that the frame has enough slots to get over the threshold of internally making a slotname index.
+  begin                    // note that if we make this 10 times bigger, then the time to do the test is 100 times more.
+    fDataFrame.NewSlot('TESTSLOT'+IntToStr(i)).AsString := 'String'+IntToStr(i);
+  end;
+
+  lStart := now;
+  for i := 0 to 10000 do    // do a bunch of deletes,
+  begin
+    if i=100 then continue;    //but, we are going to skip Number 100 and leave it in tact.
+
+    lSlotName := 'TESTSLOT'+IntToStr(i);
+    Assert.IsTrue(FDataFrame.DeleteSlot(lSlotName), 'Unable to DeleteSlot with SlotName: '+lSlotname);
+  end;
+  lEnd := now;
+  Log('Time to delete 10,000: '+FloatToStr((lEnd-lStart)*24*60*60)+' seconds');
+
+  // Run some asserts checking that the last remaining slot has what it should.
+  Assert.areEqual(1, fDataFrame.count, 'After Deleting slots, we should be left with one slot, but the count is '+intToStr(fDataFrame.Count));
+  lSlot:=fDataFrame.SlotByName('TESTSLOT100');
+  Assert.IsNotNull(lSlot, 'Last remaining slot to delete was not found correctly');
+  Assert.areequal('String100', lSlot.AsString, 'Last remaining slot to delete did not have the right data.');
+  Assert.areequal('TESTSLOT100', fDataFrame.Slotname(0), 'Last remaining slot to delete did not have the right slotname.');
 end;
 
 procedure TestTDataFrame.TestDelete;
 var
-  ReturnValue: Boolean;
+  i: integer;
   lIndex: Integer;
   lSlot: TDataObj;
+  lStart, lEnd: TDateTime;
 begin
-  lSlot:=fDataFrame.NewSlot('TESTSLOT');
-  lIndex := fDataFrame.IndexOfChildSlot(lSlot);
-  Assert.IsTrue(FDataFrame.Delete(lIndex), 'Unable to Delete Slot with index: '+InttoStr(lIndex));
+  fDataFrame.clear;
+
+  for i := 0 to 10000 do   // Making a big amount of slots so that we can test that the frame has enough slots to get over the threshold of internally making a slotname index.
+  begin                    // note that if we make this 10 times bigger, then the time to do the test is 100 times more.
+    fDataFrame.NewSlot('TESTSLOT'+IntToStr(i)).AsString := 'String'+IntToStr(i);
+  end;
+
+  lStart := now;
+  for i := 0 to 10000 do    // do a bunch of deletes,
+  begin
+    if i=100 then continue;    //but, we are going to skip Number 100 and leave it in tact.
+
+    lSlot:=fDataFrame.SlotByName('TESTSLOT'+IntToStr(i));
+    lIndex := fDataFrame.IndexOfChildSlot(lSlot);
+    Assert.IsTrue(FDataFrame.Delete(lIndex), 'Unable to Delete Slot with index: '+InttoStr(lIndex));
+  end;
+  lEnd := now;
+  Log('Time to delete 10,000: '+FloatToStr((lEnd-lStart)*24*60*60)+' seconds');
+
+  // Run some asserts checking that the last remaining slot has what it should.
+  Assert.areEqual(1, fDataFrame.count, 'After Deleting slots, we should be left with one slot, but the count is '+intToStr(fDataFrame.Count));
+  lSlot:=fDataFrame.SlotByName('TESTSLOT100');
+  Assert.IsNotNull(lSlot, 'Last remaining slot to delete was not found correctly');
+  Assert.areequal('String100', lSlot.AsString, 'Last remaining slot to delete did not have the right data.');
+  Assert.areequal('TESTSLOT100', fDataFrame.Slotname(0), 'Last remaining slot to delete did not have the right slotname.');
 end;
 
 procedure TestTDataFrame.TestSlotname;
@@ -1055,6 +1155,8 @@ var
   lIndex: integer;
 begin
   lSlot:=fDataFrame.NewSlot('TESTSLOT');
+  if not assigned(lSlot) then
+    Assert.fail('Calling NewSlot did not result in the returning of an object instance.');
   lSlot:=fDataFrame.NewSlot('testslot');   // doing it again with a different case, but it should "find" the upper case version.
   lIndex := fDataFrame.IndexOfChildSlot(lSlot);
   lSlotName := FDataFrame.Slotname(lIndex);
@@ -1064,6 +1166,21 @@ end;
 procedure TestTDataFrame.TestCount;
 begin
   Assert.AreEqual(20,FDataFrame.Count, 'Count did not return the expected value');
+end;
+
+procedure TestTDataFrame.TestCaseSensitive;
+var
+  lSlot: TDataObj;
+begin
+  fDataObj.SlotNameIsCaseSensitive := true;
+  Assert.IsTrue(fDataObj.AsFrame.FindSlot('String', lSlot), 'In a Frame, finding "String" should have been found when CaseSensitive is true.');
+  Assert.IsFalse(fDataObj.AsFrame.FindSlot('string', lSlot), 'In a Frame, finding "string" should not be found when CaseSensitive is true, but it was found.');
+
+  fDataObj.SlotNameIsCaseSensitive := false;
+  Assert.IsTrue(fDataObj.AsFrame.FindSlot('String', lSlot), 'In a Frame, finding "String" should have been found when CaseSensitive is false.');
+  Assert.IsTrue(fDataObj.AsFrame.FindSlot('string', lSlot), 'In a Frame, finding "string" should have been found when CaseSensitive is false.');
+
+  gSlotNameIndexThreshold := cDefaultSlotNameIndexThreshold;  // restore to default.
 end;
 
 procedure TestTDataFrame.TestClear;
@@ -1284,7 +1401,6 @@ end;
 procedure TestTDataArray.TestLastIndexOf;
 var
   i: integer;
-  lStrVal: string;
 begin
   // Build an array that we can use to test with.
   fDataArray.clear;
@@ -1303,7 +1419,6 @@ end;
 procedure TestTDataArray.TestRemoveForEach;
 var
   i: integer;
-  lStrVal: string;
 begin
   // Build an array that we can use to test with.
   fDataArray.clear;
@@ -1325,7 +1440,6 @@ end;
 procedure TestTDataArray.TestReduce;
 var
   i: integer;
-  lStrVal: string;
   lReducedObject: TDataObj;
   lSum: int64;
 begin
@@ -1354,7 +1468,6 @@ end;
 procedure TestTDataArray.TestMap;
 var
   i: integer;
-  lStrVal: string;
   lNewMappedObject: TDataObj;
 begin
   // Build an array that we can use to test with.
@@ -1364,14 +1477,13 @@ begin
     fDataArray.newSlot.AsInt32 := i;   // Yes.  as Integer, but LastIndex of below is string.
   end;
 
+  lNewMappedObject := fDataArray.map(
+    procedure(aTargetObj: TDataObj; aCurrentArray: TDataArray; aCurrentObj: TDataObj; aIndex: integer)
+    begin
+      aTargetObj.AsString := aCurrentObj.AsString;   // convert from Ints to string.
+    end
+  );
   try
-    lNewMappedObject := fDataArray.map(
-      procedure(aTargetObj: TDataObj; aCurrentArray: TDataArray; aCurrentObj: TDataObj; aIndex: integer)
-      begin
-        aTargetObj.AsString := aCurrentObj.AsString;   // convert from Ints to string.
-      end
-    );
-
     if lNewMappedObject.AsArray.count <> fDataArray.count then
     begin
       assert.fail('Map call on an array object returned a count that differed from the original.');
@@ -1502,7 +1614,6 @@ end;
 procedure TestTDataSparseArray.TestNewSlot;
 var
   ReturnValue: TDataObj;
-  aSlotIndex: Integer;
 begin
   ReturnValue := FSparseArray.NewSlot(-99, true);
   assert.IsNotNull(ReturnValue, 'Calling NewSlot did not return a new object');
@@ -1548,9 +1659,6 @@ end;
 
 procedure TestTDataSparseArray.TestSlotIndex;
 var
-  ReturnValue: Integer;
-  aIndex: Integer;
-  i: Integer;
   lVal: Int64;
   lCount: integer;
 
@@ -1638,6 +1746,226 @@ begin
   DoTest(Int64($fffffffffffffffe));
 end;
 
+{ TestUnicodeCompareText }
+
+procedure TestUnicodeCompareText.SetUp;
+begin
+  inherited;
+
+end;
+
+procedure TestUnicodeCompareText.TearDown;
+begin
+  inherited;
+
+end;
+
+procedure TestUnicodeCompareText.TestCompareText;
+
+  procedure RunUnicodeCasePairs;
+  var
+    k: integer;
+    Code: Integer;
+    lChar: char;
+    lTestString: string;
+    lUpperStr, lLowerStr: string;
+    lCharCount: integer;
+    lTestCounter: integer;
+
+    lResultLower: Integer;
+    lWinResultLower: integer;
+    lResultUpper: Integer;
+    lWinResultUpper: integer;
+
+    lDiffCount: integer;
+    lIsDiff: boolean;
+    lStart, lEnd: TDatetime;
+    lTestStrings: array of string;
+    lTestStringsUpper: array of string;
+    lCounter: integer;
+
+    function ToUpperString(const S: string): string;
+    var
+      Buffer: array of WideChar;
+    begin
+      // Allocate buffer with null terminator
+      SetLength(Buffer, Length(S) + 1);
+      if S <> '' then
+        Move(PChar(S)^, Buffer[0], Length(S) * SizeOf(WideChar));
+      Buffer[Length(S)] := #0;
+
+      // Call Windows API to uppercase in-place
+      CharUpperW(@Buffer[0]);
+
+      // Return result as Delphi string
+      SetString(Result, PWideChar(@Buffer[0]), Length(S));
+    end;
+
+    function ToLowerString(const S: string): string;
+    var
+      Buffer: array of WideChar;
+    begin
+      // Allocate buffer with null terminator
+      SetLength(Buffer, Length(S) + 1);
+      if S <> '' then
+        Move(PChar(S)^, Buffer[0], Length(S) * SizeOf(WideChar));
+      Buffer[Length(S)] := #0;
+
+      // Call Windows API to lowercase in-place
+      CharLowerW(@Buffer[0]);
+
+      // Return result as Delphi string
+      SetString(Result, PWideChar(@Buffer[0]), Length(S));
+    end;
+
+    function WindowsCompareUnicodeInsensitive(const S1, S2: string): Integer;
+    begin
+      Result := CompareStringW(
+        LOCALE_USER_DEFAULT,         // or LOCALE_INVARIANT for consistent behavior
+        NORM_IGNORECASE,             // case-insensitive flag
+        PWideChar(S1), Length(S1),
+        PWideChar(S2), Length(S2)
+      );
+
+      // Normalize return value to -1, 0, 1
+      case Result of
+        CSTR_LESS_THAN:    Result := -1;
+        CSTR_EQUAL:        Result := 0;
+        CSTR_GREATER_THAN: Result := 1;
+      else
+        raise Exception.Create('CompareStringW failed');
+      end;
+    end;
+
+
+  begin
+    lTestCounter := 0;
+    for lCharCount := 1 to 5 do
+    begin
+      for Code := 0 to $FFFF do
+      begin
+        lChar := Char(Code);
+        lTestString := StringOfChar(lChar, lCharCount);
+        lUpperStr := ToUpperString(lTestString);
+        lLowerStr := ToLowerString(lTestSTring);
+
+        lIsDiff := false;
+        if (lTestString<>lUpperStr) or (lTestString<>lLowerStr) then
+        begin
+          inc(lDiffCount);
+          lIsDiff := true;
+        end;
+
+        lResultLower := CompareTextUnicode(lTestString, lLowerStr);
+        lWinResultLower := WindowsCompareUnicodeInsensitive(lTestString, lLowerStr);
+        lResultUpper := CompareTextUnicode(lTestString, lUpperStr);
+        lWinResultUpper := WindowsCompareUnicodeInsensitive(lTestString, lUpperStr);
+
+        if lResultLower <> lWinResultLower then
+        begin
+          Assert.fail('Comparing '+lTestString+' and '+lLowerStr+' Failed with result = '+IntToStr(lResultLower));
+        end;
+
+        if lResultUpper <> lWinResultUpper then
+        begin
+          Assert.fail('Comparing '+lTestString+' and '+lUpperStr+' Failed with result = '+IntToStr(lResultUpper));
+        end;
+
+        lResultLower := CompareTextUnicode(lLowerStr, lTestString);
+        lWinResultLower := WindowsCompareUnicodeInsensitive(lLowerStr, lTestString);
+        lResultUpper := CompareTextUnicode(lUpperStr, lTestString);
+        lWinResultUpper := WindowsCompareUnicodeInsensitive(lUpperStr, lTestString);
+
+        if lResultLower <> lWinResultLower then
+        begin
+          Assert.fail('Comparing '+lLowerStr+' and '+lTestString+' Failed with result = '+IntToStr(lResultLower));
+        end;
+        if lResultUpper <> lWinResultUpper then
+        begin
+          Assert.fail('Comparing '+lUpperStr+' and '+lTestString+' Failed with result = '+IntToStr(lResultUpper));
+        end;
+
+        if lResultLower <> 0 then
+        begin
+          Assert.fail('Comparing '+lLowerStr+' and '+lTestString+' Failed with result = '+IntToStr(lResultLower));
+        end;
+
+        if lResultUpper <> 0 then
+        begin
+          Assert.fail('Comparing '+lUpperStr+' and '+lTestString+' Failed with result = '+IntToStr(lResultUpper));
+        end;
+
+(*        if lIsDiff then
+        begin
+          log(lTestString+' : '+ lUpperStr +' : '+ lLowerStr+ ' : '+IntToHex(Code));
+        end;
+        *)
+
+        inc(lTestCounter);
+      end;
+    end;
+    // Here is a little speed test comparing the windows version with the CompareTextUnicode version.
+    // First, make the strings so that part is not within our timing
+    // We are picking a size of 15 which is on the higher end of the size of a slotname
+    SetLength(lTestStrings, $FFFF+1);
+    SetLength(lTestStringsUpper, $FFFF+1);
+    for Code := 0 to $FFFF do
+    begin
+      lChar := Char(Code);
+      lTestStrings[code] := StringOfChar(lChar, 15);
+      lTestStringsUpper[code] := ToUpperString(lTestStrings[code]);
+    end;
+
+
+
+    lStart := now;
+    for k := 0 to 10 do
+    begin
+      lCounter := 0;
+      for Code := 0 to $FFFF do
+      begin
+        if WindowsCompareUnicodeInsensitive(lTestStrings[code], lTestStringsUpper[code])=0 then
+          inc(lCounter);
+      end;
+    end;
+    lEnd := now;
+    log('Windows Time: '+FloatToStrF((lEnd-lStart)*24*60*60,ffFixed, 3,3)+', MatchCount='+IntToStr(lCounter));
+
+    lStart := now;
+    for k := 0 to 10 do
+    begin
+      lCounter := 0;
+      for Code := 0 to $FFFF do
+      begin
+        if CompareTextUnicode(lTestStrings[code], lTestStringsUpper[code])=0 then
+          inc(lCounter);
+      end;
+    end;
+    lEnd := now;
+    log('CompareTextUnicode Time: '+FloatToStrF((lEnd-lStart)*24*60*60,ffFixed, 3,3)+', MatchCount='+IntToStr(lCounter));
+
+    lStart := now;
+    for k := 0 to 10 do
+    begin
+      lCounter := 0;
+      for Code := 0 to $FFFF do
+      begin
+        if CompareText(lTestStrings[code], lTestStringsUpper[code])=0 then
+          inc(lcounter);
+      end;
+    end;
+    lEnd := now;
+    log('CompareText Time: '+FloatToStrF((lEnd-lStart)*24*60*60,ffFixed, 3,3)+', MatchCount='+IntToStr(lCounter));
+
+
+    Assert.pass('Ran '+IntToStr(lTestCounter)+' CompareTextUnicode() tests and they all passed with a diff count of '+IntToStr(lDiffCount));
+  end;
+
+begin
+  RunUnicodeCasePairs
+
+end;
+
 initialization
   // Register any test cases with the test runner
   TDUnitX.RegisterTestFixture(TestTDataObj);
@@ -1648,13 +1976,6 @@ initialization
   TDUnitX.RegisterTestFixture(TestTDataSparseArray);
   TDUnitX.RegisterTestFixture(TestVarInts);
 
-
-(*  RegisterTest(TestTDataObj.Suite);
-  RegisterTest(TestTDataGUID.Suite);
-  RegisterTest(TestTDataObjectID.Suite);
-  RegisterTest(TestTDataFrame.Suite);
-  RegisterTest(TestTDataArray.Suite);
-  RegisterTest(TestTDataSparseArray.Suite);
-  RegisterTest(TestTDataAttributeStore.Suite); *)
+  TDUnitX.RegisterTestFixture(TestUnicodeCompareText);
 end.
 

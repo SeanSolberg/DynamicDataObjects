@@ -72,9 +72,9 @@ type
     fUseStringRefs: boolean;
     fUseSlotnameRefs: boolean;
     fSerializeAsUTF8: boolean;
-    fReadSlotNameRefs: TStringList;          // Only used when reading from a stream
+    fReadSlotNameRefs: TStringList;          // Only used when reading from a stream    NOTE: These are always case sensitive even if a dataObject has a frame with case InSensitive slotnames.
     fReadStringRefs: TStringList;            // Only used when reading from a stream
-    fWriteSlotNameRefs: TStringBinaryTree;   // Only used when writing to a stream if this option is turned on.
+    fWriteSlotNameRefs: TStringBinaryTree;   // Only used when writing to a stream if this option is turned on.  NOTE: These are always case sensitive even if a dataObject has a frame with case InSensitive slotnames.
     fWriteStringRefs: TStringBinaryTree;     // Only used when writing to a stream if this option is turned on.
 
   strict private
@@ -219,32 +219,32 @@ begin
     raise EDataObj.Create(strSlotNameOrSizeTooLarge);
 
   lCount := 1;
-  lBuffer[0] := lValue and $3F;        // bring in first 6 bits.
+  lBuffer[0] := byte(lValue and $3F);        // bring in first 6 bits.
   if IsID then
-    lBuffer[0] := lBuffer[0] or $80;   // set MSB for ID flag.
+    lBuffer[0] := byte(lBuffer[0] or $80);   // set MSB for ID flag.
 
   if lValue > $3F then
   begin
-    lBuffer[0] := lBuffer[0] or $40;   // set the "More to follow" flag.
+    lBuffer[0] := byte(lBuffer[0] or $40);   // set the "More to follow" flag.
 
     lValue := lValue shr 6;            // shift to the next block of bits in the number
-    lBuffer[1] := lValue and $7F;      // bring in the next 7 bits
+    lBuffer[1] := byte(lValue and $7F);      // bring in the next 7 bits
     lCount := 2;
 
     if lValue > $7F then
     begin
-      lBuffer[1] := lBuffer[1] or $80;   // set the "More to follow" flag.
+      lBuffer[1] := byte(lBuffer[1] or $80);   // set the "More to follow" flag.
 
       lValue := lValue shr 7;            // shift to the next block of bits in the number
-      lBuffer[2] := lValue and $7F;      // bring in the next 7 bits
+      lBuffer[2] := byte(lValue and $7F);      // bring in the next 7 bits
       lCount := 3;
 
       if lValue > $7F then
       begin
-        lBuffer[2] := lBuffer[2] or $80;   // set the "More to follow" flag.
+        lBuffer[2] := byte(lBuffer[2] or $80);   // set the "More to follow" flag.
 
         lValue := lValue shr 7;            // shift to the next block of bits in the number
-        lBuffer[3] := lValue and $FF;      // bring in the last 8 bits
+        lBuffer[3] := byte(lValue and $FF);      // bring in the last 8 bits
         lCount := 4;
       end;
     end;
@@ -653,14 +653,14 @@ function TDataObjStreamer.SlotnameRefWriteCount: integer;
 begin
   result := 0;
   if assigned(fWriteSlotNameRefs) then
-    result := fWriteslotNameRefs.NodeCount;
+    result := fWriteslotNameRefs.Count;
 end;
 
 function TDataObjStreamer.StringRefWriteCount: integer;
 begin
   result := 0;
   if assigned(fWriteStringRefs) then
-    result := fWriteStringRefs.NodeCount;
+    result := fWriteStringRefs.Count;
 end;
 
 procedure TDataObjStreamer.Encode(aDataObj: TDataObj);
@@ -670,12 +670,14 @@ begin
   if fUseSlotnameRefs then
   begin
     fWriteSlotNameRefs := TStringBinaryTree.Create;
+    fWriteSlotNameRefs.CaseSensitive := true;   // Must always be case sensitive even if the aDataObj is not case sensitive.
   end;
 
   FreeAndNil(fWriteStringRefs);
   if fUseStringRefs then
   begin
     fWriteStringRefs := TStringBinaryTree.Create;
+    fWriteStringRefs.CaseSensitive := true;
   end;
 
   EncodeInternal(aDataObj);
@@ -751,7 +753,7 @@ var
       begin
         // This string is not yet in our SlotnameRef list, so write the string and add it to the SlotnameRef List with the next sequential ID.
         LocalWriteOutTheString;
-        fWriteSlotNameRefs.AddString(aString, fWriteSlotNameRefs.NodeCount);
+        fWriteSlotNameRefs.AddString(aString, fWriteSlotNameRefs.Count);
       end;
     end
     else
@@ -896,7 +898,7 @@ begin
 
           lLen := length(lStore.fDataString);
           if (lLen>0) then              // we do not include empty strings as referenceable strings.
-            fWriteStringRefs.AddString(lStore.DataString, fWriteStringRefs.NodeCount);
+            fWriteStringRefs.AddString(lStore.DataString, fWriteStringRefs.Count);
         end;
       end
       else

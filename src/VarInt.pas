@@ -199,7 +199,7 @@ begin
     if lCount<9 then
     begin
       lValue := lValue or (Uint64(lByte and $7F) shl lShifter);
-      lShifter := lShifter + 7;
+      lShifter := byte(lShifter + 7);
     end
     else
     begin
@@ -225,7 +225,7 @@ begin
   lValue := ZigZagEncode64(Value);
   while true do
   begin
-    lBuffer[i] := lValue and $7F;    // take only 7 bits
+    lBuffer[i] := byte(lValue and $7F);    // take only 7 bits
     if lValue < $80 then
       break
     else
@@ -269,7 +269,7 @@ begin
     if lCount<9 then
     begin
       Value := Value or (Uint64(lByte and $7F) shl lShifter);
-      lShifter := lShifter + 7;
+      lShifter := byte(lShifter + 7);
     end
     else
     begin
@@ -294,7 +294,7 @@ begin
   lValue := Value;
   while true do
   begin
-    lBuffer[i] := lValue and $7F;    // take only 7 bits
+    lBuffer[i] := byte(lValue and $7F);    // take only 7 bits
     if lValue < $80 then
       break
     else
@@ -335,7 +335,7 @@ begin
     if lCount<4 then
     begin
       Value := Value or (Uint32(lByte and $7F) shl lShifter);
-      lShifter := lShifter + 7;
+      lShifter := byte(lShifter + 7);
     end
     else
     begin
@@ -360,7 +360,7 @@ begin
   lValue := Value;
   while true do
   begin
-    lBuffer[i] := lValue and $7F;    // take only 7 bits
+    lBuffer[i] := byte(lValue and $7F);    // take only 7 bits
     if lValue < $80 then
       break
     else
@@ -408,7 +408,7 @@ begin
     end;
 
     lValue := lValue or (Uint32(lByte and $7F) shl lShifter);
-    lShifter := lShifter + 7;
+    lShifter := byte(lShifter + 7);
 
     inc(lCount);
   until (lByte and $80) = 0;
@@ -426,7 +426,7 @@ begin
   lValue := ZigZagEncode32(Value);
   while true do
   begin
-    lBuffer[i] := lValue and $7F;    // take only 7 bits
+    lBuffer[i] := byte(lValue and $7F);    // take only 7 bits
     if lValue < $80 then
       break
     else

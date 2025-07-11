@@ -1,10 +1,11 @@
-﻿unit TestCBOR;
+﻿unit TestCBORParsing;
 
 interface
 
 uses
   SysUtils, DUnitX.TestFramework, RTTI,
-  DUnitX.Extensibility, DUnitX.Types, TestCBORData, DataObjects2, DataObjects2CBOR, DataObjects2JSON, DataObjConverters;
+  DUnitX.Extensibility, DUnitX.Types,
+  TestCBORData, DataObjects2, DataObjects2CBOR, DataObjects2JSON, DataObjConverters;
 
 type
   TFixturesProviderPlugin = class(TInterfacedObject, IPlugin)
@@ -20,6 +21,7 @@ type
     class constructor InitContext;
     class destructor FreeContext;
   end;
+
 
   TTestCBOR = class
   public
@@ -46,7 +48,6 @@ var
   lAllTestObj: TDataObj;
   lTestObj: TDataObj;
   lcount: integer;
-  lDesc: string;
 begin
   lcount := 0;
   lAllTestObj:=TDataObj.create;
@@ -64,10 +65,7 @@ begin
       SetLength(TestParams, 1);
       TestParams[0] := TValue.From<string>(lTestObj.json);
       inc(lCount);
-      lDesc := lTestObj['Name'].AsString;
-      if lDesc = '' then
-        lDesc := intToStr(lCount);
-      F.AddTestCase('RunTest', lDesc, 'DecodeTest', '', RttiMethod, True, TestParams);
+      F.AddTestCase('RunTest', intToStr(lCount), 'DecodeTest', '', RttiMethod, True, TestParams);
     end;
   finally
     lAllTestObj.free;
