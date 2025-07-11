@@ -126,9 +126,6 @@
         <DCCReference Include="TestCBOR.pas"/>
         <DCCReference Include="TestDataObjects.pas"/>
         <DCCReference Include="TestJSON.pas"/>
-        <RcCompile Include="FilesToInclude.rc">
-            <Form>FilesToInclude.res</Form>
-        </RcCompile>
         <RcItem Include="jsonTests.dataObj">
             <ContainerId>ResourceItem</ContainerId>
             <ResourceType>RCDATA</ResourceType>
