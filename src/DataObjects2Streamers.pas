@@ -669,15 +669,15 @@ begin
   FreeAndNil(fWriteSlotNameRefs);
   if fUseSlotnameRefs then
   begin
-    fWriteSlotNameRefs := TStringBinaryTree.Create;
-    fWriteSlotNameRefs.CaseSensitive := true;   // Must always be case sensitive even if the aDataObj is not case sensitive.
+    fWriteSlotNameRefs := TStringBinaryTree.Create(true);     // Must always be case sensitive even if the aDataObj is not case sensitive.
+//    fWriteSlotNameRefs.CaseSensitive := true;
   end;
 
   FreeAndNil(fWriteStringRefs);
   if fUseStringRefs then
   begin
-    fWriteStringRefs := TStringBinaryTree.Create;
-    fWriteStringRefs.CaseSensitive := true;
+    fWriteStringRefs := TStringBinaryTree.Create(true);      // Must always be case sensitive
+//    fWriteStringRefs.CaseSensitive := true;
   end;
 
   EncodeInternal(aDataObj);

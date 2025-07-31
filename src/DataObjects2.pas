@@ -138,13 +138,28 @@ unit DataObjects2;
 
 interface
 
-uses SysUtils, DateUtils, Generics.collections, Classes, VarInt, StreamCache, Rtti, typInfo, System.RTLConsts, System.NetEncoding, System.StrUtils, StringBTree
+// Define one of the following
+//{$define IndexAsDict}         // deleting time 9.92 seconds for 10,000 slots
+//{$define IndexAsStringTree}   // deleting time 0.48 seconds for 10,000 slots
+{$define IndexAsMapIndex}       // deleting time 0.90 seconds for 10,000 slots
+
+
+
+uses SysUtils, DateUtils, Generics.collections, Generics.Defaults, Classes, VarInt, StreamCache, Rtti, typInfo, System.RTLConsts, System.NetEncoding, System.StrUtils
+{$ifdef IndexAsStringTree}
+  ,StringBTree
+{$endif}
+{$ifdef IndexAsMapIndex}
+  ,IndexMap
+{$endif}
 {$ifdef MSWINDOWS}
-   ,windows
+  ,windows
 {$endif}
 ;
 
 {$I DataObjects2Settings.inc}
+
+
 
 type
   TDataObjParameterPurpose = (cppDecoding, cppEncoding);
@@ -706,11 +721,51 @@ type
     Slotname: string;
   end;
 
+{$ifdef IndexAsDict}
+(*TCaseInsensitiveComparer = class(TEqualityComparer<string>)
+  public
+    function Equals(const Left, Right: string): Boolean; override;
+    function GetHashCode(const Value: string): Integer; override;
+  end; *)
+
+  TSlotnameIndex = class(TDictionary<string, integer>)
+  private
+  public
+    constructor Create(aCaseSensitive: boolean);
+    procedure Remove(const aKey: string);
+  end;
+{$endif}
+
+{$ifdef IndexAsStringTree}
+  TSlotnameIndex = class(TStringBinaryTree)
+  public
+    procedure Remove(const aKey: string);
+    function TryGetValue(const aKey: string; var aValue: integer): boolean;
+    procedure Add(const aKey: string; aValue: integer);
+  end;
+{$endif}
+
+{$ifdef IndexAsMapIndex}
+  TSlotnameIndex = class
+  private
+    fIndexMap: TIndexMap;
+  public
+    constructor Create(aCaseSensitive: boolean);
+    procedure Clear;
+    procedure Remove(const aKey: string);
+    function TryGetValue(const aKey: string; var aValue: integer): boolean;
+
+    // will return the same aValue passed in if the index performed an add.
+    // If aKey already exists, then this will return the index value from that key.
+    function Add(const aKey: string; aValue: integer): integer;
+  end;
+{$endif}
+
   // Started out using a Dictionary, but found that it is slower for case sensitive lookups when the number of slots is under 15 and
   // slower for case insensitive lookups when the number of slots is under about 50.   So, we just do brute force scanning to find a match.
   TDataFrame = class  //(TStringList)
   const
-    cSlotNameBTreeThreshold = 10;   // Once we get over this number of slotnames in a frame, we will start using the fSlotNameIndex.
+    cSlotNameBTreeThreshold = 20;   // Once we get over this number of slotnames in a frame, we will start using the fSlotNameIndex.
   type
     TDataFrameEnumerator = class
     private
@@ -725,7 +780,7 @@ type
 
   private
     fSlotList: TStringList;    //Owns the objects
-    fSlotnameIndex: TStringBinaryTree;
+    fSlotnameIndex: TSlotnameIndex;
     fSlotnameIsCaseSensitive: boolean;   //Contains an index of the Slotnames that are in fSlotList for faster finding of slots by SlotName. Can't takeaway the slotnames from fSlotList though casue we also need to find by Index.
                                          // This index could be nil if the number of slots are low enough, it's not helpful to have it because brute force scanning is faster.
     function getSlot(aIndex: integer): TDataObj;
@@ -733,6 +788,8 @@ type
     function GetItem(const aKey: string): TDataObj;
     function GetObjByPath(ASlotPath: String; ACreateSlot: Boolean; aDelimeter: string): TDataObj;
     procedure SetSlotnameIsCaseSensitive(const Value: boolean);
+    procedure RebuildSlotnameIndex;
+    procedure CreateSlotnameIndex;
   public
     constructor Create;
     destructor Destroy; override;
@@ -3335,9 +3392,17 @@ begin
   inherited Create;
   fSlotList := TStringList.Create;
   fSlotList.OwnsObjects := true;
-  fSlotList.Duplicates := dupError;     // duplicates should never happen cause we are controlling it.
+  // Important that fSlotList is not sorted cause that is slower
+  // fSlotList.Duplicates := dupError;     // duplicates should never happen cause we are controlling it.
 
   // Note, we are not creating the fSlotNameIndex right away until enough slots are added to warrant it.
+end;
+
+procedure TDataFrame.CreateSlotnameIndex;   // can also be used to rebuild it.
+begin
+  FreeAndNil(fSlotNameIndex);   // just in case we are actually re-building it, like when changing case sensitivity
+  fSlotNameIndex := TSlotnameIndex.create(fSlotnameIsCaseSensitive);
+  RebuildSlotnameIndex;
 end;
 
 function TDataFrame.DeleteSlot(const aSlotName: string): boolean;   // returns true if the slot was found and deleted.
@@ -3348,39 +3413,22 @@ begin
   result := Delete(lIndex);
 end;
 
-procedure SlotNameDeleteDecrement(aTree: TStringBinaryTree; aNode: TStringBinaryTreeNode; aExtData: Pointer; Var aContinue: Boolean);
-var
-  lCompareInt: Integer;
-begin
-  lCompareInt := NativeInt(aExtData);
-
-  if (aNode.fID > lCompareInt) then
-  begin
-    Dec(aNode.fID);
-  end;
-end;
-
 function TDataFrame.Delete(aIndex: integer): boolean;         // returns true if the slot was found and deleted.
 var
   lSlotName: string;
 begin
   if (aIndex >= 0) and (aIndex < self.count) then
   begin
-    lSlotName := self.Slotname(aIndex);   // Its faster below to delete from the index by string than it is by Index/fID so let's get a copy of the string before we delete the slot that owns it.
+    if assigned(fSlotnameIndex) then
+    begin
+      lSlotName := self.Slotname(aIndex);   // Its faster below in the index to delete by string than it is by Index/fID so let's get a copy of the string before we delete the slot that owns it.
+    end;
 
     fSlotList.Delete(aIndex);
 
     if assigned(fSlotnameIndex) then
     begin
-      // Now that we have deleted this slot, we must also delete it from the slotname index if it exists.   Further, any nodes within the slotnameIndex that have an fID (index) higher
-      // than the one we are deleting must then be decremented by one.  Relatively speaking, this deleting process is considerably slow with a large number of slots.  however,
-      // things are organized this way to make finding and adding as fast as possible with the expense of more processing work to perform the rare deleting of a slot.
-
-      // SO, first decrement all the IDs above the one we are deleting using the iterator and decrementing callback
-      fSlotnameIndex.Iterate(SlotNameDeleteDecrement, true, Pointer(NativeInt(aIndex)));
-
-      // then, we finally delete the string from the index
-      fSlotNameIndex.DeleteNode(lSlotName);
+      fSlotnameIndex.Remove(lSlotName);
     end;
 
     result := true;
@@ -3426,14 +3474,10 @@ end;
 function TDataFrame.FindSlotIndex(const aSlotName: string): integer;    // returns -1 if not found
 var
   I: Integer;
-  lNode: TStringBinaryTreeNode;
 begin
   if assigned(fSlotNameIndex) then
   begin
-    lNode := fSlotnameIndex.FindNode(aSlotName);
-    if assigned(lNode) then
-      result := lNode.fID
-    else
+    if not fSlotnameIndex.tryGetValue(aSlotName, result) then
       result := -1;
   end
   else
@@ -3517,9 +3561,56 @@ end;
 
 function TDataFrame.NewSlot(const aSlotName: string; aRaiseExceptionIfAlreadyExists: boolean): TDataObj;
 var
-  lIndex: integer;
+  lIndex, lNewIndex: integer;
   i: Integer;
+
+  procedure MakeAndReturnSlot;
+  begin
+    result := TDataObj.Create;
+    result.SlotnameIsCaseSensitive := self.SlotnameIsCaseSensitive;
+    lIndex := fSlotList.AddObject(aSlotName, result);
+  end;
 begin
+  if assigned(fSlotNameIndex) then
+  begin
+    // If we already have an index and we add to the index and it returned the same number that we passed in, then we know it performed an add.
+    // If it returned a different number, then the task of inserting a new key into the index actually found an existing slot with that key name, so we are not doing the add.
+    lNewIndex := self.count;
+    lIndex := fSlotnameIndex.Add(aSlotname, lNewIndex);
+    if lIndex=lNewIndex then
+    begin
+      MakeAndReturnSlot;
+    end
+    else
+    begin
+      result := Slots[lIndex];                // return the slot that already exists for this name.
+      if aRaiseExceptionIfAlreadyExists then
+      begin
+        raise EDataObj.Create('NewSlot called with slotname="'+aSlotname+'" but this slot already existed in the DataFrame.');
+      end;
+    end;
+  end
+  else
+  begin
+    if not FindSlot(aSlotname, result) then
+    begin
+      MakeAndReturnSlot;
+
+      // now that we've added a new slot with this name, see if we need to build the slotName index.
+      if fSlotList.count > gSlotNameIndexThreshold then
+      begin
+        // we don't have an index yet, but we have just now grown big enough to get over the threshold so it's time to build it for better performance as we continue to grow.
+        CreateSlotnameIndex;
+      end;
+    end
+    else if aRaiseExceptionIfAlreadyExists then
+    begin
+      raise EDataObj.Create('NewSlot called with slotname="'+aSlotname+'" but this slot already existed in the DataFrame.');
+    end;
+  end;
+
+
+(* Original
   if not FindSlot(aSlotname, result) then
   begin
     result := TDataObj.Create;
@@ -3529,19 +3620,14 @@ begin
     // now that we've added a new slot with this name, see if we need to work with the slotName index.
     if assigned(fSlotNameIndex) then
     begin
-      fSlotnameIndex.AddString(aSlotName, lIndex);  // add this new slotname to the index if the index already exists.
+      fSlotnameIndex.Add(aSlotname, lIndex);  // add this new slotname to the index if the index already exists.
     end
     else
     begin
       if fSlotList.count > gSlotNameIndexThreshold then
       begin
         // we don't have an index yet, but we have just now grown big enough to get over the threshold so it's time to build it for better performance as we continue to grow.
-        fSlotNameIndex := TStringBinaryTree.create;
-        fSlotNameIndex.CaseSensitive := fSlotNameIsCaseSensitive;      //yes, the property in dataObjects code is in terms of CaseSensitive, where the property in the StringBTree is in terms of CaseInSensitive.
-        for i := 0 to fSlotList.count-1 do
-        begin
-          fSlotNameIndex.AddString(fSlotList.Strings[i], i);
-        end;
+        CreateSlotnameIndex;
       end;
     end;
 
@@ -3550,9 +3636,21 @@ begin
   begin
     raise EDataObj.Create('NewSlot called with slotname="'+aSlotname+'" but this slot already existed in the DataFrame.');
   end;
+*)
 end;
 
 
+
+procedure TDataFrame.RebuildSlotnameIndex;
+var
+  i: integer;
+begin
+  fSlotNameIndex.clear;
+  for i := 0 to fSlotList.count-1 do
+  begin
+    fSlotNameIndex.Add(fSlotList.Strings[i], i);
+  end;
+end;
 
 function TDataFrame.RemoveSlot(aSlot: TDataObj): boolean;
 var
@@ -3572,18 +3670,21 @@ var
   i: Integer;
 begin
   // Apply to self
-  fSlotnameIsCaseSensitive := Value;
-
-  // Apply to any children
-  for i := 0 to count-1 do
+  if fSlotNameIsCaseSensitive <> Value then
   begin
-    slots[i].SlotnameIsCaseSensitive := Value;
-  end;
+    fSlotnameIsCaseSensitive := Value;
 
-  // Apply to the index if it exists
-  if assigned(fSlotnameIndex) then
-  begin
-    fSlotNameIndex.CaseSensitive := Value;
+    // Apply to any children
+    for i := 0 to count-1 do
+    begin
+      slots[i].SlotnameIsCaseSensitive := Value;
+    end;
+
+    // Rebuild the slotname index, but only if it already exists.
+    if assigned(fSlotnameIndex) then
+    begin
+      CreateSlotnameIndex;
+    end;
   end;
 end;
 
@@ -4682,6 +4783,170 @@ begin
   gSlotNameIndexThreshold := cDefaultSlotNameIndexThreshold;
   gSlotNamePathDelimeter := cDefaultSlotNamePathDelimeter;
 end;
+
+
+
+{$ifdef IndexAsDict}
+
+(*{ TCaseInsensitiveComparer }
+
+function TCaseInsensitiveComparer.Equals(const Left, Right: string): Boolean;
+begin
+  Result := SameText(Left, Right);
+end;
+
+function TCaseInsensitiveComparer.GetHashCode(const Value: string): Integer;
+begin
+  Result := BobJenkinsHash(PChar(UpperCase(Value)), Length(Value) * SizeOf(Char), 0);
+end;
+*)
+
+{ TSlotnameIndex }
+
+constructor TSlotnameIndex.Create(aCaseSensitive: boolean);
+begin
+  if aCaseSensitive then
+    inherited Create(TStringComparer.Ordinal)
+  else
+    inherited Create(TIStringComparer.Ordinal);
+end;
+
+(*procedure TSlotNameIndex.SetCaseSensitive(aVal: boolean);
+begin
+  // if we change the case Sensitivity, we must have a new comparer and must re-build the dictionary.
+  if aVal <> fCaseSensitive then
+  begin
+    fCaseSensitive := aVal;
+    fComparer := TCaseInsensitiveComparer.create;
+
+  end;
+end;
+*)
+
+procedure TSlotnameIndex.Remove(const aKey: string);
+var
+  item: TPair<string,integer>;
+  lIndexVal: integer;
+begin
+  // if we remove an item in this TDictionary descendant, then all of the index values for each of the strings that have an index
+  // value higher than the one we are deleting need to be decremented.
+
+  if self.TryGetValue(aKey, lIndexVal) then
+  begin
+    for item in self do
+    begin
+      if item.Value > lIndexVal then
+      begin
+        Items[item.key] := item.Value-1;    // Unfortunately, no way to update the item already found, so we must make it use the key and internally look it up again.
+      end;
+    end;
+  end;
+end;
+{$endif}
+
+
+
+{$ifdef IndexAsStringTree}
+
+procedure TSlotnameIndex.Add(const aKey: string; aValue: integer);
+begin
+  self.AddString(aKey, aValue);
+end;
+
+procedure SlotNameDeleteDecrement(aTree: TStringBinaryTree; aNode: TStringBinaryTreeNode; aExtData: Pointer; Var aContinue: Boolean);
+var
+  lCompareInt: Integer;
+begin
+  lCompareInt := NativeInt(aExtData);
+
+  if (aNode.fID > lCompareInt) then
+  begin
+    Dec(aNode.fID);
+  end;
+end;
+
+procedure TSlotnameIndex.Remove(const aKey: string);
+var
+  lIndex: integer;
+begin
+  // Now that we have deleted this slot, we must also delete it from the slotname index if it exists.   Further, any nodes within the slotnameIndex that have an fID (index) higher
+  // than the one we are deleting must then be decremented by one.  Relatively speaking, this deleting process is considerably slow with a large number of slots.  however,
+  // things are organized this way to make finding and adding as fast as possible with the expense of more processing work to perform the rare deleting of a slot.
+  if TryGetValue(aKey, lIndex) then
+  begin
+    // SO, first decrement all the IDs above the one we are deleting using the iterator and decrementing callback
+    Iterate(SlotNameDeleteDecrement, true, Pointer(NativeInt(lIndex)));
+
+    // then, we finally delete the string from the index
+    DeleteNode(aKey);
+  end;
+end;
+
+function TSlotNameIndex.TryGetValue(const aKey: string; var aValue: integer): boolean;
+var
+  lNode: TStringBinaryTreeNode;
+begin
+  lNode := FindNode(aKey);
+  if assigned(lNode) then
+  begin
+    aValue := lNode.fID;
+    result := true
+  end
+  else
+    result := false;
+end;
+{$endif}
+
+
+
+
+{$ifdef IndexAsMapIndex}
+
+{ TSlotnameIndex }
+
+
+function TSlotnameIndex.Add(const aKey: string; aValue: integer): integer;
+begin
+  result := fIndexMap.add(aKey, aValue);
+end;
+
+procedure TSlotnameIndex.Clear;
+begin
+  fIndexMap.clear;
+end;
+
+constructor TSlotnameIndex.Create(aCaseSensitive: boolean);
+begin
+  inherited Create;
+  fIndexMap.Initialize;
+  fIndexMap.CaseSensitive := aCaseSensitive;
+end;
+
+procedure TSlotnameIndex.Remove(const aKey: string);
+var
+  lVal: integer;
+begin
+  // First, update all of the Nodes within the index to decrement their values if their value is higher than the one we are deleting.
+  if TryGetValue(aKey, lVal) then
+  begin
+    fIndexMap.Delete(aKey);
+  end;
+end;
+
+function TSlotnameIndex.TryGetValue(const aKey: string; var aValue: integer): boolean;
+var
+  lVal: integer;
+begin
+  result := false;
+  lVal := fIndexMap.Get(aKey);
+  if lVal >= 0 then
+  begin
+    aValue := lVal;
+    result := true;
+  end;
+end;
+
+{$endif}
 
 initialization
   DataObjectsSetupDefaultGlobalSettings;

@@ -1131,7 +1131,7 @@ begin
   lStart := now;
   for i := 0 to 10000 do    // do a bunch of deletes,
   begin
-    if i=100 then continue;    //but, we are going to skip Number 100 and leave it in tact.
+    if i=100 then continue;    //but, we are going to skip Number 100 and leave it intact.
 
     lSlot:=fDataFrame.SlotByName('TESTSLOT'+IntToStr(i));
     lIndex := fDataFrame.IndexOfChildSlot(lSlot);

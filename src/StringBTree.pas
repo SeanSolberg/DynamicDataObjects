@@ -315,7 +315,7 @@ type
     function  InternalNext(aNode: TStringBinaryTreeNode): TStringBinaryTreeNode;  {Return the next node whose value is larger than aNode}
     function  InternalPrev(aNode: TStringBinaryTreeNode): TStringBinaryTreeNode;  {Return the largest node whose value is smaller than aNode}
   public
-    Constructor Create;
+    Constructor Create(aIsCaseSensitive: boolean);
     Destructor  Destroy; Override;
     procedure   Publish(aStrings: TStrings);
     procedure   Iterate(Action: TStringBinaryTreeIterateFunc; Up: Boolean; ExtData: Pointer);
@@ -489,13 +489,13 @@ begin
  fID:=-1;
 end;
 
-Constructor TStringBinaryTree.Create;
+Constructor TStringBinaryTree.Create(aIsCaseSensitive: boolean);
 begin
   FHead := Nil;
   FNodeCount := 0;
-  fCaseSensitive := true;
+  fCaseSensitive := aIsCaseSensitive;
   randomize;
-  Inherited;
+  Inherited Create;
 end;
 
 function TStringBinaryTree.CreateNode: TStringBinaryTreeNode;
