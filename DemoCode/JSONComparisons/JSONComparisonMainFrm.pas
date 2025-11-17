@@ -40,8 +40,6 @@ Grijjy       0.392         1.125        [0.318]          0.470          [0.533] 
 Clever       3.695         3.015         34.139          0.954           169.785      1.104
 McJSON       0.777        [0.197]        0.424           0.526           0.943        1.484
 
-
-
 * Note:  The reason that Delphi's JSON writer wins on the mesh.json test is because this test contains pretty much all numbers
          and the Delphi serializer takes in json numbers and keeps them internally as the raw strings without actually doing the conversion to
          numbers and the corresponding error checking.  So, when reading, it does
@@ -53,7 +51,7 @@ McJSON       0.777        [0.197]        0.424           0.526           0.943  
          likely not a common situation as I'm sure most of the time an app that is taking in JSON is actually interested in using the data in that file.
 }
 
-//{$DEFINE cIncludeDDOTest}
+{$DEFINE cIncludeDDOTest}
 {$DEFINE cIncludeGrijjyTest}
 {$DEFINE cIncludeCleverJSON}
 {$DEFINE cIncludeMcJSONtest}
@@ -529,7 +527,8 @@ begin
   // now write this json file using the new data objects library
   lDataObj := DataObjects2.TDataObj.Create;
   lSS := TStringStream.Create;
-  lJS := TJsonStreamer.Create(lSS, TEncoding.UTF8);
+  lJS := TJsonStreamer.Create(lSS);
+  lJS.Encoding := TEncoding.UTF8;
   try
     TJsonStreamer.JsonToDataObj(fTestJSONString, lDataObj);   // JSON to DataObject
 
@@ -670,7 +669,8 @@ begin
   lDataObj := dataObjects2.TDataObj.create;
   TJsonStreamer.JsonToDataObj(lString, lDataObj);
 
-  lJS := TJsonStreamer.Create(DataObjects2JSON.cJsonTight);
+  lJS := TJsonStreamer.Create(nil);
+  lJS.Style := DataObjects2JSON.cJsonTight;
   try
     lJS.EncodeNonAsciiCharacters := true;
     lJS.Encode(lDataObj);

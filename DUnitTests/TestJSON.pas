@@ -109,7 +109,7 @@ var
 begin
   LoadTests;
   lTestFrame := fDataObj.AsArray.slots[aIndex].AsFrame;
-  lStreamer:=TJSONStreamer.create(lTestFrame['file'].AsBinary);    // make a streamer linked to the Binary slot
+  lStreamer:=TJSONStreamer.create(lTestFrame['File'].AsBinary);    // make a streamer linked to the Binary slot
 
   // Setup the JSON parser so that it has more strict JSON parsing rules.
   lStreamer.AllowParsingExtendedTypes := false;

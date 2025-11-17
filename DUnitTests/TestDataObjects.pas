@@ -1744,6 +1744,7 @@ begin
   DoTest(Int64($8000000000000000));
   DoTest(Int64($ffffffffffffffff));
   DoTest(Int64($fffffffffffffffe));
+
 end;
 
 { TestUnicodeCompareText }

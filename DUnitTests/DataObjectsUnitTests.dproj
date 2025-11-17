@@ -126,7 +126,7 @@
         <DCCReference Include="TestCBOR.pas"/>
         <DCCReference Include="TestDataObjects.pas"/>
         <DCCReference Include="TestJSON.pas"/>
-        <DCCReference Include="..\src\IndexMap.pas"/>
+        <DCCReference Include="..\src\SlotNameIndex.pas"/>
         <RcItem Include="jsonTests.dataObj">
             <ContainerId>ResourceItem</ContainerId>
             <ResourceType>RCDATA</ResourceType>

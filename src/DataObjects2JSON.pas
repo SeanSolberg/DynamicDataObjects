@@ -148,9 +148,7 @@ type
     procedure SetJSON(const Value: string);
   public
     function Clone: TDataObjStreamerBase; override;
-    constructor Create(aStream: TStream); overload; override;
-//    constructor Create(aStyle: TJsonStyle = cJSONTight; aIndention: byte = 2); overload;    // Will generate a warning because we are using overload and other versions are overridden virtual.
-//    constructor Create(aStream: TStream; aEncoding: TEncoding; aStyle: TJsonStyle = cJSONTight; aIndention: byte = 2); overload;    // Will generate a warning because we are using overload and other versions are overridden virtual.
+    constructor Create(aStream: TStream=nil); overload; override;
     destructor Destroy; override;
 
     class function FileExtension: string; override;
@@ -1561,7 +1559,7 @@ begin
 end;
 
 { TJsonStreamer }
-constructor TJsonStreamer.Create(aStream: TStream);
+constructor TJsonStreamer.Create(aStream: TStream=nil);
 begin
   inherited Create(aStream);
   fStyle := cDefaultStyle;
@@ -2311,15 +2309,19 @@ var
   lEncoding: TEncoding;
   lPreambleSize: integer;
 begin
+  aDataObj.SlotnameIsCaseSensitive := self.SlotnameIsCaseSensitive;
+
   // If fStream is assigned, then we are going to need to pull out the data from that stream.  It could be ascii encoded, UTF-8 encoded, etc.  so use TEncoding to deal with that.
   // if fStream is not assigned, then we are assuming that fJSON has already been filled with JSON text.
   if assigned(fStream) then
   begin
+    if fStream.size <=0  then
+      exit;   // nothing to read.
+
     // heres the problem with this. How do we know how much data to read from this stream through the fEncoding?
     // right now, we are going to assume that all data in the stream is destined to aDataObj.
     // but, there may be more data in the stream after the aDataObj is read out.    Hmmmmm.  How do we fix this someday?
 
-    aDataObj.SlotnameIsCaseSensitive := self.SlotnameIsCaseSensitive;
 
     lSize := fStream.Size;
     SetLength(lBytes, lSize);

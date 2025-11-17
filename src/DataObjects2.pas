@@ -138,20 +138,7 @@ unit DataObjects2;
 
 interface
 
-// Define one of the following
-//{$define IndexAsDict}         // deleting time 9.92 seconds for 10,000 slots
-//{$define IndexAsStringTree}   // deleting time 0.48 seconds for 10,000 slots
-{$define IndexAsMapIndex}       // deleting time 0.90 seconds for 10,000 slots
-
-
-
-uses SysUtils, DateUtils, Generics.collections, Generics.Defaults, Classes, VarInt, StreamCache, Rtti, typInfo, System.RTLConsts, System.NetEncoding, System.StrUtils
-{$ifdef IndexAsStringTree}
-  ,StringBTree
-{$endif}
-{$ifdef IndexAsMapIndex}
-  ,IndexMap
-{$endif}
+uses SysUtils, DateUtils, Generics.collections, Generics.Defaults, Classes, VarInt, StreamCache, Rtti, typInfo, System.RTLConsts, System.NetEncoding, System.StrUtils, SlotNameIndex
 {$ifdef MSWINDOWS}
   ,windows
 {$endif}
@@ -721,30 +708,6 @@ type
     Slotname: string;
   end;
 
-{$ifdef IndexAsDict}
-(*TCaseInsensitiveComparer = class(TEqualityComparer<string>)
-  public
-    function Equals(const Left, Right: string): Boolean; override;
-    function GetHashCode(const Value: string): Integer; override;
-  end; *)
-
-  TSlotnameIndex = class(TDictionary<string, integer>)
-  private
-  public
-    constructor Create(aCaseSensitive: boolean);
-    procedure Remove(const aKey: string);
-  end;
-{$endif}
-
-{$ifdef IndexAsStringTree}
-  TSlotnameIndex = class(TStringBinaryTree)
-  public
-    procedure Remove(const aKey: string);
-    function TryGetValue(const aKey: string; var aValue: integer): boolean;
-    procedure Add(const aKey: string; aValue: integer);
-  end;
-{$endif}
-
 {$ifdef IndexAsMapIndex}
   TSlotnameIndex = class
   private
@@ -780,9 +743,7 @@ type
 
   private
     fSlotList: TStringList;    //Owns the objects
-    fSlotnameIndex: TSlotnameIndex;
-    fSlotnameIsCaseSensitive: boolean;   //Contains an index of the Slotnames that are in fSlotList for faster finding of slots by SlotName. Can't takeaway the slotnames from fSlotList though casue we also need to find by Index.
-                                         // This index could be nil if the number of slots are low enough, it's not helpful to have it because brute force scanning is faster.
+    fSlotnameIndex: TSlotnameIndex;  //Contains an index of the Slotnames that are in fSlotList for faster finding of slots by SlotName. Can't takeaway the slotnames from fSlotList though because we also need to find by Index.
     function getSlot(aIndex: integer): TDataObj;
     function FindSlotIndex(const aSlotName: string): integer;
     function GetItem(const aKey: string): TDataObj;
@@ -790,6 +751,7 @@ type
     procedure SetSlotnameIsCaseSensitive(const Value: boolean);
     procedure RebuildSlotnameIndex;
     procedure CreateSlotnameIndex;
+    function GetSlotnameIsCaseSensitive: boolean;
   public
     constructor Create;
     destructor Destroy; override;
@@ -797,15 +759,17 @@ type
     function FindSlot(const aSlotName: string): TDataObj; overload;
     function FindSlot(const aSlotName: string; var oSlot: TDataObj): boolean; overload;
 
+    // Will Create the new slot or return the existing slot with that aSlotName if it already exists
+    function NewSlot(const aSlotName: string): TDataObj; overload;
+
     // if aRaiseExceptionIfAlreadyExists is true, then an exception is raised if trying to add a new slot with the given aSlotName finds that this slot already exists.
     // the normal operation (when aRaiseExceptionIfAlreadyExists=false) when this occurs is to just return the slot that was found.
-    function NewSlot(const aSlotName: string): TDataObj; overload;
     function NewSlot(const aSlotName: string; aRaiseExceptionIfAlreadyExists: boolean): TDataObj; overload;
     procedure AppendSlot(const aSlotName: string; aDataObj: TDataObj);
     function SlotByName(const aSlotName: string): TDataObj;
     function DeleteSlot(const aSlotName: string): boolean;   // returns true if the slot was found and deleted.
-    function Delete(aIndex: integer): boolean;         // returns true if the slot was found and deleted.
-    function RemoveSlot(aSlot: TDataObj): boolean;     // returns true if the slot was found and deleted.
+    function Delete(aIndex: integer): boolean;               // returns true if the slot was found and deleted.
+    function RemoveSlot(aSlot: TDataObj): boolean;           // returns true if the slot was found and deleted.
     function IndexOfChildSlot(aSlot: TDataObj): integer;
     property Slots[aIndex: integer]: TDataObj read getSlot;
     function Slotname(aIndex: integer): string;
@@ -820,7 +784,7 @@ type
     procedure CopyFrom(aSource: TDataFrame);
 
     property Items[const aKey: string]: TDataObj read GetItem; default;
-    property SlotnameIsCaseSensitive: boolean read fSlotnameIsCaseSensitive write SetSlotnameIsCaseSensitive;
+    property SlotnameIsCaseSensitive: boolean read GetSlotnameIsCaseSensitive write SetSlotnameIsCaseSensitive;
   end;
 
   TForEachProcedure = reference to procedure(aArray: TDataArray; aCurrentObj: TDataObj; aIndex: integer);
@@ -1702,7 +1666,7 @@ begin
     lProperties := lRttiType.GetProperties;
     for lRttiProp in lProperties do
     begin
-      if (lRTTIProp.IsReadable) then
+      if (lRTTIProp.IsWritable) then
       begin
         if (lRTTIProp.Visibility in aAssignContext.MemberVisibilities) then
         begin
@@ -1925,7 +1889,7 @@ end;
 constructor TDataObj.Create;
 begin
   inherited;
-  fSlotnameIsCaseSensitive := cDefaultSlotnameCaseSensitive;
+  SlotnameIsCaseSensitive := cDefaultSlotnameCaseSensitive;
 end;
 
 procedure TDataobj.TakeOverData(aSrcDataObj: TDataObj);
@@ -2050,36 +2014,36 @@ begin
     cDataTypeFrame: begin
       // we can convert a frame to an array by simply using the natural order of the frame slots.
       result := TDataArray.Create;
+      result.SlotnameIsCaseSensitive := self.SlotnameIsCaseSensitive;
       for i := 0 to fStore.dataFrame.Count-1 do
       begin
         // instead of doing copy operations from the original collection of TDataObjs, we can leave them in place and take those objects off the original collection and put them on the new collection.
         result.Add(fStore.dataFrame.Slots[i]);           // add the old TDataObj item to the new collection
         fStore.dataFrame.fSlotList.Objects[i] := nil;    // set it to nil so that when we free the TDataFrame, it doesn't free the TDataObj item.
       end;
-      result.SlotnameIsCaseSensitive := self.SlotnameIsCaseSensitive;
       setAsArray(result);                                // this will free the old TDataFrame and get this object to now be holding the new TDataArray.
     end;
     cDataTypeSparseArray: begin
       // we can convert a sparse array to a regular array by simply taking the items in their natural order and applying them to the array, of course we loose the original's Index value.
       result := TDataArray.Create;
+      result.SlotnameIsCaseSensitive := self.SlotnameIsCaseSensitive;
       for i := 0 to fStore.dataSparseArray.Count-1 do
       begin
         // instead of doing copy operations from the original collection of TDataObjs, we can leave them in place and take those objects off the original collection and put them on the new collection.
         result.Add(fStore.dataSparseArray.Items[i]);     // add the old TDataObj item to the new collection
         fStore.dataSparseArray.Items[i] := nil;          // set it to nil so that when we free the TDataArray, it doesn't free the TDataObj item.
       end;
-      result.SlotnameIsCaseSensitive := self.SlotnameIsCaseSensitive;
       setAsArray(result);            // this will free the old TDataSparseArray and get this object to now be holding the new TDataArray.
     end;
     cDataTypeStringList: begin
       // we can convert a stringList into an array of strings.
       result := TDataArray.Create;
+      result.SlotnameIsCaseSensitive := self.SlotnameIsCaseSensitive;
       for i := 0 to fStore.DataStringList.Count-1 do
       begin
         // instead of doing copy operations from the original collection of TDataObjs, we can leave them in place and take those objects off the original collection and put them on the new collection.
         result.NewSlot.AsString := fStore.DataStringList[i];
       end;
-      result.SlotnameIsCaseSensitive := self.SlotnameIsCaseSensitive;
       setAsArray(result);            // this will free the old TDataStringList and get this object to now be holding the new TDataArray.
     end;
     cDataTypeTag: result := fStore.DataTag.DataObj.GetAsArray;
@@ -3368,7 +3332,7 @@ end;
 
 procedure TDataFrame.Clear;
 begin
-  FreeAndNil(fSlotnameIndex);
+  fSlotnameIndex.clear;
   fSlotList.Clear;   // will free all owned child objects.
 end;
 
@@ -3392,16 +3356,14 @@ begin
   inherited Create;
   fSlotList := TStringList.Create;
   fSlotList.OwnsObjects := true;
+  fSlotnameIndex.Initialize;
+  fSlotnameIndex.CaseSensitive := cDefaultSlotnameCaseSensitive;
   // Important that fSlotList is not sorted cause that is slower
-  // fSlotList.Duplicates := dupError;     // duplicates should never happen cause we are controlling it.
-
-  // Note, we are not creating the fSlotNameIndex right away until enough slots are added to warrant it.
 end;
 
 procedure TDataFrame.CreateSlotnameIndex;   // can also be used to rebuild it.
 begin
-  FreeAndNil(fSlotNameIndex);   // just in case we are actually re-building it, like when changing case sensitivity
-  fSlotNameIndex := TSlotnameIndex.create(fSlotnameIsCaseSensitive);
+  fSlotNameIndex.Clear;   // just in case we are actually re-building it, like when changing case sensitivity
   RebuildSlotnameIndex;
 end;
 
@@ -3419,16 +3381,16 @@ var
 begin
   if (aIndex >= 0) and (aIndex < self.count) then
   begin
-    if assigned(fSlotnameIndex) then
+    if fSlotnameIndex.Count>0 then
     begin
       lSlotName := self.Slotname(aIndex);   // Its faster below in the index to delete by string than it is by Index/fID so let's get a copy of the string before we delete the slot that owns it.
     end;
 
     fSlotList.Delete(aIndex);
 
-    if assigned(fSlotnameIndex) then
+    if fSlotnameIndex.Count>0 then
     begin
-      fSlotnameIndex.Remove(lSlotName);
+      fSlotnameIndex.Delete(lSlotName);
     end;
 
     result := true;
@@ -3475,10 +3437,9 @@ function TDataFrame.FindSlotIndex(const aSlotName: string): integer;    // retur
 var
   I: Integer;
 begin
-  if assigned(fSlotNameIndex) then
+  if fSlotNameIndex.count > 0 then
   begin
-    if not fSlotnameIndex.tryGetValue(aSlotName, result) then
-      result := -1;
+    result := fSlotnameIndex.get(aSlotName);
   end
   else
   begin
@@ -3486,7 +3447,7 @@ begin
     // for under some threshold of the number of elements to search through.
     result := -1;
 
-    if fSlotNameIsCaseSensitive then
+    if SlotnameIsCaseSensitive then
     begin
       for I := 0 to fSlotList.Count-1 do
       begin
@@ -3548,6 +3509,11 @@ begin
   result := TDataobj(fSlotList.Objects[aIndex]);
 end;
 
+function TDataFrame.GetSlotnameIsCaseSensitive: boolean;
+begin
+  result := fSlotnameIndex.CaseSensitive;
+end;
+
 function TDataFrame.IndexOfChildSlot(aSlot: TDataObj): integer;
 begin
   result := fSlotList.IndexOfObject(aSlot);
@@ -3562,7 +3528,6 @@ end;
 function TDataFrame.NewSlot(const aSlotName: string; aRaiseExceptionIfAlreadyExists: boolean): TDataObj;
 var
   lIndex, lNewIndex: integer;
-  i: Integer;
 
   procedure MakeAndReturnSlot;
   begin
@@ -3571,7 +3536,7 @@ var
     lIndex := fSlotList.AddObject(aSlotName, result);
   end;
 begin
-  if assigned(fSlotNameIndex) then
+  if fSlotNameIndex.Count>0 then
   begin
     // If we already have an index and we add to the index and it returned the same number that we passed in, then we know it performed an add.
     // If it returned a different number, then the task of inserting a new key into the index actually found an existing slot with that key name, so we are not doing the add.
@@ -3608,35 +3573,6 @@ begin
       raise EDataObj.Create('NewSlot called with slotname="'+aSlotname+'" but this slot already existed in the DataFrame.');
     end;
   end;
-
-
-(* Original
-  if not FindSlot(aSlotname, result) then
-  begin
-    result := TDataObj.Create;
-    result.SlotnameIsCaseSensitive := self.SlotnameIsCaseSensitive;
-    lIndex := fSlotList.AddObject(aSlotName, result);
-
-    // now that we've added a new slot with this name, see if we need to work with the slotName index.
-    if assigned(fSlotNameIndex) then
-    begin
-      fSlotnameIndex.Add(aSlotname, lIndex);  // add this new slotname to the index if the index already exists.
-    end
-    else
-    begin
-      if fSlotList.count > gSlotNameIndexThreshold then
-      begin
-        // we don't have an index yet, but we have just now grown big enough to get over the threshold so it's time to build it for better performance as we continue to grow.
-        CreateSlotnameIndex;
-      end;
-    end;
-
-  end
-  else if aRaiseExceptionIfAlreadyExists then
-  begin
-    raise EDataObj.Create('NewSlot called with slotname="'+aSlotname+'" but this slot already existed in the DataFrame.');
-  end;
-*)
 end;
 
 
@@ -3670,9 +3606,9 @@ var
   i: Integer;
 begin
   // Apply to self
-  if fSlotNameIsCaseSensitive <> Value then
+  if fSlotnameIndex.CaseSensitive <> Value then
   begin
-    fSlotnameIsCaseSensitive := Value;
+    fSlotnameIndex.CaseSensitive := Value;
 
     // Apply to any children
     for i := 0 to count-1 do
@@ -3681,7 +3617,7 @@ begin
     end;
 
     // Rebuild the slotname index, but only if it already exists.
-    if assigned(fSlotnameIndex) then
+    if fSlotnameIndex.Count>0 then
     begin
       CreateSlotnameIndex;
     end;
@@ -4947,6 +4883,8 @@ begin
 end;
 
 {$endif}
+
+
 
 initialization
   DataObjectsSetupDefaultGlobalSettings;

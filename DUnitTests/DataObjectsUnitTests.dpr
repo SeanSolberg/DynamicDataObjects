@@ -11,7 +11,7 @@ uses
   TestCBOR in 'TestCBOR.pas',
   TestDataObjects in 'TestDataObjects.pas',
   TestJSON in 'TestJSON.pas',
-  IndexMap in '..\src\IndexMap.pas';
+  SlotNameIndex in '..\src\SlotNameIndex.pas';
 
 begin
   Application.Initialize;
