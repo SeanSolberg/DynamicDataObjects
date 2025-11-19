@@ -56,6 +56,7 @@ begin
      ftWord: aFieldDataObj.AsInt32 := aField.AsInteger;
      ftBoolean: aFieldDataObj.AsBoolean := aField.AsBoolean;
      ftFloat,
+     ftFMTBCD,
      ftCurrency: aFieldDataObj.AsDouble := aField.AsFloat;  //DataObject doesn't have a currency, so treat it as a double.
      ftBCD: begin
        with aFieldDataObj.AsBinary do
@@ -127,7 +128,7 @@ begin
      ftTimeStamp: aFieldDataObj.AsDateTime := aField.AsDateTime;
      //ftFMTBcd: ;  FINISH
      ftFixedWideChar: aFieldDataObj.AsString := aField.AsString;
-     ftWideMemo: aFieldDataObj.AsStringList.text := aField.AsString;
+     ftWideMemo: aFieldDataObj.AsString := aField.AsString;
      ftOraTimeStamp: aFieldDataObj.AsDateTime := aField.AsDateTime;
      //ftOraInterval: Not supported;
      ftLongWord,
