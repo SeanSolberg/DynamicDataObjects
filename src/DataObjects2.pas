@@ -1377,11 +1377,24 @@ var
   lRttiProp: TRttiProperty;
   lFrame: TDataFrame;
   lProperties: TArray<TRttiProperty>;
+  lArray: TDataArray;
+  I: integer;
+  lStrings: TStrings;
 begin
   // Now go though the members of the instance and serialize those
   if aObj = nil then
   begin
     aDataObj.Clear;   // makes the dataObj contain nil because aObj is nil.
+  end
+  else if aObj is TStrings then
+  begin
+    lStrings := TStrings(aObj);
+    lArray := aDataObj.AsArray;
+
+    for I := 0 to lStrings.Count - 1 do
+    begin
+      lArray.Newslot.AsString := TStrings(aObj)[I];
+    end;
   end
   else
   begin
@@ -1538,12 +1551,28 @@ begin
         end
         else if aDataObj.DataType.Code = cDataTypeArray then
         begin
-          // an array can be serialized into a Class only if the class is a TCollection.
-          // Future - maybe we support other collection types of classes in the future.
-          if aValue.AsObject is TCollection then
+          lArray := aDataObj.AsArray;
+
+          if lObject is TStrings then
           begin
+            TStrings(lObject).BeginUpdate;
+            try
+              TStrings(lObject).Clear;
+              for I := 0 to lArray.Count - 1 do
+              begin
+                TStrings(lObject).Add(lArray.Slots[I].AsString);
+              end;
+            finally
+              TStrings(lObject).EndUpdate;
+            end;
+
+            Result := True;
+          end
+          else if aValue.AsObject is TCollection then
+          begin
+            // an array can be serialized into a Class only if the class is a TCollection.
+            // Future - maybe we support other collection types of classes in the future.
             // Note:  the TCollection instance knows what class of items (only one) it can contain so
-            lArray := aDataObj.AsArray;
             for i := 0 to lArray.Count-1 do
             begin
               AssignDataObjToObject(lArray.Slots[i], TCollection(aValue.AsObject).Add, aAssignContext);
