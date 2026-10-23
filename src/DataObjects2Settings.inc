@@ -50,9 +50,9 @@
 const
   // this constant defines how many slots in a frame warrant it getting big enough to benefit from a slot name index.
   // Frames with less than this threshold won't have or need an index, but if building a frame grows over this threshold, then an index is created for faster lookups
-  // experimentally, this is best somewhere around 20 to 25 slots, but it varies a bit on the strings and their order in how they are added to the frame and how much re-balancing is needed when the initial index is created.
+  // experimentally, this is best somewhere around 10 to 20 slots, but it varies a bit on the strings and their order in how they are added to the frame and how much re-balancing is needed when the initial index is created.
   // It also takes some work to build the index to start, so being on the higher side might actually be beneficial to delay it to only when it's needed.
-  cDefaultSlotNameIndexThreshold = 20;
+  cDefaultSlotNameIndexThreshold = 16;
 
   // TDataObj, and specifically the internal TDataFrame container can have case-sensitive or case-insensitive slotnames (field names)
   // TDataObj has the SlotnameIsCaseSensitive property which sets whether slotnames are case sensitive or not for everything within that object's contained data hierarchy.
@@ -61,7 +61,7 @@ const
   // and then you change the TDataObj from case insensitive to case sensitive, no checking of the underlying data will happen, but you will then be unable to access
   // one of those slots as finding a slot with the text of that slotname containing any case variances will always return the first one it finds and the other one will be unfindable.
   // So, setup your case property right away before putting data into the TDataObj.  The JSON serializer will set the TDataObj's caseSensitive property when reading JSON according to it's CaseSensitive property.
-  cDefaultSlotnameCaseSensitive = true;
+  cDefaultSlotnameCaseSensitive = false;
 
   // This setting is used by the nested data finding calls FindSlotByPath and NewSlotByPath to define the default identifier separator.
   // This default gets loaded into gSlotNamePathDelimeter at startup and this global variable can be changed at anytime.  When doing so, all calls from all code then use this

@@ -10,7 +10,8 @@ uses
   TestCBORData in 'TestCBORData.pas',
   TestCBOR in 'TestCBOR.pas',
   TestDataObjects in 'TestDataObjects.pas',
-  TestJSON in 'TestJSON.pas';
+  TestJSON in 'TestJSON.pas',
+  SlotNameIndex in '..\src\SlotNameIndex.pas';
 
 begin
   Application.Initialize;

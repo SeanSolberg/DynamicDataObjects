@@ -765,7 +765,7 @@ begin
       lStart:=now;
       for k := 1 to lLoopCount do    // number of times to run the test.
       begin
-        lSB:=TStringBinaryTree.create;
+        lSB:=TStringBinaryTree.create(true);
         try
           // Populate the StringTree
           gInsBalanceCount := 0;
@@ -1092,7 +1092,7 @@ begin
       lMasterlist.Add(lStr);
     end;
 
-    lSB:=TStringBinaryTree.create;
+    lSB:=TStringBinaryTree.create(true);
     lList:=TStringList.create;
     try
 

@@ -41,6 +41,7 @@ type
     fParentDataObj: TdataObj;
     fDataObj: TDataObj;
     fSlotName: String;
+    fSlotIndex: integer;
   public
     {public declarations}
     constructor Create;
@@ -49,7 +50,8 @@ type
     property ParentDataObj: TDataObj read fParentDataObj write fParentDataObj;
   published
     {published properties}
-    property SlotName: String read fSlotName write fSlotName;  //Does not apply when this is an element of an array
+    property SlotName: String read fSlotName write fSlotName;       //Does not apply when this is an element of an array
+    property SlotIndex: integer read fSlotIndex write fSlotIndex;   //Does not apply when this is an element of a frame
   end;
 
 
@@ -113,12 +115,19 @@ end;
 
 function TDataObjClipboard.AddDataObjArrayItem(aParentDataObj, aDataObj: TDataObj): TClipboardItem;
 begin
-
+  Result:=TClipboardItem.create;
+  Result.ParentDataObj := aParentDataObj;
+  Result.DataObj.CopyFrom(ADataObj);
+  add(Result);
 end;
 
 function TDataObjClipboard.AddDataObjSparseArrayItem(aParentDataObj: TDataObj; aIndex: integer; aDataObj: TDataObj): TClipboardItem;
 begin
-
+  Result:=TClipboardItem.create;
+  Result.ParentDataObj := aParentDataObj;
+  Result.fSlotIndex := aIndex;
+  Result.DataObj.CopyFrom(ADataObj);
+  add(Result);
 end;
 
 
@@ -254,6 +263,10 @@ var
   i: integer;
   lStreamer: TDataObjStreamerBase;
 begin
+  // If this instance already has a TDataObj in memory that is the copied dataobject(s) then just use it directly as the first attempt.
+
+
+  // As a secondary attempt,
   // now go through the sorted streamers from highest priority (lowest number) to the lowest priority (highest number) and try to read from the clipboard
   // from the first one that can possibly do so.
   gStreamerRegistry.Sort;
