@@ -43,10 +43,11 @@ type
 
   public
     class function FileExtension: string; override;
+    class function Name: string; override;
     class function Description: string; override;
     class function GetFileFilter: string; override;
     class function IsFileExtension(aStr: string): boolean; override;
-    class function ClipboardPriority: cardinal; override;
+    class function Priority: cardinal; override;
 
     procedure Decode(aDataObj: TDataObj); override;
     procedure Encode(aDataObj: TDataObj); override;
@@ -74,6 +75,11 @@ begin
   result := SameText(aStr, '.ion') or SameText(aStr, 'ion');
 end;
 
+
+class function TIonStreamer.Name: string;
+begin
+  result := 'Amazon Ion Format';
+end;
 
 procedure TIonStreamer.WriteString(aString: String);
 var
@@ -521,7 +527,7 @@ begin
 end;
 
 
-class function TIonStreamer.ClipboardPriority: cardinal;
+class function TIonStreamer.Priority: cardinal;
 begin
   result := 30;
 end;

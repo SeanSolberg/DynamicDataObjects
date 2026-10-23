@@ -14,7 +14,9 @@ uses
   DataObjects2BSON in '..\..\src\DataObjects2BSON.pas',
   DataObjects2Streamers in '..\..\src\DataObjects2Streamers.pas',
   DataObjects2Utils in '..\..\src\DataObjects2Utils.pas',
-  DataObjects2UBJSON in '..\..\src\DataObjects2UBJSON.pas';
+  DataObjects2UBJSON in '..\..\src\DataObjects2UBJSON.pas',
+  VarInt in '..\..\src\VarInt.pas',
+  StringBTree in '..\..\src\StringBTree.pas';
 
 {$R *.res}
 

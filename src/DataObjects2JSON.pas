@@ -37,11 +37,23 @@ unit DataObjects2JSON;
 
 interface
 
-uses DataObjects2, DataObjects2Streamers, SysUtils, Classes, DataObjects2Utils;
+uses DataObjects2, DataObjects2Streamers, SysUtils, Classes, DataObjects2Utils, windows;
 
 type
   TJsonStyle = (cJsonTight, cJsonHumanReadable);
 
+const
+  // When performing JSON serializating without explicitly choosing the serializing preferences, these are the defaults chosen.
+  cDefaultStyle = cJsonTight;
+  cDefaultIndention = 2;
+  cDefaultAllowParsingSymbols = true;
+  cDefaultAllowSingleQuoteStrings = true;
+  cDefaultAllowParsingExtendedTypes = false;
+  cDefaultAllowOverwritingExistingSlots = true;
+  cDefaultAllowLeadingZero = true;
+  cDefaultSlotnameIsCaseSensitive = true;    // strict JSON is case sensitive.
+
+type
   // This class helper Gives us the ability to do the following
   //   lSomeString := lDataObj.JSON;  When producing JSON, it uses the Tight JSON formatting.
   //     or
@@ -73,6 +85,10 @@ type
     // Settings for Decoding options
     fAllowParsingExtendedTypes: boolean;
     fAllowParsingSymbols: boolean;        // Means we will allow a text "identifer" to be streamed in after a slotname that is not valid JSON, but we consider it a symbol.  IE)  {"Slotname": ~TemplateName~, "SlotName2": ALWAYSRUN}
+    fAllowSingleQuoteStrings: boolean;    // True means that single quotes are allowed for strings
+    fAllowOverwritingExistingSlots: boolean;   // True means that reading in a JSON slot in a object will accept that data and overwrite any existing value for that field if it already exists.
+    fAllowParsingLeadingZeros: boolean;   // Strict JSON does not allow leading zeros to be parsed.  But, I believe JSON5 does.
+    fSlotnameIsCaseSensitive: boolean;    // Strict JSON has case Sensitive slotnames.
 
     // Settings for both Encoding and Decoding options.
     fEncoding: TEncoding;
@@ -104,6 +120,7 @@ type
     function ParseAnyType(aDataObj: TDataObj): boolean;
     function ParseInvalidChar(aDataObj: TDataObj): boolean;
     function ParseStringValue(aDataObj: TDataObj): boolean;
+    function ParseSingleQuoteStringValue(aDataObj: TDataObj): boolean;
     function ParseNumber(aDataObj: TDataObj): boolean;
     function ParseArray(aDataObj: TDataObj): boolean;
     function ParseInfinity(aDataObj: TDataObj): boolean;
@@ -131,17 +148,20 @@ type
     procedure SetJSON(const Value: string);
   public
     function Clone: TDataObjStreamerBase; override;
-    constructor Create(aStream: TStream); overload; override;
-    constructor Create(aStyle: TJsonStyle = cJSONTight; aIndention: byte = 2); overload;    // Will generate a warning because we are using overload and other versions are overridden virtual.
-    constructor Create(aStream: TStream; aEncoding: TEncoding; aStyle: TJsonStyle = cJSONTight; aIndention: byte = 2); overload;    // Will generate a warning because we are using overload and other versions are overridden virtual.
+    constructor Create(aStream: TStream=nil); overload; override;
     destructor Destroy; override;
 
     class function FileExtension: string; override;
+    class function Name: string; override;
     class function Description: string; override;
     class procedure GetParameterInfo(aParameterPurpose: TDataObjParameterPurposes; aStrings: TStrings); override;
     class function GetFileFilter: string; override;
     class function IsFileExtension(aStr: string): boolean; override;
-    class function ClipboardPriority: cardinal; override;
+    class function Priority: cardinal; override;
+    class procedure GetClipboardPublishingFormats(aCallback: TGetClipboardPublishingCallbackProc); override;
+    procedure SetPreferencesByClipboardVersion(aClipboardVersion: integer); override;
+//    function GetClipboardFormat: word; override;
+
 
     // Parse the JSON from the attached Stream or from the JSON string if there is not Stream attached and put the results into aDataObj
     procedure Decode(aDataObj: TDataObj); override;
@@ -149,6 +169,7 @@ type
     // Produce JSON from the aDataObj and put the results into the JSON property using the formatting options defined by Style, Indention, etc.
     // Also put the results into the attached Stream if it is not nil according to the encoding defined in the Encoding property and the IncludeEncodingPreamble property.
     procedure Encode(aDataObj: TDataObj); override;
+    procedure ClipboardEncode(aDataObj: TDataObj); override;
     procedure ApplyOptionalParameters(aParams: TStrings); override;
 
     property Style: TJsonStyle read fStyle write fStyle;
@@ -162,6 +183,11 @@ type
     property Encoding: TEncoding read fEncoding write setEncoding;
     property AllowParsingExtendedTypes: boolean read fAllowParsingExtendedTypes write fAllowParsingExtendedTypes;
     property AllowParsingSymbols: boolean read fAllowParsingSymbols write fAllowParsingSymbols;
+    property AllowSingleQuoteStrings:boolean read fAllowSingleQuoteStrings write fAllowSingleQuoteStrings;
+    property AllowOverwritingExistingSlots: boolean read fAllowOverwritingExistingSlots write fAllowOverwritingExistingSlots;
+    property AllowParsingLeadingZeros: boolean read fAllowParsingLeadingZeros write fAllowParsingLeadingZeros;
+    property SlotnameIsCaseSensitive: boolean read fSlotnameIsCaseSensitive write fSlotnameIsCaseSensitive;     // affects the Decoding.
+
     property InitialBufferCapacity: Cardinal read fInitialBufferCapacity write fInitialBufferCapacity;
 
     property JSON: string read fJSON write SetJSON;
@@ -175,13 +201,29 @@ type
     class function CreateDataObjFromJSON(const aJson: string): TDataObj;
   end;
 
-  resourceString
-    SJsonParseMessageAt = '%s at %d';
-
+var
+  gJSONFormatSettings: TFormatSettings;
 
 implementation
 
 uses DateUtils, IdCoderMIME;
+
+resourcestring
+  SJsonParseMessageAt = '%s at %d';
+  cExceptInvalidCharacterParsingEscape = 'Invalid character parsing an escape "\uxxxx" sequence.';
+  cExceptInvalidCharacterAfterEscape = 'Invalid character after encountering an escape "\" character.';
+  cExceptUnableToConvertText = 'Unable to convert text to floating point number';
+  cExceptNumberTooBigWhen = 'Number too big when parsing a JSON number.  Library is limited to 64 bit numbers.';
+  cExceptErrorParsingAnArray = 'Error parsing an array.  Expected ]';
+  cExceptErrorParsingAnArray2 = 'Error parsing an array.  Expected an item';
+  cExceptErrorParsingObject = 'Error Parsing ObjectID';
+  cExceptErrorParsingISODate = 'Error Parsing ISODate';
+  cExceptInvalidTokenParsing = 'Invalid token parsing JSON';
+  cErrorErrorParsingJSON = 'Error Parsing JSON. Missing closing }';
+  cExceptErrorParsingJSON = 'Error parsing JSON';
+  cExceptCannotHaveLeadingZerosOnNumbers = 'Invalid JSON.  Not allowed to have leading zeros on numbers.';
+  cExceptControlCharsNotAllowed = 'Error Parsing a string. Control Characters not allowed in JSON string.';
+  cExceptParsingSingleQuoteString = 'Single quotes are not allowed to start a JSON string.';
 
 
 const cHexDecimalConvert: array[0..102] of Byte = (
@@ -202,7 +244,7 @@ const cJumpTable: array[#0..#127] of pointer =
   @TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,  //#8..#15
   @TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,  //#16..#23
   @TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,  //#24..#31
-  @TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseStringValue,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseStringValue,  //#32..#39:   #34=", #39='
+  @TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseStringValue,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseSingleQuoteStringValue,  //#32..#39:   #34=", #39='
   @TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseNegative,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,     //#40..#47:   #45=-
   @TJsonStreamer.ParseNumber,@TJsonStreamer.ParseNumber,@TJsonStreamer.ParseNumber,@TJsonStreamer.ParseNumber,@TJsonStreamer.ParseNumber,@TJsonStreamer.ParseNumber,@TJsonStreamer.ParseNumber,@TJsonStreamer.ParseNumber,                                          //#48..#55:   '0' - '7'
   @TJsonStreamer.ParseNumber,@TJsonStreamer.ParseNumber,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,@TJsonStreamer.ParseInvalidChar,            //#56..#63    #56='8', #57='9'
@@ -260,6 +302,7 @@ function TJsonStreamer.ParseInvalidChar(aDataObj: TDataObj): boolean;
 begin
   result := false;   // This is a handler routine for the jumpTable so we can handle characters in the jumpTable that we should never encounter unless we have invalid JSON or we are allowing the parsing of Symbols.
 end;
+
 
 // Try to parse a string from fJSON and along the way, do any special escaping handling such as \uxxxxx, etc.
 function TJsonStreamer.ParseString(var oString: string): boolean;
@@ -339,7 +382,8 @@ begin
     lChar := lChPtr^;
     if (lChar = '''') then
     begin
-      //technically speaking, json doesn't really support single quotes for string definitions.  however, we are going to support it.  JSON5 allows it.  maybe someday we will have an option to restrict to just explicitly valid json
+      // technically speaking, json doesn't really support single quotes for string definitions.  however, we are going to support it.  JSON5 allows it.
+      // If this option is not enabled, then we would never get to this code anyway.
       lStartsWithSingleQuote := true;
     end
     else if (lChar <> '"') then
@@ -378,7 +422,7 @@ begin
             'u':
               begin
                 inc(lChPtr);   // Get past the 'u' character
-                if lChPtr+3*sizeof(Char) <= fEndPtr then
+                if lChPtr+3 <= fEndPtr then   // reminder,the +3 automatically figures the size of char being 2 bytes so it's really a +6 to the pointer.
                 begin
                   lUnicodeCH1 := LocalHexConvert(lChPtr^);
                   inc(lChPtr);
@@ -395,28 +439,26 @@ begin
                   end
                   else
                   begin
-                    RaiseParsingException('Invalid character parsing an escape "\uxxxx" sequence.', lChPtr);
-
-                    raise EJSONParsingException.Create('Invalid character parsing an escape "\uxxxx" sequence.');
+                    RaiseParsingException(cExceptInvalidCharacterParsingEscape, lChPtr);
                   end;
                 end
                 else
                 begin
                   // we started with an /u sequence but there aren't enough characters to pick up 4 more.
-                  RaiseParsingException('Invalid characters parsing an escape "\uxxxx" sequence.', lChPtr);
+                  RaiseParsingException(cExceptInvalidCharacterParsingEscape, lChPtr);
                 end;
               end;
             else
             begin
               // This must be an error condition because an invalid character is following the excape '\' character.
-              RaiseParsingException('Invalid character after encountering an escape "\" character.', lChPtr);
+              RaiseParsingException(cExceptInvalidCharacterAfterEscape, lChPtr);
             end;
           end;
         end
         else
         begin
           // we are out of characters to pickup in an escape sequence.
-          RaiseParsingException('Invalid character after encountering an escape "\" character.', lChPtr);
+          RaiseParsingException(cExceptInvalidCharacterAfterEscape, lChPtr);
         end;
       end
 
@@ -456,7 +498,11 @@ begin
 
       else
       begin
-        // just take this character as a normal character by counting up to include it.
+        // just take this character as a normal character by counting up to include it, but only if it's valid JSON
+        // Excludes control characters from its valid set.
+        if lChar < Char($20) then
+          RaiseParsingException(cExceptControlCharsNotAllowed,lChPtr);
+
         inc(lChPtr);
         inc(lCharCount);
       end;
@@ -478,12 +524,27 @@ begin
     aDataObj.AsString := lString;
 end;
 
+function TJsonStreamer.ParseSingleQuoteStringValue(aDataObj: TDataObj): boolean;
+begin
+  if fAllowSingleQuoteStrings then
+  begin
+    result := ParseStringValue(aDataObj);
+  end
+  else
+  begin
+    result := false;
+    RaiseParsingException(cExceptParsingSingleQuoteString,fCurrentCharPtr);
+  end;
+end;
+
+
 // Try to parse a number from fJSON
 // This could read and populate an integer(int64, int32, or byte) or a double float.
 // We are not having it read in single floats cause it's not obvious to decide when to choose a single and when to choose a double.  Could be a future improvement maybe.
 // Note that technically the JSON spec doesn't allow a number to start out with the '+' character such as "+10", but we are going to allow it here.
 // I do believe that JSON5 does technically allow it, though.
 // Note that a number like ".123" is not valid JSON without a leading zero, but I believe it is valid JSON5, so we will allow it as well.
+// Technically, JSON doesn't allow leading zeros any case except for "0" or "0.xxxxx"
 
 function TJsonStreamer.ParseNumber(aDataObj: TDataObj): boolean;
 var
@@ -500,6 +561,8 @@ var
   lSavedChar: Char;
   lExpCount: integer;
   lBase: int64;
+  lDouble: Double;
+  lIsNegative: boolean;
 
   procedure PerformLocalTextToFloat;
   begin
@@ -514,7 +577,7 @@ var
     begin
       // Error Condition of some sort?
       lChPtr^ := lSavedChar;   // restore this before we raise the exception and leave this method without restoring it below.
-      RaiseParsingException('Unable to convert text to floating point number', fCurrentCharPtr);
+      RaiseParsingException(cExceptUnableToConvertText, fCurrentCharPtr);
     end;
     lChPtr^ := lSavedChar;   // restore.
   end;
@@ -531,6 +594,7 @@ begin
   lExpCount := 0;
   lIsFloat := false;
   lIsExponent := false;
+  lIsNegative := false;
 
 
   lChPtr := fCurrentCharPtr;
@@ -547,13 +611,29 @@ begin
           // FINISH - need to do overflow checking here
           lExpInt64 := (lExpInt64 * 10) + ord(lChar) - ord('0');
           inc(lExpCount);
+        end
+        else
+        begin
+
         end;
       end
       else
       begin
-        // FINISH - need to do overflow checking here
-        lWholeInt64 := (lWholeInt64 * 10) + ord(lChar) - ord('0');
-        inc(lWholeCount);
+        if result and (lWholeInt64=0) and not fAllowParsingLeadingZeros then     // if result has been set to true, then we started reading a number, but if we just got a digit and our number so far is zero and the current char is not a ., then we must have previously read a leading zero which is not allowed according to strict JSON.
+        begin
+          raiseParsingException(cExceptCannotHaveLeadingZerosOnNumbers, lChPtr);
+        end;
+
+        // Need to do overflow checking here via exception
+        try
+          lWholeInt64 := (lWholeInt64 * 10) + ord(lChar) - ord('0');
+          inc(lWholeCount);
+        except
+          on e: exception do
+          begin
+            RaiseParsingException(cExceptNumberTooBigWhen,lChPtr)
+          end;
+        end;
       end;
       lCanBePlusOrMinus := false;
       inc(lChPtr);
@@ -563,6 +643,8 @@ begin
     begin
       lCanBePlusOrMinus := false;
       inc(lChPtr);
+      if (lIsExponent=false) and (lChar = '-') then
+        lIsNegative := true;
     end
     else if (lIsFloat=false) and (lChar = '.') and (lWholeCount > 0) then
     begin
@@ -570,7 +652,7 @@ begin
       lCanBePlusOrMinus := false;
       inc(lChPtr);
     end
-    else if (lWholeCount=1) and (lIsExponent = false) and ((lChar = 'e') or (lChar = 'E')) then
+    else if {(lWholeCount=1) and} (lIsExponent = false) and ((lChar = 'e') or (lChar = 'E')) then
     begin
       lIsFloat := true;
       lCanBePlusOrMinus := true;
@@ -602,7 +684,11 @@ begin
                 lBase := lBase * 10;
                 dec(lExpCount);
               end;
-              aDataObj.AsDouble := double(lWholeInt64) + (Double(lExpInt64) / lBase);
+              lDouble := double(lWholeInt64) + (Double(lExpInt64) / lBase);
+              if lIsNegative then
+                aDataObj.AsDouble := lDouble * -1
+              else
+                aDataObj.AsDouble := lDouble;
             end
             else
             begin
@@ -616,17 +702,23 @@ begin
           // NOTE: someday, we may need to be able to support unsigned Int64 sized numbers.
 
           // choose the smallest integer data type to hold this value.
-          if (lWholeInt64 > 2147483647) or (lWholeInt64 < -2147483648) then
+          if (lWholeInt64 > $7FFFFFFF) then
           begin
-            aDataObj.AsInt64 := lWholeInt64;
+            if lIsNegative then
+              aDataObj.AsInt64 := -lWholeInt64
+            else
+              aDataObj.AsInt64 := lWholeInt64;
           end
-          else if (lWholeInt64 >= 0) and (lWholeInt64<=255) then
+          else if (lIsNegative=false) and (lWholeInt64<=255) then
           begin
-            aDataObj.AsByte := lWholeInt64;
+            aDataObj.AsByte := byte(lWholeInt64);
           end
           else
           begin
-            aDataObj.AsInt32 := lWholeInt64;
+            if lIsNegative then
+              aDataObj.AsInt32 := integer(-lWholeInt64)
+            else
+              aDataObj.AsInt32 := integer(lWholeInt64);
           end;
         end;
 
@@ -640,29 +732,30 @@ end;
 
 
 //Try to parse an array from fJSON.  Needs to start with "["
-// return 0 if this is not the start of an array
-// return 1 if this is an array and all the items in the array serialized and completed the array correctly
-// return 2 if there is an error where we could not reach the end of the array.
 function TJsonStreamer.ParseArray(aDataObj: TDataObj): boolean;
 var
   lArray: TDataArray;
+  lExpectItem: boolean;
 begin
   result := false;
   if eof then exit;
-  if not (CurrentChar = '[') then exit;   // not the start of an array so get out.
 
   result := true;
   IncIndex;
 
   SkipSpaces;
   lArray := aDataObj.AsArray;
+  lExpectItem := false;
   while not (eof) and (CurrentChar <> ']') do
   begin
+    // There's something within the array brackets so try to load it.
     if ParseAnyType(lArray.NewSlot) then
     begin
+      lExpectItem := false;
       SkipSpaces;
       if (not eof) and (CurrentChar = ',') then
       begin
+        lExpectItem := true;   // because we have a comma, we expect an item to follow
         IncIndex;
       end
       else
@@ -674,12 +767,13 @@ begin
     begin
       // We were not able to parse this item in the array. Maybe nothing was parsed, or maybe an item was paritally parsed.
       // However, there was something there that could not be parsed.  So, the code below will handle that.
+      RaiseParsingException(cExceptErrorParsingAnArray2, fCurrentCharPtr);
     end;
   end;
 
-  if not (eof) and (CurrentChar <> ']') then
+  if (eof) or (CurrentChar <> ']') or lExpectItem then
   begin
-    RaiseParsingException('Error parsing an array.  Expected ]', fCurrentCharPtr);    // We parsed some stuff, but errored out here because we are not getting the end of array marker.
+    RaiseParsingException(cExceptErrorParsingAnArray, fCurrentCharPtr);    // We parsed some stuff, but errored out here because we are not getting the end of array marker.
   end;
 
   IncIndex;   // get moved past the ] chracter.
@@ -1061,7 +1155,7 @@ begin
         end
         else
         begin
-          RaiseParsingException('Error Parsing ObjectID', fCurrentCharPtr);
+          RaiseParsingException(cExceptErrorParsingObject, fCurrentCharPtr);
         end;
       end;
     end;
@@ -1124,7 +1218,7 @@ begin
         end
         else
         begin
-          RaiseParsingException('Error Parsing ISODate', fCurrentCharPtr);  // The ISODate("") structure was correct, but the contents had characters that were invalid hex.
+          RaiseParsingException(cExceptErrorParsingISODate, fCurrentCharPtr);  // The ISODate("") structure was correct, but the contents had characters that were invalid hex.
         end;
       end;
     end;
@@ -1166,11 +1260,12 @@ begin
 end;
 
 //Try to parse a frame (in JSON terminology, it's called an object) from fJSON.  Needs to start with "{"
-//It is already expected that before making a call here that the currentChar is = "}"
+//It is already expected that before making a call here that the currentChar is = "{"
 function TJsonStreamer.ParseFrame(aDataObj: TDataObj): boolean;
 var
   lFrame: TDataFrame;
   lSlotName: string;
+  lExpectItem: boolean;
 begin
 //  result := false;
 //  if eof then exit;
@@ -1180,16 +1275,19 @@ begin
   IncIndex;   // move past the }
   SkipSpaces;
   lFrame := aDataObj.AsFrame;
+  lExpectItem := false;
 
   while (not eof) and (CurrentChar <> '}') do
   begin
     if ParseSlotName(lSlotName) then
     begin
-      if ParseAnyType(lFrame.NewSlot(lSlotName)) then
+      if ParseAnyType(lFrame.NewSlot(lSlotName, not fAllowOverwritingExistingSlots)) then
       begin
+        lExpectItem := false;
         SkipSpaces;
         if (not eof) and (CurrentChar = ',') then
         begin
+          lExpectItem := true;   // because we have a comma, we expect an item to follow
           IncIndex;
         end
         else
@@ -1199,20 +1297,20 @@ begin
       end
       else
       begin
-        RaiseParsingException('Invalid token parsing JSON', fCurrentCharPtr);
+        RaiseParsingException(cExceptInvalidTokenParsing, fCurrentCharPtr);
       end;
     end
     else
     begin
-        RaiseParsingException('Invalid token parsing JSON', fCurrentCharPtr);
+        RaiseParsingException(cExceptInvalidTokenParsing, fCurrentCharPtr);
       // Error reading the slotname.
     end;
   end;
 
   // check for proper frame ending.
-  if not(eof) and (CurrentChar <> '}') then
+  if not(eof) and (CurrentChar <> '}') or lExpectItem then
   begin
-    RaiseParsingException('Error Parsing JSON. Missing closing }', fCurrentCharPtr);
+    RaiseParsingException(cErrorErrorParsingJSON, fCurrentCharPtr);
   end;
 
   IncIndex; // consume closing '}'
@@ -1266,7 +1364,7 @@ begin
   // By looking at this character, we can decide what possibility to check.
   lChar := CurrentChar;
   if CurrentChar>#127 then
-    RaiseParsingException('Invalid token parsing JSON', fCurrentCharPtr);
+    RaiseParsingException(cExceptInvalidTokenParsing, fCurrentCharPtr);
 
 {$R-}  // can turn off range checking because we just checked it above.  NOTE:  turning this off only saves us two CPU instructions.
   TMethod(lJump).Code := cJumpTable[lChar];
@@ -1291,7 +1389,7 @@ begin
 
   if not result then
   begin
-    RaiseParsingException('Invalid token parsing JSON', fCurrentCharPtr);
+    RaiseParsingException(cExceptInvalidTokenParsing, fCurrentCharPtr);
   end;
 end;
 
@@ -1430,7 +1528,7 @@ begin
     Encoder := TIdEncoderMime.Create(nil);
     try
       aStream.seek(0, soBeginning);
-      lEncodedStr := Encoder.Encode(aStream, aStream.size);
+      lEncodedStr := Encoder.Encode(aStream, Integer(aStream.size));
     finally
       Encoder.Free;
     end;
@@ -1461,18 +1559,24 @@ begin
 end;
 
 { TJsonStreamer }
-constructor TJsonStreamer.Create(aStream: TStream);
+constructor TJsonStreamer.Create(aStream: TStream=nil);
 begin
   inherited Create(aStream);
-  fStyle := cJSONTight;
-  fIndention := 2;   // irrelevant for the tight streaming but we set it anyway in case it is changed.
+  fStyle := cDefaultStyle;
+  fIndention := cDefaultIndention;   // irrelevant for the tight streaming but we set it anyway in case it is changed.
   fFormatSettings:=TFormatSettings.Create;
   fFormatSettings.DecimalSeparator := '.';     // used when parsing JSON cause json only allows '.' for decimal separators no matter what locale you are in.
   fEncoding := TEncoding.UTF8;
-  fAllowParsingSymbols := true;
+  fAllowParsingSymbols := cDefaultAllowParsingSymbols;
+  fAllowSingleQuoteStrings := cDefaultAllowSingleQuoteStrings;
+  fAllowParsingExtendedTypes := cDefaultAllowParsingExtendedTypes;
+  fAllowOverwritingExistingSlots := cDefaultAllowOverwritingExistingSlots;
+  fAllowParsingLeadingZeros := cDefaultAllowLeadingZero;
+  fSlotnameIsCaseSensitive := cDefaultSlotnameIsCaseSensitive;
   fInitialBufferCapacity := 1024;
 end;
 
+(*
 constructor TJsonStreamer.Create(aStyle: TJsonStyle = cJSONTight; aIndention: byte = 2);
 begin
   Create(nil);
@@ -1488,6 +1592,7 @@ begin
   fStream := aStream;
   fEncoding := aEncoding;
 end;
+*)
 
 
 
@@ -1533,6 +1638,7 @@ var
   lInt: NativeInt;
 begin
   lInt := NativeInt(aCharacterPos) - NativeInt(@JSON[1]);
+  lInt := lInt div 2;    // since the PChar is 2 bytes per character, lets get the match right.
   raise EJSONParsingException.CreateFmt(SJsonParseMessageAt,[aMsg, lInt]);
 end;
 
@@ -1548,6 +1654,23 @@ var
   lDataObjectID: TDataObjectID;
   lStr: string;
   lP: PCardinal;
+
+  function FloatToJson(const Value: Extended): string;
+  var
+    Buffer: array[0..63] of Char;
+    L: Integer;
+  begin
+    L := FloatToText(Buffer, Value, fvExtended, ffGeneral, 18, 0, gJSONFormatSettings);
+    Buffer[L] := #0;
+    if (StrScan(Buffer, '.') = nil) and (StrScan(Buffer, 'E') = nil) then
+    begin
+      Buffer[L] := '.';
+      Buffer[L + 1] := '0';
+      Inc(L, 2);
+    end;
+    SetString(Result, Buffer, L);
+  end;
+
 begin
   case aDataobj.DataType.Code of
     cDataTypeNull:
@@ -1581,9 +1704,9 @@ begin
     cDataTypeSingle: begin
       if fSupportJSON5 then
       begin
-        case aDataObj.AsDouble.SpecialType of
-          fsZero: fStringBuilder.Append('0');
-          fsNZero: fStringBuilder.Append('-0');
+        case aDataObj.AsSingle.SpecialType of
+          fsZero: fStringBuilder.Append('0.0');
+          fsNZero: fStringBuilder.Append('-0.0');
   //        fsDenormal
   //        fsNDenormal
   //        fsPositive
@@ -1592,14 +1715,14 @@ begin
           fsNInf: fStringBuilder.Append('-Infinity');
           fsNaN:  fStringBuilder.Append('NaN');
         else
-          fStringBuilder.Append(aDataobj.getStore^.fDataSingle);
+          fStringBuilder.Append(FloatToJSON(aDataobj.getStore^.fDataSingle));
         end;
       end
       else
       begin
-        case aDataObj.AsDouble.SpecialType of
-          fsZero: fStringBuilder.Append('0');       // Doubles are often zero and this is faster than doing a FloatToStr.
-          fsNZero: fStringBuilder.Append('-0');
+        case aDataObj.AsSingle.SpecialType of
+          fsZero: fStringBuilder.Append('0.0');       // Doubles are often zero and this is faster than doing a FloatToStr.
+          fsNZero: fStringBuilder.Append('-0.0');
   //        fsDenormal
   //        fsNDenormal
   //        fsPositive
@@ -1608,7 +1731,7 @@ begin
           fsNInf: fStringBuilder.Append('null');
           fsNaN: fStringBuilder.Append('null');
         else
-          fStringBuilder.Append(aDataobj.getStore^.fDataSingle);
+          fStringBuilder.Append(FloatToJSON(aDataobj.getStore^.fDataSingle));
         end;
       end;
     end;
@@ -1618,8 +1741,8 @@ begin
       if fSupportJSON5 then
       begin
         case aDataObj.AsDouble.SpecialType of
-          fsZero: fStringBuilder.Append('0');
-          fsNZero: fStringBuilder.Append('-0');
+          fsZero: fStringBuilder.Append('0.0');
+          fsNZero: fStringBuilder.Append('-0.0');
   //        fsDenormal
   //        fsNDenormal
   //        fsPositive
@@ -1628,14 +1751,14 @@ begin
           fsNInf: fStringBuilder.Append('-Infinity');
           fsNaN:  fStringBuilder.Append('NaN');
         else
-          fStringBuilder.Append(aDataobj.getStore^.fDataDouble);
+          fStringBuilder.Append(FloatToJSON(aDataobj.getStore^.fDataDouble));
         end;
       end
       else
       begin
         case aDataObj.AsDouble.SpecialType of
-          fsZero: fStringBuilder.Append('0');       // Doubles are often zero and this is faster than doing a FloatToStr.
-          fsNZero: fStringBuilder.Append('-0');
+          fsZero: fStringBuilder.Append('0.0');       // Doubles are often zero and this is faster than doing a FloatToStr.
+          fsNZero: fStringBuilder.Append('-0.0');
   //        fsDenormal
   //        fsNDenormal
   //        fsPositive
@@ -1644,7 +1767,7 @@ begin
           fsNInf: fStringBuilder.Append('null');
           fsNaN: fStringBuilder.Append('null');
         else
-          fStringBuilder.Append(aDataobj.getStore^.fDataDouble);
+          fStringBuilder.Append(FloatToJSON(aDataobj.getStore^.fDataDouble));
         end;
       end;
     end;
@@ -1747,7 +1870,8 @@ begin
         if i>0 then
           fStringBuilder.Append(lSpaces);
         fStringBuilder.Append('"');
-        fStringBuilder.Append(lFrame.slotName(i));
+        WriteStringEncodingSpecialJSONCharacters(lFrame.slotName(i));
+//        fStringBuilder.Append(lFrame.slotName(i));
         fStringBuilder.Append('":');
         ReadFromDataObjInternal(lFrame.Slots[i]);     // recursion happening here.
         if i<lFrame.Count-1 then
@@ -1777,7 +1901,8 @@ begin
           fStringBuilder.AppendLine;
       end;
       lSpaces := DecInd;
-      fStringBuilder.Append(lSpaces);
+      if lArray.Count>0 then
+        fStringBuilder.Append(lSpaces);
       fStringBuilder.Append(']');
     end;
 
@@ -1811,7 +1936,7 @@ begin
     cDataTypeObject:
     begin
       // FINISH - Objects are basically just serialized the same as a frame, so maybe we can generate the frame and then JSON that frame.
-      lTempDDO:=TDataObj.create;
+      lTempDDO:=TDataObj.Create;
       try
 //        FINISH
 //        lTempDDO.AsObject := AsObject;   // Hmmm, what about freeing.  Is this just a ref?
@@ -1927,7 +2052,7 @@ begin
   if not ParseAnyType(aObj) then
   begin
     //Getting here means we were not able to parse the JSON completely.
-    RaiseParsingException('Error parsing JSON', fCurrentCharPtr);
+    RaiseParsingException(cExceptErrorParsingJSON, fCurrentCharPtr);
   end;
 
   // NOTE that there could be more characters to be processed in fJSON.  The only way to know would be to look at the lContext.CurrentCharPtr and see where it is in relation to the EndPtr.
@@ -1936,17 +2061,20 @@ end;
 
 class function TJsonStreamer.DataObjToJson(aDataObj: TDataObj; aStyle: TJSONStyle=cJsonTight; aIndent: byte = 2; aEncodeNonAsciiCharacters: boolean=false): string;      // finish - need to pass in the context properties.
 var
-  lContext: TJsonStreamer;
+  lStreamer: TJsonStreamer;
 begin
   result := '';
   // Note that we are creating a TJsonStreamer and leaving it with the default serialization options which is cTightJSON and EncodeNonAsciiCharacters=false.
-  lContext:=TJsonStreamer.Create(aStyle, aIndent);
+//  lContext:=TJsonStreamer.Create(aStyle, aIndent);
+  lStreamer:=TJsonStreamer.Create(nil);
   try
-    lContext.EncodeNonAsciiCharacters := aEncodeNonAsciiCharacters;
-    lContext.Encode(aDataObj);
-    result := lContext.fJSON;
+    lStreamer.style := aStyle;
+    lStreamer.Indention := aIndent;
+    lStreamer.EncodeNonAsciiCharacters := aEncodeNonAsciiCharacters;
+    lStreamer.Encode(aDataObj);
+    result := lStreamer.fJSON;
   finally
-    lContext.Free;
+    lStreamer.Free;
   end;
 end;
 
@@ -1961,6 +2089,60 @@ begin
   finally
     lContext.Free;
   end;
+end;
+
+class function TJsonStreamer.Name: string;
+begin
+  result := 'JSON';
+end;
+
+(*function TJsonStreamer.GetClipboardFormat: word;
+begin
+  // for JSON, we can use it as the "Text" format.
+  if self.Encoding.ClassType = TUnicodeEncoding then
+  begin
+    result := CF_UNICODETEXT;
+  end
+  else
+  begin
+    result := CF_TEXT;
+  end;
+end; *)
+
+procedure TJsonStreamer.SetPreferencesByClipboardVersion(aClipboardVersion: integer);
+begin
+  case aClipboardVersion of
+    0: begin
+      self.fStyle := TJsonStyle.cJsonTight;
+      SetEncoding(TEncoding.Unicode);
+      ClipboardFormat := CF_UNICODETEXT;
+    end;
+    1: begin
+      self.fStyle := TJsonStyle.cJsonTight;
+      SetEncoding(TEncoding.ASCII);
+      ClipboardFormat := CF_TEXT;
+    end;
+    2: begin
+      self.fStyle := TJsonStyle.cJsonHumanReadable;
+      SetEncoding(TEncoding.Unicode);
+      ClipboardFormat := CF_UNICODETEXT;
+    end;
+    3: begin
+      self.fStyle := TJsonStyle.cJsonHumanReadable;
+      SetEncoding(TEncoding.ASCII);
+      ClipboardFormat := CF_TEXT;
+    end;
+  end;
+end;
+
+class procedure TJsonStreamer.GetClipboardPublishingFormats(aCallback: TGetClipboardPublishingCallbackProc);
+begin
+  // we can call back with multiple versions on how we want to serialize to the clipboard.
+  // Each version corresponds to the setup of a serializer in the SetPreferencesByClipboardVersion method
+  aCallback(self, 'JSON - Tight Format, UNICODE', 0);
+  aCallback(self, 'JSON - Tight Format, ASCII', 1);
+  aCallback(self, 'JSON - Human Readable Format, UNICODE', 2);
+  aCallback(self, 'JSON - Human Readable Format, ASCII', 3);
 end;
 
 class function TJsonStreamer.GetFileFilter: string;
@@ -1978,8 +2160,20 @@ begin
   end;
   if cppDecoding in aParameterPurpose then
   begin
-    aStrings.AddPair('-AllowExtendedTypes', 'Allow decoding some non-json compliant extended types like BSON objectIds and IsoDates, etc.');
+    aStrings.AddPair('-AllowExtendedTypes', 'Allow decoding some non-json compliant extended types like BSON ObjectIds and IsoDates, etc.');
     aStrings.AddPair('-AllowSymbols', 'Allow decoding non-json compliant values into symbols such as strings without being enclosed in quotes.');
+    aStrings.AddPair('-AllowSingleQuotes', 'Allow decoding JSON with single quotes to contain text strings in addition to double quotes.');
+    aStrings.AddPair('-AllowOverwritingExistingSlots', 'Allow parsing JSON object fields even though that field already exists possibly from a prior decode.');
+    aStrings.AddPair('-AllowParsingLeadingZeros', 'Allow parsing numbers that have leading zeros.');
+
+    aStrings.AddPair('-DisallowExtendedTypes', 'Disallow parsing extended types like BSON ObjectIds and IsoDates, etc.');
+    aStrings.AddPair('-DisallowSymbols', 'Disallow parsing non-json compliant values into symbols such as strings without being enclosed in quotes.');
+    aStrings.AddPair('-DisallowSingleQuotes', 'Disallow parsing JSON with single quotes to contain text strings in addition to double quotes.');
+    aStrings.AddPair('-DisallowOverwritingExistingSlots', 'Disallow parsing JSON object fields if that field already exists possibly from a prior decode.');
+    aStrings.AddPair('-DisallowParsingLeadingZeros', 'Disallow parsing numbers that have leading zeros.');
+
+    aStrings.AddPair('-CaseSensitive', 'When parsing JSON, treat object fields case sensitively.');
+    aStrings.AddPair('-CaseInSensitive', 'When parsing JSON, treat object fields case insensitively.');
   end;
 end;
 
@@ -2000,7 +2194,7 @@ begin
     begin
       lIndention := StrToIntDef(aParams[i+1],-1);
       if (lIndention >= 0) and (lIndention <= 20) {resonable limit?} then
-        Indention := lIndention;
+        Indention := byte(lIndention);
       inc(i);
     end
     else if SameText(aParams[i], '-Encoding') and (i < aParams.Count-1) then
@@ -2028,6 +2222,48 @@ begin
     else if SameText(aParams[i], '-AllowSymbols') then
     begin
       AllowParsingSymbols := true;
+    end
+    else if SameText(aParams[i], '-AllowSingleQuotes') then
+    begin
+      fAllowSingleQuoteStrings := true;
+    end
+    else if SameText(aParams[i], '-AllowOverwritingExistingSlots') then
+    begin
+      fAllowOverwritingExistingSlots := true;
+    end
+    else if SameText(aParams[i], '-AllowParsingLeadingZeros') then
+    begin
+      fAllowParsingLeadingZeros := true;
+    end
+
+    else if SameText(aParams[i], '-DisAllowExtendedTypes') then
+    begin
+      AllowParsingExtendedTypes := true;
+    end
+    else if SameText(aParams[i], '-DisAllowSymbols') then
+    begin
+      AllowParsingSymbols := true;
+    end
+    else if SameText(aParams[i], '-DisAllowSingleQuotes') then
+    begin
+      fAllowSingleQuoteStrings := true;
+    end
+    else if SameText(aParams[i], '-DisAllowOverwritingExistingSlots') then
+    begin
+      fAllowOverwritingExistingSlots := true;
+    end
+    else if SameText(aParams[i], '-DisAllowParsingLeadingZeros') then
+    begin
+      fAllowParsingLeadingZeros := true;
+    end
+
+    else if SameText(aParams[i], '-CaseSensitive') then
+    begin
+      fSlotnameIsCaseSensitive := true;
+    end
+    else if SameText(aParams[i], '-CaseInSensitive') then
+    begin
+      fSlotnameIsCaseSensitive := false;
     end;
 
     inc(i);
@@ -2035,9 +2271,19 @@ begin
 
 end;
 
-class function TJsonStreamer.ClipboardPriority: cardinal;
+class function TJsonStreamer.Priority: cardinal;
 begin
   result := 100;
+end;
+
+procedure TJsonStreamer.ClipboardEncode(aDataObj: TDataObj);
+var
+  lBytes: TBytes;
+begin
+  inherited;  // start with the default encoding
+  // depending on the encoding, we are either writing a carriage return-line feed as 2 bytes or 4 bytes.
+  lBytes := fEncoding.GetBytes(#13+#10);
+  fStream.write(lBytes, length(lBytes));
 end;
 
 function TJsonStreamer.Clone: TDataObjStreamerBase;
@@ -2063,34 +2309,46 @@ var
   lEncoding: TEncoding;
   lPreambleSize: integer;
 begin
+  aDataObj.SlotnameIsCaseSensitive := self.SlotnameIsCaseSensitive;
+
   // If fStream is assigned, then we are going to need to pull out the data from that stream.  It could be ascii encoded, UTF-8 encoded, etc.  so use TEncoding to deal with that.
   // if fStream is not assigned, then we are assuming that fJSON has already been filled with JSON text.
   if assigned(fStream) then
   begin
+    if fStream.size <=0  then
+      exit;   // nothing to read.
+
     // heres the problem with this. How do we know how much data to read from this stream through the fEncoding?
     // right now, we are going to assume that all data in the stream is destined to aDataObj.
     // but, there may be more data in the stream after the aDataObj is read out.    Hmmmmm.  How do we fix this someday?
 
+
     lSize := fStream.Size;
     SetLength(lBytes, lSize);
-    fStream.Read(lBytes[0], lSize);
+    fStream.Read(lBytes[0], LongInt(lSize));
 
     lEncoding := nil;
 
-    lPreambleSize := TEncoding.GetBufferEncoding(lBytes, lEncoding); // this call only chooses an encoding by inspecting the preamble.  If it can't find a preamble, then the default system encoding is returned.
-    if lPreambleSize=0 then   // If a preamble was not found, then we can assume the default was chosen.
+    lPreambleSize := TEncoding.GetBufferEncoding(lBytes, lEncoding, nil); // this call only chooses an encoding by inspecting the preamble.  If it can't find a preamble, then nil is returned in lEncoding.
+    if lEncoding <> nil then
     begin
-      // Note that if the lBytes didn't have a preamble, the the GetBufferEncoding may choose the wrong one because it's just picking the system default.
-      // We should do a little more checking and one little test we can do to see if we have full Unicode in the stream (not UTF-8 or UTF-7), is to think that most
-      // likely we are starting out with a "{" or "[" character (or white space leading up to that character).  With or without whitespace, we "should" see
-      // "{ #0" or "[ #0" or "<space> #0" or "<tab> #0", etc. as the first two bytes of a starting sequence if the incoming bytes are truely Unicode encoded.
-      // so, as a simple check, we will inspect that second byte to see if it is in fact a #0.  If so, we will instantiate the UniCode Encoding.
-      if ((lBytes[0] <> 0) and (lBytes[1] = 0)) then
-        lEncoding := TEncoding.Unicode;
+      if lPreambleSize=0 then   // If a preamble was not found, then we can assume the default was chosen.
+      begin
+        // Note that if the lBytes didn't have a preamble, the the GetBufferEncoding may choose the wrong one because it's just picking the system default.
+        // We should do a little more checking and one little test we can do to see if we have full Unicode in the stream (not UTF-8 or UTF-7), is to think that most
+        // likely we are starting out with a "{" or "[" character (or white space leading up to that character).  With or without whitespace, we "should" see
+        // "{ #0" or "[ #0" or "<space> #0" or "<tab> #0", etc. as the first two bytes of a starting sequence if the incoming bytes are truely Unicode encoded.
+        // so, as a simple check, we will inspect that second byte to see if it is in fact a #0.  If so, we will instantiate the UniCode Encoding.
+        if ((lBytes[0] <> 0) and (lBytes[1] = 0)) then
+          lEncoding := TEncoding.Unicode;
+      end;
+      SetEncoding(lEncoding);
     end;
-    SetEncoding(lEncoding);
 
-    JSON := fEncoding.GetString(lBytes, lPreambleSize, lSize-lPreambleSize);
+    if fEncoding=nil then
+      SetEncoding(TEncoding.Default);
+
+    JSON := fEncoding.GetString(lBytes, lPreambleSize, Integer(lSize)-lPreambleSize);
   end;
 
   ParseFromJSON(aDataObj);     // take the fJSON string and parse it into aDataObj.
@@ -2108,7 +2366,7 @@ begin
   end;
 
   // First, get the aDataObj serialized into a JSON string (Full Unicode Delphi string)
-  fStringBuilder:=TStringBuilder.Create(fInitialBufferCapacity);         // This will hold the produced json as it is being created.
+  fStringBuilder:=TStringBuilder.Create(Integer(fInitialBufferCapacity));         // This will hold the produced json as it is being created.
   try
     ReadFromDataObjInternal(aDataObj);
     JSON := fStringBuilder.ToString(True);                   // This string now holds the JSON text as a delphi String (unicode string)
@@ -2148,6 +2406,7 @@ begin
 end;
 
 initialization
+  gJSONFormatSettings := TFormatSettings.Invariant;
   RegisterDataObjStreamer(TJsonStreamer);
 
 end.

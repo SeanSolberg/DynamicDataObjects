@@ -31,9 +31,9 @@ begin
     for i := 0 to aDataSet.FieldCount-1 do
     begin
        lField := aDataSet.Fields[i];
+       lFieldDataObj := lRecordFrame.newSlot(lField.fieldname);
        if not lField.IsNull then
        begin
-         lFieldDataObj := lRecordFrame.newSlot(lField.fieldname);
          FieldToDataObj(lField, lFieldDataObj);
        end;
     end;

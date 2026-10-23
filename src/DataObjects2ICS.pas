@@ -48,10 +48,11 @@ type
     constructor Create(aStream: TStream); override;
 
     class function FileExtension: string; override;
+    class function Name: string; override;
     class function Description: string; override;
     class function GetFileFilter: string; override;
     class function IsFileExtension(aStr: string): boolean; override;
-    class function ClipboardPriority: cardinal; override;
+    class function Priority: cardinal; override;
 
     procedure Decode(aDataObj: TDataObj); override;
     procedure Encode(aDataObj: TDataObj); override;
@@ -97,13 +98,18 @@ begin
 end;
 
 
+class function TICSStreamer.Name: string;
+begin
+  result := 'Internet Calendaring and Scheduling (iCalendar)';
+end;
+
 procedure TICSStreamer.ApplyOptionalParameters(aParams: TStrings);
 begin
   inherited;
   // no parameters yet so there's nothing to implement here.
 end;
 
-class function TICSStreamer.ClipboardPriority: cardinal;
+class function TICSStreamer.Priority: cardinal;
 begin
   result := 40;
 end;
@@ -145,20 +151,23 @@ var
       begin
         lLinePreFolding := lSL.Strings[lCurrentLine];
         inc(lCurrentLine);
-        if lLinePreFolding[1] = ' ' then
+        if length(lLinePreFolding)>0 then    // Some ICS files have been found to have an empty string at the end, so ignore that.
         begin
-          result := result + copy(lLinePreFolding, 2, length(lLinePreFolding));   // this line is a subsequent folding of the previous line. so merge them together.  The first character being a space identifies this.
-        end
-        else
-        begin
-          if result = '' then
+          if lLinePreFolding[1] = ' ' then
           begin
-            result := lLinePreFolding;
+            result := result + copy(lLinePreFolding, 2, length(lLinePreFolding));   // this line is a subsequent folding of the previous line. so merge them together.  The first character being a space identifies this.
           end
           else
           begin
-            dec(lCurrentLine);
-            break;
+            if result = '' then
+            begin
+              result := lLinePreFolding;
+            end
+            else
+            begin
+              dec(lCurrentLine);
+              break;
+            end;
           end;
         end;
       end;

@@ -30,5 +30,7 @@ object AssignToAssignFromTestForm: TAssignToAssignFromTestForm
     Height = 281
     Anchors = [akLeft, akTop, akRight, akBottom]
     TabOrder = 1
+    ExplicitWidth = 534
+    ExplicitHeight = 273
   end
 end

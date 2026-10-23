@@ -44,10 +44,11 @@ type
 
   public
     class function FileExtension: string; override;
+    class function Name: string; override;
     class function Description: string; override;
     class function GetFileFilter: string; override;
     class function IsFileExtension(aStr: string): boolean; override;
-    class function ClipboardPriority: cardinal; override;
+    class function Priority: cardinal; override;
 
     procedure Decode(aDataObj: TDataObj); override;
     procedure Encode(aDataObj: TDataObj); override;
@@ -73,6 +74,11 @@ begin
   result := SameText(aStr, '.msgPack') or SameText(aStr, 'msgPack');
 end;
 
+
+class function TMsgPackStreamer.Name: string;
+begin
+  result := 'MessagePack';
+end;
 
 procedure TMsgPackStreamer.WriteString(aString: String);
 var
@@ -387,7 +393,7 @@ begin
   result := 'msgpack';
 end;
 
-class function TMsgPackStreamer.ClipboardPriority: cardinal;
+class function TMsgPackStreamer.Priority: cardinal;
 begin
   result := 30;
 end;
@@ -700,14 +706,14 @@ begin
       end;
 
       $ca: begin  // float 32
-        fStream.Read(lSingle, 4);
-        lSingle := SwapBytes(lSingle);
+        fStream.Read(lCardinal, 4);
+        lSingle := SwapBytesSingle(lCardinal);
         aDataObj.AsSingle := lSingle;
       end;
 
       $cb: begin  // float 64
-        fStream.Read(lDouble, 8);
-        lDouble := SwapBytes(lDouble);
+        fStream.Read(lUint64, 8);
+        lDouble := SwapBytesToDouble(lUInt64);
         aDataObj.AsDouble := lDouble;
       end;
 

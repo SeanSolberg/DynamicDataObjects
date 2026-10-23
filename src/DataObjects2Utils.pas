@@ -55,6 +55,7 @@ type
     procedure SetIntValue(aValue: integer);
     procedure SetSingleValue(aValue: Single);
     procedure SetInt64Value(aValue: Int64);
+    procedure SetUInt64Value(aValue: UInt64);
     procedure SetDoubleValue(aValue: double);
     procedure SetUnsignedIntValue(aValue: Cardinal);
     procedure SetUnsignedInt16Value(aValue: Word);
@@ -64,19 +65,22 @@ type
     case byte of
       0: (fByteValue: byte;);
       1: (fIntValue: Integer;);  //signed
-      2: (fSingleValue: Single;);
+      2: (fUInt64Value: UInt64;);
       3: (fInt64Value: Int64;);  //signed
-      4: (fDoubleValue: Double;);
-      5: (fUnsignedIntValue: Cardinal;);  // unsigned 32 bit
-      6: (fUInt16Value: Word);
-      7: (fBigTimestampValue: TBigTimestampValue);
+      4: (fUnsignedIntValue: Cardinal;);  // unsigned 32 bit
+      5: (fUInt16Value: Word);
+      6: (fBigTimestampValue: TBigTimestampValue);
     end;
 
 
 
-function SwapBytes(aDouble: double): double; overload; register;
+function SwapBytesFromDouble(aDouble: double): UInt64; register;
 
-function SwapBytes(aSingle: single): single; overload; register;
+function SwapBytesToDouble(aDoubleAsUInt64: UInt64): double; register;
+
+function SwapBytesSingle(aSingle: single): Cardinal; overload; register;
+
+function SwapBytesSingle(aSingleAsCardinal: Cardinal): Single; overload; register;
 
 function SwapBytes(aInt64: UInt64): UInt64; overload; register;
 
@@ -128,24 +132,29 @@ function FloatToHalf(Float: Single): THalfFloat;
 implementation
 
 
-function SwapBytes(aDouble: double): double; overload; register;
+// NOTE:  when swapping bytes on a double floating point number, the resulting bytes could turn into a floating point number that is technically invalid.
+//        These are mostly when the Exponent works out to be $FF or $00
+// Delphi's assignment of such a single value will result in an exception.  SO, we CANNOT SwapBytes on a double and put the result into a double.
+// Rather, we can swap bytes from a double (8 bytes) to a UINT64 (8 bytes) and from a UInt64 (8 bytes) to a Double (8 bytes).
+// This whole situation also applies to floating point Singles.
+function SwapBytesFromDouble(aDouble: double): UInt64; register;
 type
   //enumeration used in variant record
-  BytePos = (EndVal, ByteVal);
-
-  PEndianCnvRec = ^EndianCnvRec;
+  BytePos = (cDoubleVal, cByteVal, cUInt64Val);
 
   EndianCnvRec = packed record
     case pos: BytePos of
        //The value we are trying to convert
-      EndVal: (EndianVal: double);
-       //Overlapping bytes of the double
-      ByteVal: (Bytes: array[0..SizeOf(Double)-1] of byte);
+      cDoubleVal: (DoubleVal: double);
+       //Overlapping array of bytes
+      cByteVal: (Bytes: array[0..7] of byte);
+       //Overlapping Cardinal(4bytes) of the single
+      cUInt64Val: (UInt64Val: UInt64);
   end;
 var
   a,b: EndianCnvRec;
 begin
-  a.EndianVal := aDouble;
+  a.DoubleVal := aDouble;
   B.Bytes[0] := A.Bytes[7];       // turns out this technique is faster than the others.
   B.Bytes[1] := A.Bytes[6];
   B.Bytes[2] := A.Bytes[5];
@@ -154,34 +163,87 @@ begin
   B.Bytes[5] := A.Bytes[2];
   B.Bytes[6] := A.Bytes[1];
   B.Bytes[7] := A.Bytes[0];
-  result := b.EndianVal;
+  result := b.UInt64Val;
 end;
 
-function SwapBytes(aSingle: single): single; overload; register;
+function SwapBytesToDouble(aDoubleAsUInt64: UInt64): double; register;
 type
   //enumeration used in variant record
-  BytePos = (EndVal, ByteVal);
-
-  PEndianCnvRec = ^EndianCnvRec;
+  BytePos = (cDoubleVal, cByteVal, cUInt64Val);
 
   EndianCnvRec = packed record
     case pos: BytePos of
        //The value we are trying to convert
-      EndVal: (EndianVal: single);
-       //Overlapping bytes of the double
-      ByteVal: (Bytes: array[0..SizeOf(single)-1] of byte);
+      cDoubleVal: (DoubleVal: double);
+       //Overlapping array of bytes
+      cByteVal: (Bytes: array[0..7] of byte);
+       //Overlapping Cardinal(4bytes) of the single
+      cUInt64Val: (UInt64Val: UInt64);
   end;
 var
   a,b: EndianCnvRec;
 begin
-  a.EndianVal := aSingle;
+  a.UInt64Val := aDoubleAsUInt64;
+  B.Bytes[0] := A.Bytes[7];       // turns out this technique is faster than the others.
+  B.Bytes[1] := A.Bytes[6];
+  B.Bytes[2] := A.Bytes[5];
+  B.Bytes[3] := A.Bytes[4];
+  B.Bytes[4] := A.Bytes[3];
+  B.Bytes[5] := A.Bytes[2];
+  B.Bytes[6] := A.Bytes[1];
+  B.Bytes[7] := A.Bytes[0];
+  result := b.DoubleVal;
+end;
+
+function SwapBytesSingle(aSingle: single): Cardinal; overload; register;
+type
+  //enumeration used in variant record
+  BytePos = (cSingleVal, cByteVal, cCardinalVal);
+
+  EndianCnvRec = packed record
+    case pos: BytePos of
+       //The value we are trying to convert
+      cSingleVal: (SingleVal: single);
+       //Overlapping array of bytes
+      cByteVal: (Bytes: array[0..3] of byte);
+       //Overlapping Cardinal(4bytes) of the single
+      cCardinalVal: (CardinalVal: Cardinal);
+  end;
+var
+  a,b: EndianCnvRec;
+begin
+  a.SingleVal := aSingle;
   B.Bytes[0] := A.Bytes[3];       // turns out this technique is faster than the others.
   B.Bytes[1] := A.Bytes[2];
   B.Bytes[2] := A.Bytes[1];
   B.Bytes[3] := A.Bytes[0];
-  result := b.EndianVal;
+  result := b.CardinalVal;
 end;
 
+function SwapBytesSingle(aSingleAsCardinal: Cardinal): Single; overload; register;
+type
+  //enumeration used in variant record
+  BytePos = (cSingleVal, cByteVal, cCardinalVal);
+
+  EndianCnvRec = packed record
+    case pos: BytePos of
+       //The value we are trying to convert
+      cSingleVal: (SingleVal: single);
+       //Overlapping array of bytes
+      cByteVal: (Bytes: array[0..3] of byte);
+       //Overlapping Cardinal(4bytes) of the single
+      cCardinalVal: (CardinalVal: Cardinal);
+  end;
+var
+  a,b: EndianCnvRec;
+begin
+  a.CardinalVal := aSingleAsCardinal;
+  B.Bytes[0] := A.Bytes[3];       // turns out this technique is faster than the others.
+  B.Bytes[1] := A.Bytes[2];
+  B.Bytes[2] := A.Bytes[1];
+  B.Bytes[3] := A.Bytes[0];
+  result := b.SingleVal;
+end;
 
 function SwapBytes(aInt64: UInt64): UInt64; overload; register;
 type
@@ -426,7 +488,7 @@ end;
 
 procedure TNumBytes.SetSingleValue(aValue: Single);
 begin
-  fSingleValue := SwapBytes(aValue);
+  fUnsignedIntValue := SwapBytesSingle(aValue);
 end;
 
 procedure TNumBytes.SetInt64Value(aValue: Int64);
@@ -436,12 +498,17 @@ end;
 
 procedure TNumBytes.SetDoubleValue(aValue: double);
 begin
-  fDoubleValue := SwapBytes(aValue);
+  fUInt64Value := SwapBytesFromDouble(aValue);
 end;
 
 procedure TNumBytes.SetUnsignedIntValue(aValue: Cardinal);
 begin
   fUnsignedIntValue := SwapBytes(aValue);
+end;
+
+procedure TNumBytes.SetUInt64Value(aValue: UInt64);
+begin
+  fUInt64Value := aValue;
 end;
 
 procedure TNumBytes.SetUnsignedInt16Value(aValue: Word);
@@ -464,14 +531,14 @@ var
 begin
   Src := PLongWord(@Float)^;
   // Extract sign, exponent, and mantissa from Single number
-  Sign := Src shr 31;
+  Sign := LongInt(Src shr 31);
   Exp := LongInt((Src and $7F800000) shr 23) - 127 + 15;
-  Mantissa := Src and $007FFFFF;
+  Mantissa := LongInt(Src and $007FFFFF);
 
   if (Exp > 0) and (Exp < 30) then
   begin
     // Simple case - round the significand and combine it with the sign and exponent
-    Result := (Sign shl 15) or (Exp shl 10) or ((Mantissa + $00001000) shr 13);
+    Result := THalfFloat((Sign shl 15) or (Exp shl 10) or ((Mantissa + $00001000) shr 13));
   end
   else if Src = 0 then
   begin
@@ -497,7 +564,7 @@ begin
         if (Mantissa and $00001000) > 0 then
           Mantissa := Mantissa + $00002000;
         // Assemble Sign and Mantissa (Exp is zero to get denormalized number)
-        Result := (Sign shl 15) or (Mantissa shr 13);
+        Result := THalfFloat((Sign shl 15) or (Mantissa shr 13));
       end;
     end
     else if Exp = 255 - 127 + 15 then
@@ -505,12 +572,12 @@ begin
       if Mantissa = 0 then
       begin
         // Input float is infinity, create infinity half with original sign
-        Result := (Sign shl 15) or $7C00;
+        Result := THalfFloat((Sign shl 15) or $7C00);
       end
       else
       begin
         // Input float is NaN, create half NaN with original sign and mantissa
-        Result := (Sign shl 15) or $7C00 or (Mantissa shr 13);
+        Result := THalfFloat((Sign shl 15) or $7C00 or (Mantissa shr 13));
       end;
     end
     else
@@ -531,11 +598,11 @@ begin
       if Exp > 30 then
       begin
         // Exponent overflow - return infinity half
-        Result := (Sign shl 15) or $7C00;
+        Result := THalfFloat((Sign shl 15) or $7C00);
       end
       else
         // Assemble normalized half
-        Result := (Sign shl 15) or (Exp shl 10) or (Mantissa shr 13);
+        Result := THalfFloat((Sign shl 15) or (Exp shl 10) or (Mantissa shr 13));
     end;
   end;
 end;

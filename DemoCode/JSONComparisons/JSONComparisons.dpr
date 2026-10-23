@@ -2,8 +2,7 @@ program JSONComparisons;
 
 uses
   Vcl.Forms,
-  JSONComparisonMainFrm in 'JSONComparisonMainFrm.pas' {Form15},
-  DataObjects in '..\..\..\commonSource\src\DataObjects.pas';
+  JSONComparisonMainFrm in 'JSONComparisonMainFrm.pas' {Form15};
 
 {$R *.res}
 

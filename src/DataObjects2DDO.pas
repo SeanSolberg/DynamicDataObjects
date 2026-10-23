@@ -32,6 +32,8 @@ unit DataObjects2DDO;
 interface
 { This unit reads the traditional *.ddo file stream format.  This unit pretty much works although it has not been exhautively tested for streaming all the ddo
   data types and not all the data types have had code written to convert out to something in DDO format.
+  The Geometry datatypes that are possible within a ddo stream are not natively supported by this library, so we can read geometry into array and frame structures
+  but we cannot write back out geometry data types.
 
   NOTE:  this streamer cannot be used by android apps in its existing form because it uses ansiString for serialization.
 }
@@ -39,16 +41,19 @@ interface
 uses classes, DataObjects2, DataObjects2Streamers, SysUtils, RTTI, TypInfo, DataObjects2Utils;
 
 type
+  EDDOReadException = class(Exception);
+
   TDDOStreamer = class(TDataObjStreamerBase)
   private
     procedure GenerateException(aMessage: string);
 
   public
     class function FileExtension: string; override;
+    class function Name: string; override;
     class function Description: string; override;
     class function GetFileFilter: string; override;
     class function IsFileExtension(aStr: string): boolean; override;
-    class function ClipboardPriority: cardinal; override;
+    class function Priority: cardinal; override;
 
     procedure Decode(aDataObj: TDataObj); override;
     procedure Encode(aDataObj: TDataObj); override;
@@ -81,7 +86,7 @@ resourceString
 
 procedure TDDOStreamer.GenerateException(aMessage: string);
 begin
-  raise Exception.Create(format(strException, [aMessage, fStream.Position]));
+  raise EDDOReadException.Create(format(strException, [aMessage, fStream.Position]));
 end;
 
 
@@ -96,6 +101,11 @@ begin
 end;
 
 
+
+class function TDDOStreamer.Name: string;
+begin
+  result := 'DDO format';
+end;
 
 procedure TDDOStreamer.Encode(aDataObj: TDataObj);
 var
@@ -274,7 +284,7 @@ begin
 
           fStream.Write(lByte, 1);  // write 1 byte representing the size of the slot name string
           if lSize > 0 then
-            fStream.Write(lAnsiStr[1], lSize);  // write the slot Name. Not Including the Null Byte.
+            fStream.Write(lAnsiStr[1], lByte);  // write the slot Name. Not Including the Null Byte.
 
           // then write the slot data
           Encode(lFrame.Slots[i]);  // recursion happening here.
@@ -355,7 +365,7 @@ begin
   result := 'ddo';
 end;
 
-class function TDDOStreamer.ClipboardPriority: cardinal;
+class function TDDOStreamer.Priority: cardinal;
 begin
   result := 10;
 end;
@@ -437,6 +447,7 @@ begin
 
       6{Frame}: begin
         fStream.Read(lSize, 4);
+        lFrame := aDataObj.AsFrame;   // need to always call .Asframe so if we are reading zero slots, then we still at least produce an empty frame instead of null slot.
         if lSize>0 then             // need this check for zero to prevent the lSize-1 call below if lSize=0 because a range exception would fire.
         begin
           for i := 0 to lSize-1 do
@@ -458,7 +469,7 @@ begin
               end;
             end;
 
-            Decode(aDataObj.AsFrame.NewSlot(String(lAnsiString)));     // create a new slot and recursively load it from the stream
+            Decode(lFrame.NewSlot(String(lAnsiString)));     // create a new slot and recursively load it from the stream
           end;
         end;
       end;
@@ -626,6 +637,8 @@ begin
       end;
     end; // case
   except
+    on e: EDDOReadException do
+      raise;
     on e: Exception do
       GenerateException(e.Message);
   end;

@@ -125,24 +125,35 @@ Tag	Data Item	Semantics	Reference
 
   TCBORStreamer = class(TDataObjStreamerBase)
   private
-    fCurrentTagValue: Int64;        // used to keep track of state when decoding.
+    fCurrentTagValue: UInt64;        // used to keep track of state when decoding.
+
+    // Settings for Encoding/Decoding options.
+    fSupportSimples: boolean;       // If true, then we allow encoding and decoding of the Simple values under type 7 generically for those that are undefined
+
     procedure DoRead(var Buffer; Count: Longint);
+    function DecodeInternal(aDataObj: TDataObj): boolean;
 
   public
+    constructor Create(aStream: TStream = nil); override;
     class function FileExtension: string; override;
+    class function Name: string; override;
     class function Description: string; override;
     class function GetFileFilter: string; override;
     class function IsFileExtension(aStr: string): boolean; override;
-    class function ClipboardPriority: cardinal; override;
+    class function Priority: cardinal; override;
 
     procedure Decode(aDataObj: TDataObj); override;
     procedure Encode(aDataObj: TDataObj); override;
+
+    property SupportSimples: boolean read fSupportSimples write fSupportSimples;
   end;
 
   procedure WriteObjectToCBORStream(aStream: TStream; aObject: TObject);
   procedure DoReadStream(aStream: TStream; var Buffer; Count: Longint);
 
 implementation
+
+uses Math;
 
 var
   gRttiContext: TRttiContext;
@@ -157,40 +168,42 @@ resourceString
   cExceptInvalidTextStringChunkSubTypeBad = 'Error while reading chunks of an indefinite-length TextString, chunk header read had invalid SubType of %d';
   cExceptInvalidTextStringChunkMajorTypeBad = 'Error while reading chunks of an indefinite-length TextString, chunk header read had a MajorType of %d.  Only MajorTypes of 3 (TextString) are allowed.';
   cExceptNotEnoughBytesTextString = 'Error while reading a definite-length TextString.  Tried to read %d bytes, but could only read %d bytes from the source stream.';
-
+  cExceptNegativeNumberTooBig = 'Negative number too large to be supported. ';
+  cExceptPositiveNumberTooBig = 'Positive number too large to be supported. ';
 
 
 
 
 procedure WriteTypeAndNumber(aStream: TStream; aMajorType: byte; aCount: UInt32); overload;
 var
-  lUInt32: cardinal;
   lBuffer: array[0..4] of byte;
 begin
   //Deals with positive numbers
   if aCount <= 23 then
   begin
-    lBuffer[0] := aCount or (aMajorType shl 5);
+    lBuffer[0] := byte(aCount or (aMajorType shl 5));
     aStream.Write(lBuffer[0], 1);     // Major=0, value is 0 - 23
   end
   else if aCount <= 255 then
   begin
-    lBuffer[0] := 24 or (aMajorType shl 5);  // major = 0, additional=24 which means one byte follows. value is 24-255
-    lBuffer[1] := aCount;
+    lBuffer[0] := byte(24 or (aMajorType shl 5));  // major = 0, additional=24 which means one byte follows. value is 24-255
+    lBuffer[1] := byte(aCount);
     aStream.Write(lBuffer[0], 2);
   end
   else if aCount <= 65535 then
   begin
-    lBuffer[0] := 25 or (aMajorType shl 5);  // major = 0, additional=25 which means two bytes follows.  value = 256-65535
-    lBuffer[1] := aCount;         // truncate to one byte
-    lBuffer[2] := aCount shr 8;   // 2nd MSB
+    lBuffer[0] := byte(25 or (aMajorType shl 5));  // major = 0, additional=25 which means two bytes follows.  value = 256-65535
+    lBuffer[2] := byte(aCount);         // truncate to one byte
+    lBuffer[1] := byte(aCount shr 8);   // 2nd MSB
     aStream.Write(lBuffer[0],3);
   end
   else
   begin
-    lBuffer[0] := 26 or (aMajorType shl 5);   // major = 0, additional=26 which means four bytes follows. value = 65536 - 4,294,967,295
-    lUint32 := SwapBytes(aCount);
-    move(lUint32, lBuffer[1], 4);
+    lBuffer[0] := byte(26 or (aMajorType shl 5));   // major = 0, additional=26 which means four bytes follows. value = 65536 - 4,294,967,295
+    lBuffer[4] := byte(aCount);         // Shift in each of the bytes to the buffer
+    lBuffer[3] := byte(aCount shr 8);   //
+    lBuffer[2] := byte(aCount shr 16);  //
+    lBuffer[1] := byte(aCount shr 24);  //
     aStream.Write(lBuffer[0],5);
   end;
 
@@ -205,32 +218,31 @@ begin
   //Deals with positive numbers
   if aValue <= 23 then
   begin
-    lBytes.Code := aValue or (aMajorType shl 5);
+    lBytes.Code := byte(aValue or (aMajorType shl 5));
     aStream.Write(lBytes, 1);     // Major=0, value is 0 - 23
   end
   else if aValue <= 255 then
   begin
-    lBytes.SetByteValue(aValue);
-    lBytes.Code := 24 or (aMajorType shl 5);  // major = 0, additional=24 which means one byte follows. value is 24-255
-    lBytes.SetByteValue(aValue);
+    lBytes.Code := byte(24 or (aMajorType shl 5));  // major = 0, additional=24 which means one byte follows. value is 24-255
+    lBytes.SetByteValue(byte(aValue));
     aStream.Write(lBytes, 2);
   end
   else if aValue <= 65535 then
   begin
-    lBytes.Code := 25 or (aMajorType shl 5);  // major = 0, additional=25 which means two bytes follows.  value = 256-65535
-    lBytes.SetUnsignedInt16Value(aValue);
+    lBytes.Code := byte(25 or (aMajorType shl 5));  // major = 0, additional=25 which means two bytes follows.  value = 256-65535
+    lBytes.SetUnsignedInt16Value(word(aValue));
     aStream.Write(lBytes,3);
   end
   else if aValue <= $FFFFFFFF then
   begin
-    lBytes.Code := 26 or (aMajorType shl 5);   // major = 0, additional=26 which means four bytes follows. value = 65536 - 4,294,967,295
-    lBytes.SetUnsignedIntValue(aValue);
+    lBytes.Code := byte(26 or (aMajorType shl 5));   // major = 0, additional=26 which means four bytes follows. value = 65536 - 4,294,967,295
+    lBytes.SetUnsignedIntValue(Cardinal(aValue));
     aStream.Write(lBytes,5);
   end
   else
   begin
-    lBytes.Code := 27 or (aMajorType shl 5);    // major = 0, additional=27 which means eight bytes follows. value = 4,294,967,296 -  max int64
-    lBytes.SetInt64Value(aValue);
+    lBytes.Code := byte(27 or (aMajorType shl 5));    // major = 0, additional=27 which means eight bytes follows. value = 4,294,967,296 -  max int64
+    lBytes.SetUInt64Value(aValue);
     aStream.Write(lBytes,9);
   end;
 end;
@@ -245,13 +257,13 @@ var
   lInt: Int64;
 begin
   lInt := -1-aValue;
-  WriteTypeAndNumber(aStream, 1, lInt);
+  WriteTypeAndNumber(aStream, 1, UInt64(lInt));
 end;
 
 procedure WriteInt64(aStream: TStream; aValue: Int64);
 begin
   if aValue >= 0 then
-    WriteUInt64(aStream, aValue)
+    WriteUInt64(aStream, UInt64(aValue))
   else
     WriteNegInt64(aStream, aValue);
 end;
@@ -260,13 +272,13 @@ procedure WriteSingle(aStream: TStream; aValue: single);
 type
   TCodeWithSingle = packed record
     lCode: byte;
-    lSingle: single;
+    lSingle: Cardinal;    // 4-byte cardinal representation of a byte-swapped 4-byte single.
   end;
 var
   lCodeWithSingle: TCodeWithSingle;
 begin
   lCodeWithSingle.lCode := $FA;                      // Major 7, value=26;     // means a 4-byte single follows
-  lCodeWithSingle.lSingle := SwapBytes(aValue);
+  lCodeWithSingle.lSingle := SwapBytesSingle(aValue);
   aStream.Write(lCodeWithSingle, 5);
 end;
 
@@ -274,13 +286,13 @@ procedure WriteDouble(aStream: TStream; aValue: Double);
 type
   TCodeWithDouble = packed record
     lCode: byte;
-    lDouble: double;
+    lDouble: UInt64;   // 8 byte UInt64 representation of a byte-swapped 8-byte double.
   end;
 var
   lCodeWithDouble: TCodeWithDouble;
 begin
   lCodeWithDouble.lCode := $FB;                      // Major 7, value=27;     // means a 8-byte double follows
-  lCodeWithDouble.lDouble := SwapBytes(aValue);                // need to reverse the order of the bytes.
+  lCodeWithDouble.lDouble := SwapBytesFromDouble(aValue);                // need to reverse the order of the bytes.
   aStream.Write(lCodeWithDouble, 9);
 end;
 
@@ -301,9 +313,9 @@ var
   lStr: UTF8String;
 begin
   lStr := UTF8String(aStr);                // converting to the string type we are putting on the wire.
-  lLen := length(lStr);
+  lLen := UInt32(length(lStr));
   WriteTypeAndNumber(aStream, 3, lLen);
-  aStream.Write(lStr[1], lLen);
+  aStream.Write(lStr[1], Integer(lLen));
 end;
 
 procedure WriteBooleanFalse(aStream: TStream);
@@ -336,7 +348,7 @@ begin
   end;
 end;
 
-procedure WriteTag(aStream: TStream; aTagNo: int64);
+procedure WriteTag(aStream: TStream; aTagNo: UInt64);
 begin
   WriteTypeAndNumber(aStream, 6, aTagNo);
 end;
@@ -389,7 +401,7 @@ begin
         case lValue.DataSize of
           1: begin
             WriteUnicodeString(aStream, aMember.Name);
-            WriteByteValue(aStream, lValue.AsOrdinal);
+            WriteByteValue(aStream, Byte(lValue.AsOrdinal));
           end;
           2,4: begin
             WriteUnicodeString(aStream, aMember.Name);
@@ -519,7 +531,8 @@ begin
 end;
 
 
-// note, this takes the currently already-read byte that defines the start of a new chunk of data and it decodes the SubType to possibly read follow-up bytes that give the Content Length that will be read next
+// note, this takes the currently already-read byte that defines the start of a new chunk of data and it decodes the SubType to possibly
+// read follow-up bytes that give the Content Length that will be read next
 function ReadLength(aStream: TStream; aMajorType, aSubType: byte): UInt64;
 var
   lSimpleValue: Byte;
@@ -564,7 +577,7 @@ function ReadTextString(aStream: TStream; aSubType: byte): string;
 var
   lMajorType: byte;
   lSS: TStringStream;
-  lToReadCount: int64;
+  lToReadCount: UInt64;
   lCount: int64;
   lSubType: byte;
 begin
@@ -586,7 +599,7 @@ begin
         begin
           // we should be reading another chunk which should be a definite-length textString.  Anything else is an error condition.
           lSubType := lMajorType and $1F;   // first 5 bits
-          lMajorType := lMajorType shr 5;   // get it to a 0-7 range
+          lMajorType := Byte(lMajorType shr 5);   // get it to a 0-7 range
 
           if (lMajorType=3) and (lSubType <= 27) then
           begin
@@ -594,7 +607,7 @@ begin
             lToReadCount := ReadLength(aStream, lMajorType, lSubType);
             if lToReadCount>0 then
             begin
-              lCount := lSS.CopyFrom(aStream, lToReadCount);
+              lCount := lSS.CopyFrom(aStream, Int64(lToReadCount));
               if lCount <> lToReadCount then
                 RaiseParsingException(aStream, Format(cExceptNotEnoughBytesTextString, [lToReadCount, lCount]));
             end
@@ -628,7 +641,7 @@ begin
       lToReadCount := ReadLength(aStream, 3, aSubType);
       if lToReadCount>0 then
       begin
-        lCount := lSS.CopyFrom(aStream, lToReadCount);
+        lCount := lSS.CopyFrom(aStream, Int64(lToReadCount));
         result := lSS.DataString;  // converting from UTF8 to wideChar string
 
         // Note, we have read whatever number of UTF8 bytes we could above.  Here we will check to see if we did read what we were expected to read.
@@ -643,9 +656,9 @@ begin
 end;
 
 
-function ReadObjectFromCBORStream(aStream: TStream; aCount: Int64): TObject;
+function ReadObjectFromCBORStream(aStream: TStream; aCount: UInt64): TObject;
 var
-  i: integer;
+  i: UInt64;
   lMajorType: byte;
   lSubType: byte;
   lSlotName: string;
@@ -663,7 +676,7 @@ var
     // try to read a string (the classname) from the stream.  Except out if the cbor data being read is anything else but a string
     aStream.Read(lMT,1);
     lST := lMT and $1F;     // first 5 bits
-    lMT := lMT shr 5;     // get it to a 0-7 range
+    lMT := byte(lMT shr 5);     // get it to a 0-7 range
     if lMT = 3 then
     begin
       result := ReadTextString(aStream, lST);
@@ -682,7 +695,7 @@ begin
     // The CBOR spec allows for reading any type of CBOR data type as a key, but we only support strings here.
     aStream.Read(lMajorType,1);                // FINISH - If we ran out of stream bytes to read then we should have a different exception produced that what we get below which gives an incorrect exception message
     lSubType := lMajorType and $1F;     // first 5 bits
-    lMajorType := lMajorType shr 5;     // get it to a 0-7 range
+    lMajorType := byte(lMajorType shr 5);     // get it to a 0-7 range
 
     if lMajorType = 3 then
     begin
@@ -743,6 +756,11 @@ end;
 class function TCBORStreamer.IsFileExtension(aStr: string): boolean;
 begin
   result := SameText(aStr, '.cbor') or SameText(aStr, 'cbor');
+end;
+
+class function TCBORStreamer.Name: string;
+begin
+  result := 'Compact Binary Object Representation';
 end;
 
 procedure TCBORStreamer.Encode(aDataObj: TDataObj);
@@ -844,7 +862,7 @@ begin
       // We are going to code the StringList data type as an array of Text Strings.
       // WriteTag(fStream, ???); // FINISH - let's get a registered tag reserved to define an array of strings.
       lStringList := aDataObj.AsStringList;
-      WriteTypeAndNumber(fStream, 4, lStringList.Count);
+      WriteTypeAndNumber(fStream, 4, UInt64(lStringList.Count));
       for i := 0 to lStringList.Count-1 do
       begin
         WriteUnicodeString(fStream, lStringList.Strings[i]);
@@ -853,7 +871,7 @@ begin
 
     cDataTypeFrame: begin
       lFrame := aDataObj.AsFrame;
-      WriteTypeAndNumber(fStream, 5, lFrame.Count);
+      WriteTypeAndNumber(fStream, 5, UInt64(lFrame.Count));
       for i := 0 to lFrame.Count-1 do
       begin
         // write out the name - value pair.
@@ -864,7 +882,7 @@ begin
 
     cDataTypeArray: begin
       lArray := aDataObj.AsArray;
-      WriteTypeAndNumber(fStream, 4, lArray.Count);
+      WriteTypeAndNumber(fStream, 4, UInt64(lArray.Count));
       for i := 0 to lArray.Count-1 do
       begin
         Encode(lArray.Items[i]);        //recursion happening here
@@ -873,7 +891,7 @@ begin
 
     cDataTypeSparseArray: begin
       lSparseArray := aDataObj.AsSparseArray;
-      WriteTypeAndNumber(fStream, 5, lSparseArray.Count);  // A Sparse Array and a Map are the same thing so they have the same type, but the difference is that maps use strings for keys and sparseArrays use integers for keys
+      WriteTypeAndNumber(fStream, 5, UInt64(lSparseArray.Count));  // A Sparse Array and a Map are the same thing so they have the same type, but the difference is that maps use strings for keys and sparseArrays use integers for keys
       for i := 0 to lSparseArray.Count-1 do
       begin
         WriteInt64(fStream, lSparseArray.SlotIndex(i));    // FINISH - maybe we should only have positive number keys?  maybe they should be int64 instead of int32?
@@ -883,7 +901,7 @@ begin
 
     cDataTypeBinary: begin
       lBinary := aDataObj.AsBinary;
-      WriteTypeAndNumber(fStream, 2, lBinary.Size);        //byte string
+      WriteTypeAndNumber(fStream, 2, UInt64(lBinary.Size));        //byte string
       lBinary.seek(0, soBeginning);
       fStream.CopyFrom(lBinary, lBinary.Size);
     end;
@@ -935,13 +953,30 @@ begin
 end;
 
 
-class function TCBORStreamer.ClipboardPriority: cardinal;
+class function TCBORStreamer.Priority: cardinal;
 begin
   result := 20;
 end;
 
 
+constructor TCBORStreamer.Create(aStream: TStream);
+begin
+  inherited;
+  fSupportSimples := true;
+end;
+
 procedure TCBORStreamer.Decode(aDataObj: TDataObj);
+begin
+  DecodeInternal(aDataObj);
+end;
+
+
+
+
+
+// returns true if something was loaded.
+// Returns false if Nothing was loaded which is the case when we decode a "break" stop code while reading items in an indefinite length array or frame.
+function TCBORStreamer.DecodeInternal(aDataObj: TDataObj): boolean;
 var
   lMajorType: byte;
   lSubType: byte;
@@ -950,18 +985,55 @@ var
   lSingle: single;
   lDouble: double;
   lCardinal: Cardinal;
-  lInt64: UInt64;
-//  lSS: TStringStream;
-  lToReadCount: Int64;
+  lUInt64: UInt64;
+  lInt64: Int64;
+  lToReadCount: UInt64;
   lCount: Int64;
-  i: Integer;
+  i: UInt64;
   lSlotName: string;
   lObject: TObject;
   lBinary: TDataBinary;
+  lExp: integer;
+  lMant: integer;
+  lDecodeResult: boolean;
+
+
+  function Ldexp(aMantissa: Integer; aExponent: Integer): Double;
+  begin
+    Result := aMantissa * Power(2.0, aExponent);
+  end;
+
+  //This read Integer function is ONLY for reading the Integer value of a Key value
+  // Note, in our implementation of a SparseArray, we support up to 64 bit integer keys, so we need to handle up to that level here.
+  function ReadPositiveIntegerKey: Int64;
+  var
+    lUInt64: UInt64;
+  begin
+    lUInt64 := ReadLength(fStream, lMajorType, lSubType);
+    if (lUInt64 > $7FFFFFFFFFFFFFFF) then
+    begin
+      RaiseParsingException(fStream, cExceptPositiveNumberTooBig);
+    end;
+    result := Int64(lUInt64);
+  end;
+
+  function ReadNegativeIntegerKey: Int64;
+  var
+    lUInt64: UInt64;
+  begin
+    lUInt64 := ReadLength(fStream, lMajorType, lSubType);
+    if (lUInt64 > $7FFFFFFFFFFFFFFF) then
+    begin
+      RaiseParsingException(fStream, cExceptNegativeNumberTooBig);
+    end;
+    result := -1 - Int64(lUInt64);   // Now make it negative.
+  end;
+
 begin
   DoRead(lMajorType, 1);
   lSubType := lMajorType and $1F;     // first 5 bits
-  lMajorType := lMajorType shr 5;  // get it to a 0-7 range
+  lMajorType := byte(lMajorType shr 5);  // get it to a 0-7 range
+  result := true;                  // assume that something will be loaded below.  Code below can change that back to false if otherwise.
 
   case lMajorType of
     0: begin
@@ -984,17 +1056,20 @@ begin
           if lCardinal > $7FFFFFFF then
             aDataObj.AsInt64 := lCardinal   // since the 32bit unsigned number is over the largest signed number possible, we must put into a 64bit integer.
           else
-            aDataObj.AsInt32 := lCardinal;  // numbers 65536 -  2 billion are covered by reading four bytes
+            aDataObj.AsInt32 := Integer(lCardinal);  // numbers 65536 -  2 billion are covered by reading four bytes
         end;
         27: begin
-          DoRead(lInt64, 8);
-          lInt64 := SwapBytes(lInt64);
-(*          if (lInt64 > $7FFFFFFFFFFFFFFF) then        FINISH - Need to figure out what to do about this situation.  Do we add full UInt64 support to DataObjects, or do we produce an error situation here?
+          DoRead(lUInt64, 8);
+          lUInt64 := SwapBytes(lUInt64);
+          if (lUInt64 > $7FFFFFFFFFFFFFFF) then
           begin
-
+            aDataObj.AsUInt64 := lUInt64;  //  We now have full UInt64 support in DataObjects, so that's how we must store this since it's too big to store in Int64.
           end
-          else *)
-          aDataObj.AsInt64 := lInt64;     // 8 byte unsigned int64.  Problem we have here is that we natively model signed 64bit ints, so it's possible we get an unsigned number that's too big here.
+          else
+          begin
+            // even though we are bringing in a clearly positive number, we are going to default to storing it as int64 and not UInt64 since we have room to do so.
+            aDataObj.AsInt64 := Int64(lUInt64);
+          end;
         end;
       end;
     end;
@@ -1003,7 +1078,7 @@ begin
       // Reading a negative integer. Number of bytes defined by the MajorTypes SubTypeCode.  The real value is given by: (-1 - IncomingValue)
       case lSubType of
         0..23: begin
-          aDataObj.AsByte := lSubtype;    // subtype just contains the negative int directly
+          aDataObj.AsInt32 := -1-lSubtype;    // subtype just contains the negative int directly
         end;
         24: begin
           DoRead(lSimpleValue, 1);
@@ -1021,8 +1096,12 @@ begin
             aDataObj.AsInt32 := -1-Integer(lCardinal);  // numbers 65536 -  2 billion are covered by reading four bytes
         end;
         27: begin
-          DoRead(lInt64, 8);
-          aDataObj.AsInt64 := -1-lInt64;     // 8 byte unsigned int64.  Problem we have here is that we natively model signed 64biters, so it's possible we get an incoming unsigned number that's too big here.
+          DoRead(lUInt64, 8);
+          if lUInt64 > $7FFFFFFFFFFFFFFF then
+          begin
+            RaiseParsingException(fStream, cExceptNegativeNumberTooBig);
+          end;
+          aDataObj.AsInt64 := -1-Int64(lUInt64);     // 8 byte unsigned int64.  Problem we have here is that we natively model signed 64biters, so it's possible we get an incoming unsigned number that's too big here and an exception will be raised.
         end;
       end;
     end;
@@ -1044,7 +1123,7 @@ begin
           begin
             // we should be reading another chunk which is a definite-length byteString.  Anything else is an error condition.
             lSubType := lMajorType and $1F;   // first 5 bits
-            lMajorType := lMajorType shr 5;   // get it to a 0-7 range
+            lMajorType := byte(lMajorType shr 5);   // get it to a 0-7 range
 
             if (lMajorType=2) and (lSubType <= 27) then
             begin
@@ -1052,7 +1131,7 @@ begin
               lToReadCount := ReadLength(fStream, lMajorType, lSubType);
               if lToReadCount>0 then
               begin
-                lCount := aDataObj.AsBinary.CopyFrom(fStream, lToReadCount);
+                lCount := aDataObj.AsBinary.CopyFrom(fStream, Int64(lToReadCount));
                 if lCount <> lToReadCount then
                   RaiseParsingException(fStream, Format(cExceptNotEnoughBytesByteString, [lToReadCount, lCount]));
               end
@@ -1079,7 +1158,7 @@ begin
         lBinary := aDataObj.AsBinary;    // make it a binary slot even if no bytes are following to put into it.
         if lToReadCount > 0 then
         begin
-          lCount := lBinary.CopyFrom(fStream, lToReadCount);
+          lCount := lBinary.CopyFrom(fStream, Int64(lToReadCount));
           if lCount <> lToReadCount then
             RaiseParsingException(fStream, format(cExceptNotEnoughBytesByteString, [lToReadCount, lCount]));
         end;
@@ -1094,13 +1173,18 @@ begin
       // Reading an Array
       if lSubType = 31 then
       begin
-        //FINISH Indefinite length array
-
+        //Indefinite length array - keep reading objects until DecodeInternal returns false
+        repeat
+          lDecodeResult := DecodeInternal(aDataObj.AsArray.NewSlot);
+        until lDecodeResult=false;
+        // The last item that was added to the array to give to DecodeInternal was not filled with any data because lDecodeResult returned false, so we must free that last one which was never filled.
+        aDataObj.AsArray.DeleteSlot(aDataObj.AsArray.count-1);
       end
       else
       begin
         lToReadCount := ReadLength(fStream, 4, lSubType);
-        for i := 0 to lToReadCount-1 do
+        aDataObj.AsArray;     // Must have this here in order to get the dataObject assigned as an array even if we have no values to import
+        for i := 1 to lToReadCount do
         begin
           Decode(aDataObj.AsArray.NewSlot);                 //NOTE:  recusion happening here.  maybe someday in the future we will put some kind of a nesting limit in to prevent stack overflow.
         end;
@@ -1111,7 +1195,56 @@ begin
       //Reading a Map (Frame)
       if lSubType = 31 then
       begin
-        //FINISH Indefinite length map
+        //Indefinite length map - keep reading objects until DecodeInternal returns false
+        repeat
+          aDataObj.AsFrame;     // Must have this here in order to get the dataObject assigned as a Frame even if we have no values to import
+          lDecodeResult := true;
+          while lDecodeResult do
+          begin
+            // Need to read a string only for the key.  The spec allows for reading any type of CBOR data type as a key, but we only support strings here.
+            // maybe we will also support numbers for the sparse array which uses numbers as the keys.
+            DoRead(lMajorType,1);
+            if lMajorType = $FF then
+            begin
+              lDecodeResult := false;
+              break;    // we read a "break" stop code so get out of our indefinite loop.
+            end;
+
+            lSubType := lMajorType and $1F;     // first 5 bits
+            lMajorType := byte(lMajorType shr 5);  // get it to a 0-7 range
+
+            if lMajorType = 3 then
+            begin
+              // We are seeing a string, so read a string key value.
+              lSlotName := ReadTextString(fStream, lSubType);
+              lDecodeResult := DecodeInternal(aDataObj.AsFrame.NewSlot(lSlotName));   //NOTE:  recursion happening here.  maybe someday in the future we will put some kind of a nesting limit in to prevent stack overflow.
+            end
+            else if (lMajorType = 0) or (lMajorType = 1) then
+            begin
+              if lMajorType=0 then
+                lInt64 := ReadPositiveIntegerKey
+              else
+                lInt64 := ReadNegativeIntegerKey;
+
+              if aDataObj.Datatype.code = cDataTypeFrame then
+              begin
+                // If our container is already a frame, then we put this key in as a string representation of the Int64
+                lDecodeResult := DecodeInternal(aDataObj.AsFrame.NewSlot(IntToStr(lInt64)));   //NOTE:  recursion happening here.  maybe someday in the future we will put some kind of a nesting limit in to prevent stack overflow.
+              end
+              else
+              begin
+                // If we are not a frame, then reading an integer as a key value makes a sparse Array.
+                lDecodeResult := DecodeInternal(aDataObj.AsSparseArray.NewSlot(lInt64));   //NOTE:  recursion happening here.  maybe someday in the future we will put some kind of a nesting limit in to prevent stack overflow.
+              end;
+            end
+            else
+            begin
+              // We can only accept strings as map (frame) keys, so generate an exception.
+              RaiseParsingException(fStream, format('Can only read text strings or integers as map keys.  Error, encountered datatype %d',[lMajorType]));
+            end;
+          end;
+
+        until lDecodeResult=false;
 
       end
       else
@@ -1131,18 +1264,37 @@ begin
         else
         begin
           //We are now reading a normal TDataFrame
-          for i := 0 to lToReadCount-1 do
+          aDataObj.AsFrame;     // Must have this here in order to get the dataObject assigned as a Frame even if we have no values to import
+          for i := 1 to lToReadCount do
           begin
-            // Need to read a string only for the key.  The spec allows for reading any type of CBOR data type as a key, but we only support strings here.
+            // Need to read a string or integer only for the key.  The spec allows for reading any type of CBOR data type as a key, but we only support strings and integers here.
             // maybe we will also support numbers for the sparse array which uses numbers as the keys.
             DoRead(lMajorType,1);
             lSubType := lMajorType and $1F;     // first 5 bits
-            lMajorType := lMajorType shr 5;  // get it to a 0-7 range
+            lMajorType := byte(lMajorType shr 5);  // get it to a 0-7 range
 
             if lMajorType = 3 then
             begin
               lSlotName := ReadTextString(fStream, lSubType);
               Decode(aDataObj.AsFrame.NewSlot(lSlotName));   //NOTE:  recursion happening here.  maybe someday in the future we will put some kind of a nesting limit in to prevent stack overflow.
+            end
+            else if (lMajorType = 0) or (lMajorType = 1) then
+            begin
+              if lMajorType=0 then
+                lInt64 := ReadPositiveIntegerKey
+              else
+                lInt64 := ReadNegativeIntegerKey;
+
+              if aDataObj.Datatype.code = cDataTypeFrame then
+              begin
+                // If our container is already a frame, then we put this key in as a string representation of the Int64
+                DecodeInternal(aDataObj.AsFrame.NewSlot(IntToStr(lInt64)));   //NOTE:  recursion happening here.  maybe someday in the future we will put some kind of a nesting limit in to prevent stack overflow.
+              end
+              else
+              begin
+                // If we are not a frame, then reading an integer as a key value makes a sparse Array.
+                DecodeInternal(aDataObj.AsSparseArray.NewSlot(lInt64));   //NOTE:  recursion happening here.  maybe someday in the future we will put some kind of a nesting limit in to prevent stack overflow.
+              end;
             end
             else
             begin
@@ -1169,7 +1321,15 @@ begin
       // floating-point numbers and simple data types that need no content, as well as the "break" stop code
       case lSubType of
         0..19: begin
-
+          if self.fSupportSimples then
+          begin
+            aDataObj.AsByte := lSubType;
+            aDataObj.DataType.SubClass := cSubCodeSimple;   // This code means we have a byte stored in the DataObject, but it's classified as a "Simple", which means we can re-encode this and again produce a "simple" value.
+          end
+          else
+          begin
+            RaiseParsingException(fStream, format(cExceptInvalidSubTypeForTypeCode7,[lSubtype]));
+          end;
         end;
         20: begin
           aDataObj.AsBoolean := false;
@@ -1180,22 +1340,60 @@ begin
         22: begin
           aDataObj.Clear;   // makes it null
         end;
+        23: begin
+          if self.fSupportSimples then
+          begin
+            aDataObj.AsByte := lSubType;
+            aDataObj.DataType.SubClass := cSubCodeSimple;   // This code means we have a byte stored in the DataObject, but it's classified as a "Simple", which means we can re-encode this and again produce a "simple" value.
+          end
+          else
+          begin
+             // this simple value code is considered "undefined" and thus, if we see it, we should get an exception.
+            RaiseParsingException(fStream, format(cExceptInvalidSubTypeForTypeCode7,[lSubtype]));
+          end;
+        end;
         24: begin
           // Simple value in range of 32-255 so we need to read another byte from the stream.
           DoRead(lSimpleValue, 1);
-          case lSimpleValue of
-            0..31: begin
-              //Invalid cause these values should have come with the prior MajorType byte.
-              RaiseParsingException(fStream, Format(cExceptInvalidSimpleTypeForTypeCode7,[lSimpleValue]));
-            end;
-            32..255: begin
-              // read a simpleValue but these aren't really defined yet
+          if self.fSupportSimples then
+          begin
+            aDataObj.AsByte := lSimpleValue;
+            aDataObj.DataType.SubClass := cSubCodeSimple;   // This code means we have a byte stored in the DataObject, but it's classified as a "Simple", which means we can re-encode this and again produce a "simple" value.
+          end
+          else
+          begin
+            case lSimpleValue of
+              0..31: begin
+                //Invalid because these values should have come with the prior MajorType byte.
+                RaiseParsingException(fStream, Format(cExceptInvalidSimpleTypeForTypeCode7,[lSimpleValue]));
+              end;
+              32..255: begin
+                // read a simpleValue but these aren't really defined yet
+                RaiseParsingException(fStream, Format(cExceptInvalidSimpleTypeForTypeCode7,[lSimpleValue]));
+              end;
             end;
           end;
         end;
         25: begin
-          // read two more bytes for a half-precision 16 bit float.  Delphi doesn't have this data type.  Finish converting this someday in the future.
+          // read two more bytes for a half-precision 16 bit float.  Delphi doesn't have this data type.  FINISH converting this someday in the future.
           DoRead(lShort, 2);
+          lShort := SwapBytes(lShort);
+
+          lExp := (lShort shr 10) and $1f;
+          lMant := lShort and $3ff;
+          if lExp = 0 then
+            lSingle :=   lDexp(lMant, -24)
+          else if lExp <> 31 then
+            lSingle := lDexp(lMant+1024, lExp-25)
+          else if lMant = 0 then
+            lSingle := Single.PositiveInfinity
+          else
+            lSingle := Single.NaN;
+          if (lShort and $8000)<>0 then   // if MSB is set, then we are negative.
+            lSingle := -lSingle;
+
+          aDataObj.AsSingle := lSingle;
+
           (* The following C code will decode the lShort 16 bit unsigned int into a double float.  FINISH implementing this into a delphi single or double float
            double decode_half(unsigned char *halfp) {
              int half = (halfp[0] << 8) + halfp[1];
@@ -1206,33 +1404,35 @@ begin
              else if (exp != 31) val = ldexp(mant + 1024, exp - 25);
              else val = mant == 0 ? INFINITY : NAN;
              return half & 0x8000 ? -val : val;
-           }
-
-           The following is similar code for python
-           def decode_single(single):
-           return struct.unpack("!f", struct.pack("!I", single))[0]
-
-           def decode_half(half):
-           valu = (half & 0x7fff) << 13 | (half & 0x8000) << 16
-           if ((half & 0x7c00) != 0x7c00):
-             return ldexp(decode_single(valu), 112)
-           return decode_single(valu | 0x7f800000)
-            *)
+           } *)
         end;
         26: begin
           // read four more bytes for a 32 bit float
-          DoRead(lSingle, 4);
-          lSingle := SwapBytes(lSingle);
+          DoRead(lCardinal, 4);
+          lSingle := SwapBytesSingle(lCardinal);
           aDataObj.AsSingle := lSingle;
         end;
         27: begin
           // read 8 more bytes for a 64 bit float
-          DoRead(lDouble, 8);
-          lDouble := SwapBytes(lDouble);
+          DoRead(lUInt64, 8);
+          lDouble := SwapBytesToDouble(lUInt64);
           aDataObj.AsDouble := lDouble;
         end;
-        //28-30=unassigned
-        //31=break for indefinite-length items.   should never see it here.
+        28,29,30: begin  //unassigned
+          if self.fSupportSimples then
+          begin
+            aDataObj.AsByte := lSubType;
+            aDataObj.DataType.SubClass := cSubCodeSimple;   // This code means we have a byte stored in the DataObject, but it's classified as a "Simple", which means we can re-encode this and again produce a "simple" value.
+          end
+          else
+          begin
+            RaiseParsingException(fStream, format(cExceptInvalidSubTypeForTypeCode7,[lSubtype]));          //31=break for indefinite-length items.   should never see it here.
+          end;
+        end;
+        31: begin
+          // This is a special code that is the "Break" stop code when inside an indefinite length array or map.  So, in this case, return false to signal that nothing was loaded. ;
+          result := false;   // nothing loaded, return false to signal a break.
+        end
       else
         RaiseParsingException(fStream, format(cExceptInvalidSubTypeForTypeCode7, [lSubType]));
       end;
